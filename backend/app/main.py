@@ -1,0 +1,47 @@
+"""FastAPI application entrypoint."""
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.v1.router import api_router
+from app.core.config import settings
+from app.core.logging import configure_logging, logger
+
+
+def create_app() -> FastAPI:
+    """Create and configure the FastAPI app."""
+    configure_logging()
+    app = FastAPI(title="Birka API", version="0.1.0")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    app.include_router(api_router, prefix="/api/v1")
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        """Log unhandled exceptions."""
+        logger.exception("unhandled_exception", path=request.url.path, error=str(exc))
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        """Log handled HTTP errors."""
+        logger.warning("http_exception", path=request.url.path, status=exc.status_code, detail=exc.detail)
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+    @app.get("/health", tags=["health"])
+    async def health_check() -> dict:
+        """Simple health check endpoint."""
+        return {"status": "ok"}
+
+    logger.info("app_initialized")
+    return app
+
+
+app = create_app()

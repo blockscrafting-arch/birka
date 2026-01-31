@@ -1,0 +1,49 @@
+"""Product schemas."""
+from pydantic import BaseModel
+
+
+class ProductCreate(BaseModel):
+    """Create product request."""
+
+    company_id: int
+    name: str
+    brand: str | None = None
+    size: str | None = None
+    color: str | None = None
+    barcode: str | None = None
+    wb_article: str | None = None
+    wb_url: str | None = None
+    packing_instructions: str | None = None
+
+
+class ProductUpdate(BaseModel):
+    """Update product request."""
+
+    name: str | None = None
+    brand: str | None = None
+    size: str | None = None
+    color: str | None = None
+    barcode: str | None = None
+    wb_article: str | None = None
+    wb_url: str | None = None
+    packing_instructions: str | None = None
+
+
+class ProductOut(BaseModel):
+    """Product response."""
+
+    id: int
+    company_id: int
+    name: str
+    brand: str | None
+    size: str | None
+    color: str | None
+    barcode: str | None
+    wb_article: str | None
+    wb_url: str | None
+    packing_instructions: str | None
+    stock_quantity: int
+    defect_quantity: int
+
+    class Config:
+        from_attributes = True
