@@ -30,3 +30,6 @@ Thumbs.db
 # Build / Docker
 *.sqlite
 *.db
+
+# SSL Certificates (generated on server)
+certbot/
