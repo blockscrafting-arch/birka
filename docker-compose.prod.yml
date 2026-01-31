@@ -18,7 +18,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.frontend
     expose:
-      - "5173"
+      - "80"
     restart: unless-stopped
 
   nginx:
