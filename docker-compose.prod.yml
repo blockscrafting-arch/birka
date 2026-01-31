@@ -1,5 +1,3 @@
-version: "3.9"
-
 # ===========================================
 # Production config для Beget VPS
 # Использует внешнюю БД PostgreSQL (Beget Cloud Database)
