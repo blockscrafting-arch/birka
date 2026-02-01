@@ -13,8 +13,8 @@ export function OrderDetail() {
   const { items: companies = [] } = useCompanies();
   const { companyId, setCompanyId } = useActiveCompany();
   const activeCompanyId = companyId ?? companies[0]?.id ?? null;
-  const { items } = useOrders(activeCompanyId ?? undefined, 1, 200);
-  const order = useMemo(() => items.find((item) => item.id === Number(orderId)), [items, orderId]);
+  const { items: orders } = useOrders(activeCompanyId ?? undefined, 1, 200);
+  const order = useMemo(() => orders.find((item) => item.id === Number(orderId)), [orders, orderId]);
   const { data: items = [] } = useOrderItems(order?.id);
 
   useEffect(() => {
