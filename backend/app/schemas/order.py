@@ -37,3 +37,16 @@ class OrderOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class OrderItemOut(BaseModel):
+    """Order item response with product info."""
+
+    id: int
+    product_id: int
+    product_name: str
+    barcode: str | None
+    planned_qty: int
+    received_qty: int
+    defect_qty: int
+    packed_qty: int

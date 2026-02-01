@@ -5,6 +5,7 @@ import { Order } from "../types";
 
 type OrderCreate = {
   company_id: number;
+  destination?: string;
   items: { product_id: number; planned_qty: number }[];
 };
 

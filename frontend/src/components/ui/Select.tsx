@@ -8,14 +8,14 @@ type SelectProps = SelectHTMLAttributes<HTMLSelectElement> & {
 export function Select({ label, error, className = "", children, ...props }: SelectProps) {
   return (
     <label className="block text-sm">
-      {label ? <span className="mb-1 block text-slate-700">{label}</span> : null}
+      {label ? <span className="mb-1 block text-slate-300">{label}</span> : null}
       <select
-        className={`w-full rounded border px-3 py-2 text-sm focus:border-slate-400 focus:outline-none ${className}`}
+        className={`w-full rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 focus:border-sky-400 focus:outline-none ${className}`}
         {...props}
       >
         {children}
       </select>
-      {error ? <span className="mt-1 block text-xs text-red-600">{error}</span> : null}
+      {error ? <span className="mt-1 block text-xs text-rose-300">{error}</span> : null}
     </label>
   );
 }

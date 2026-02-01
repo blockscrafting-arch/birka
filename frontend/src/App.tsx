@@ -6,6 +6,7 @@ import { apiClient } from "./services/api";
 import { Header } from "./components/layout/Header";
 import { Page } from "./components/layout/Page";
 import { TabBar } from "./components/layout/TabBar";
+import { Loader } from "./components/ui/Loader";
 import { CompanyPage } from "./pages/client/CompanyPage";
 import { OrdersPage } from "./pages/client/OrdersPage";
 import { ProductsPage } from "./pages/client/ProductsPage";
@@ -39,7 +40,11 @@ export default function App() {
   }, [webApp]);
 
   if (!ready) {
-    return <div className="min-h-screen p-4">Загрузка...</div>;
+    return (
+      <div className="min-h-screen bg-slate-950 p-4">
+        <Loader text="Подключение к Telegram..." />
+      </div>
+    );
   }
 
   return (

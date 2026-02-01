@@ -10,6 +10,10 @@ type CompanyCreate = {
   bank_account?: string;
 };
 
+type CompanyUpdate = Partial<CompanyCreate> & {
+  id: number;
+};
+
 export function useCompanies() {
   const queryClient = useQueryClient();
 
@@ -28,5 +32,16 @@ export function useCompanies() {
     },
   });
 
-  return { ...query, create };
+  const update = useMutation({
+    mutationFn: ({ id, ...payload }: CompanyUpdate) =>
+      apiClient.api<Company>(`/companies/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+    },
+  });
+
+  return { ...query, create, update };
 }

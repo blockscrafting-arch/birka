@@ -12,8 +12,9 @@ from app.db.models.company import Company
 from app.db.models.order import Order, OrderItem
 from app.db.models.order_counter import OrderCounter
 from app.db.models.order_photo import OrderPhoto
+from app.db.models.product import Product
 from app.db.session import get_db
-from app.schemas.order import OrderCreate, OrderOut, OrderStatusUpdate
+from app.schemas.order import OrderCreate, OrderItemOut, OrderOut, OrderStatusUpdate
 from app.services.s3 import S3Service
 from app.core.config import settings
 from app.db.models.user import User
@@ -85,6 +86,45 @@ async def list_orders(
         raise HTTPException(status_code=404, detail="Company not found")
     result = await db.execute(select(Order).where(Order.company_id == company_id))
     return list(result.scalars().all())
+
+
+@router.get("/{order_id}/items", response_model=list[OrderItemOut])
+async def list_order_items(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[OrderItemOut]:
+    """List items for a specific order."""
+    order_result = await db.execute(select(Order).where(Order.id == order_id))
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    company_result = await db.execute(
+        select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
+    )
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    result = await db.execute(
+        select(OrderItem, Product)
+        .join(Product, Product.id == OrderItem.product_id)
+        .where(OrderItem.order_id == order_id)
+    )
+    items: list[OrderItemOut] = []
+    for item, product in result.all():
+        items.append(
+            OrderItemOut(
+                id=item.id,
+                product_id=item.product_id,
+                product_name=product.name,
+                barcode=product.barcode,
+                planned_qty=item.planned_qty,
+                received_qty=item.received_qty,
+                defect_qty=item.defect_qty,
+                packed_qty=item.packed_qty,
+            )
+        )
+    return items
 
 
 @router.patch("/{order_id}/status", response_model=OrderOut)

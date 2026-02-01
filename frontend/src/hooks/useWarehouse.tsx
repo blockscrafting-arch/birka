@@ -17,6 +17,12 @@ export function useWarehouse() {
       product_id: number;
       employee_code: string;
       quantity: number;
+      pallet_number?: string;
+      box_number?: string;
+      warehouse?: string;
+      materials_used?: string;
+      time_spent_minutes?: number;
+      box_barcode?: string;
     }) =>
       apiClient.api("/warehouse/packing/record", {
         method: "POST",

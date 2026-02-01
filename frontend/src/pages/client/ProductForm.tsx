@@ -1,14 +1,36 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { PhotoUpload } from "../../components/shared/PhotoUpload";
 
 type ProductFormProps = {
-  onSubmit: () => void;
+  initial?: {
+    name?: string;
+    brand?: string;
+    size?: string;
+    color?: string;
+    barcode?: string;
+    wb_article?: string;
+    wb_url?: string;
+    packing_instructions?: string;
+  };
+  isSubmitting?: boolean;
+  submitLabel?: string;
+  onSubmit: (payload: {
+    name: string;
+    brand?: string;
+    size?: string;
+    color?: string;
+    barcode?: string;
+    wb_article?: string;
+    wb_url?: string;
+    packing_instructions?: string;
+    photo?: File | null;
+  }) => void;
 };
 
-export function ProductForm({ onSubmit }: ProductFormProps) {
+export function ProductForm({ initial, isSubmitting, submitLabel, onSubmit }: ProductFormProps) {
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
   const [size, setSize] = useState("");
@@ -17,16 +39,46 @@ export function ProductForm({ onSubmit }: ProductFormProps) {
   const [article, setArticle] = useState("");
   const [wbUrl, setWbUrl] = useState("");
   const [packing, setPacking] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [errors, setErrors] = useState<{ name?: string }>({});
+
+  useEffect(() => {
+    setName(initial?.name ?? "");
+    setBrand(initial?.brand ?? "");
+    setSize(initial?.size ?? "");
+    setColor(initial?.color ?? "");
+    setBarcode(initial?.barcode ?? "");
+    setArticle(initial?.wb_article ?? "");
+    setWbUrl(initial?.wb_url ?? "");
+    setPacking(initial?.packing_instructions ?? "");
+    setPhoto(null);
+    setErrors({});
+  }, [initial]);
 
   return (
     <form
       className="space-y-3"
       onSubmit={(event) => {
         event.preventDefault();
-        onSubmit();
+        const trimmedName = name.trim();
+        if (!trimmedName) {
+          setErrors({ name: "Введите название товара" });
+          return;
+        }
+        onSubmit({
+          name: trimmedName,
+          brand: brand.trim() || undefined,
+          size: size.trim() || undefined,
+          color: color.trim() || undefined,
+          barcode: barcode.trim() || undefined,
+          wb_article: article.trim() || undefined,
+          wb_url: wbUrl.trim() || undefined,
+          packing_instructions: packing.trim() || undefined,
+          photo,
+        });
       }}
     >
-      <Input label="Название" value={name} onChange={(event) => setName(event.target.value)} />
+      <Input label="Название" value={name} error={errors.name} onChange={(event) => setName(event.target.value)} />
       <Input label="Бренд" value={brand} onChange={(event) => setBrand(event.target.value)} />
       <Input label="Размер" value={size} onChange={(event) => setSize(event.target.value)} />
       <Input label="Цвет" value={color} onChange={(event) => setColor(event.target.value)} />
@@ -38,8 +90,10 @@ export function ProductForm({ onSubmit }: ProductFormProps) {
         value={packing}
         onChange={(event) => setPacking(event.target.value)}
       />
-      <PhotoUpload onFileChange={() => undefined} />
-      <Button type="submit">Сохранить</Button>
+      <PhotoUpload onFileChange={(file) => setPhoto(file)} />
+      <Button type="submit" disabled={isSubmitting}>
+        {submitLabel ?? "Сохранить"}
+      </Button>
     </form>
   );
 }

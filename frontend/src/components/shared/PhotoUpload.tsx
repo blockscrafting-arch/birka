@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Button } from "../ui/Button";
 
@@ -9,13 +9,16 @@ type PhotoUploadProps = {
 
 export function PhotoUpload({ label = "Добавить фото", onFileChange }: PhotoUploadProps) {
   const [preview, setPreview] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   return (
     <div className="space-y-2">
-      <label className="block text-sm text-slate-700">{label}</label>
+      <label className="block text-sm text-slate-300">{label}</label>
       <input
+        ref={inputRef}
         type="file"
         accept="image/*"
+        className="hidden"
         aria-label={label}
         onChange={(event) => {
           const file = event.target.files?.[0];
@@ -26,10 +29,13 @@ export function PhotoUpload({ label = "Добавить фото", onFileChange 
           onFileChange(file);
         }}
       />
-      {preview ? <img src={preview} alt="preview" className="h-32 rounded object-cover" /> : null}
-      <Button type="button" variant="secondary">
-        Загрузить
-      </Button>
+      <div className="flex items-center gap-3">
+        <Button type="button" variant="secondary" onClick={() => inputRef.current?.click()}>
+          Выбрать фото
+        </Button>
+        {preview ? <span className="text-xs text-emerald-300">Файл выбран</span> : null}
+      </div>
+      {preview ? <img src={preview} alt="preview" className="h-32 rounded-xl object-cover" /> : null}
     </div>
   );
 }
