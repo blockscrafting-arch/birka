@@ -42,3 +42,18 @@
 - В nginx задан `client_max_body_size 20M`.
 - S3 загрузка non-chunked.
 - URL к файлам строится централизованно на бэке.
+
+## 502 Bad Gateway
+
+Если nginx отдаёт 502, он не достучался до backend или frontend. На VPS выполнить:
+
+```bash
+cd /opt/birka   # или ваш DEPLOY_PATH
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs backend --tail 50
+docker compose -f docker-compose.prod.yml logs frontend --tail 20
+```
+
+- Контейнеры `backend` и `frontend` должны быть в статусе `Up`. Если `Exit` — смотреть логи.
+- Частая причина падения backend: нет `.env` или неверный `POSTGRES_DSN`. Проверить наличие `.env` в каталоге проекта.
+- После правок: `docker compose -f docker-compose.prod.yml up -d` и при необходимости перезапустить nginx.
