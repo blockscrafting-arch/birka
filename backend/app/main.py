@@ -1,11 +1,14 @@
 """FastAPI application entrypoint."""
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.logging import configure_logging, logger
+from app.db.session import get_db
 
 
 def create_app() -> FastAPI:
@@ -36,9 +39,14 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
     @app.get("/health", tags=["health"])
-    async def health_check() -> dict:
+    async def health_check(db: AsyncSession = Depends(get_db)) -> dict:
         """Simple health check endpoint."""
-        return {"status": "ok"}
+        try:
+            await db.execute(text("SELECT 1"))
+            return {"status": "ok", "db": "connected"}
+        except Exception as exc:
+            logger.exception("db_health_failed", error=str(exc))
+            return {"status": "degraded", "db": "disconnected"}
 
     logger.info("app_initialized")
     return app

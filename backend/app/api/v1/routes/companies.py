@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from app.api.v1.deps import get_current_user
 from app.db.models.user import User
 from app.schemas.company import CompanyCreate, CompanyList, CompanyOut, CompanyUpdate
+from app.core.logging import logger
 from app.services.dadata import fetch_company_by_inn
 from app.services.pdf import ContractData, render_contract_pdf
 
@@ -52,7 +53,10 @@ async def list_companies(
     current_user: User = Depends(get_current_user),
 ) -> CompanyList:
     """List companies for a user with pagination."""
-    base_query = select(Company).where(Company.user_id == current_user.id)
+    if current_user.role in {"warehouse", "admin"}:
+        base_query = select(Company)
+    else:
+        base_query = select(Company).where(Company.user_id == current_user.id)
     total_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
     total = int(total_result.scalar_one())
     offset = (page - 1) * limit
@@ -104,9 +108,13 @@ async def generate_contract(
         bank_bik=company.bank_bik,
         bank_account=company.bank_account,
     )
-    pdf_bytes = render_contract_pdf(contract)
-    return StreamingResponse(
-        iter([pdf_bytes]),
-        media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=contract.pdf"},
-    )
+    try:
+        pdf_bytes = render_contract_pdf(contract)
+        return StreamingResponse(
+            iter([pdf_bytes]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=contract.pdf"},
+        )
+    except Exception as exc:
+        logger.exception("contract_pdf_failed", company_id=company_id, error=str(exc))
+        raise HTTPException(status_code=500, detail="Contract PDF generation failed")

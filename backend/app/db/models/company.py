@@ -27,3 +27,4 @@ class Company(Base):
     user = relationship("User", back_populates="companies")
     products = relationship("Product", back_populates="company")
     orders = relationship("Order", back_populates="company")
+    shipment_requests = relationship("ShipmentRequest", back_populates="company")

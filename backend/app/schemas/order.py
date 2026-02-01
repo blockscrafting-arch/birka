@@ -1,4 +1,6 @@
 """Order schemas."""
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -34,6 +36,7 @@ class OrderOut(BaseModel):
     planned_qty: int
     received_qty: int
     packed_qty: int
+    photo_count: int = 0
 
     class Config:
         from_attributes = True
@@ -55,7 +58,27 @@ class OrderItemOut(BaseModel):
     product_id: int
     product_name: str
     barcode: str | None
+    brand: str | None
+    size: str | None
+    color: str | None
+    wb_article: str | None
+    wb_url: str | None
+    packing_instructions: str | None
+    supplier_name: str | None
     planned_qty: int
     received_qty: int
     defect_qty: int
     packed_qty: int
+    adjustment_qty: int
+    adjustment_note: str | None
+
+
+class OrderPhotoOut(BaseModel):
+    """Order photo response."""
+
+    id: int
+    s3_key: str
+    url: str
+    photo_type: str | None
+    product_id: int | None
+    created_at: datetime

@@ -39,7 +39,7 @@ export function OrdersPage() {
 
   if (companies.length === 0) {
     return (
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-200">
+      <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
         Сначала добавьте компанию, чтобы создавать заявки.
       </div>
     );
@@ -67,7 +67,7 @@ export function OrdersPage() {
       <CompanySelect companies={companies} value={activeCompanyId} onChange={setCompanyId} />
       <div className="flex items-center justify-between gap-2">
         <Button onClick={() => setOpen(true)}>Создать заявку</Button>
-        {pageError ? <div className="text-sm text-rose-300">{pageError}</div> : null}
+        {pageError ? <div className="text-sm text-rose-500">{pageError}</div> : null}
       </div>
 
       {isLoading ? (
@@ -76,9 +76,9 @@ export function OrdersPage() {
           <Skeleton className="h-16" />
         </div>
       ) : null}
-      {error ? <div className="text-sm text-rose-300">Не удалось загрузить заявки</div> : null}
+      {error ? <div className="text-sm text-rose-500">Не удалось загрузить заявки</div> : null}
       {!isLoading && orders.length === 0 ? (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-200">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
           Пока нет заявок.
         </div>
       ) : null}
@@ -89,6 +89,7 @@ export function OrdersPage() {
             key={order.id}
             title={order.order_number}
             status={order.status}
+            photoCount={order.photo_count}
             onClick={() => navigate(`/client/orders/${order.id}`)}
           />
         ))}

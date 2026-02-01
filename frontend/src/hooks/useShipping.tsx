@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../services/api";
-import { Order } from "../types";
+import { ShippingRequest } from "../types";
 
 type Paginated<T> = {
   items: T[];
@@ -10,43 +10,40 @@ type Paginated<T> = {
   limit: number;
 };
 
-type OrderCreate = {
+type ShippingCreate = {
   company_id: number;
-  destination?: string;
-  items: { product_id: number; planned_qty: number }[];
+  destination_type: string;
+  destination_comment?: string;
 };
 
-export function useOrders(companyId?: number, page = 1, limit = 20, status?: string) {
+export function useShipping(companyId?: number, page = 1, limit = 20) {
   const queryClient = useQueryClient();
-
   const query = useQuery({
-    queryKey: ["orders", companyId, page, limit, status],
-    queryFn: () => {
-      const statusParam = status ? `&status=${encodeURIComponent(status)}` : "";
-      return apiClient.api<Paginated<Order>>(`/orders?company_id=${companyId}&page=${page}&limit=${limit}${statusParam}`);
-    },
+    queryKey: ["shipping", companyId, page, limit],
+    queryFn: () =>
+      apiClient.api<Paginated<ShippingRequest>>(`/shipping?company_id=${companyId}&page=${page}&limit=${limit}`),
     enabled: Boolean(companyId),
   });
 
   const create = useMutation({
-    mutationFn: (payload: OrderCreate) =>
-      apiClient.api<Order>("/orders", {
+    mutationFn: (payload: ShippingCreate) =>
+      apiClient.api<ShippingRequest>("/shipping", {
         method: "POST",
         body: JSON.stringify(payload),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["shipping"] });
     },
   });
 
   const updateStatus = useMutation({
     mutationFn: (payload: { id: number; status: string }) =>
-      apiClient.api<Order>(`/orders/${payload.id}/status`, {
+      apiClient.api<ShippingRequest>(`/shipping/${payload.id}/status`, {
         method: "PATCH",
         body: JSON.stringify({ status: payload.status }),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["shipping"] });
     },
   });
 

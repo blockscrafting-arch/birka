@@ -43,14 +43,14 @@ export function AIPage() {
 
   return (
     <div className="flex flex-1 flex-col gap-4">
-      <div className="rounded-2xl border border-slate-800/70 bg-slate-900/40 p-4">
-        <h2 className="text-lg font-semibold text-slate-100">AI-помощник</h2>
-        <p className="mt-1 text-sm text-slate-400">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft">
+        <h2 className="text-lg font-semibold text-slate-900">AI-помощник</h2>
+        <p className="mt-1 text-sm text-slate-600">
           Спросите про отгрузки, остатки, статусы и документы. Ответ будет учитываться по активной компании.
         </p>
       </div>
 
-      <div className="flex-1 space-y-3 rounded-2xl border border-slate-800/70 bg-slate-950/40 p-4">
+      <div className="flex-1 space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-soft">
         {messages.length === 0 ? (
           <div className="text-sm text-slate-500">Сообщений пока нет.</div>
         ) : (
@@ -58,10 +58,10 @@ export function AIPage() {
             <div
               key={`${message.role}-${index}`}
               className={`rounded-xl px-3 py-2 text-sm ${
-                message.role === "user" ? "bg-sky-500/20 text-slate-100" : "bg-slate-800/60 text-slate-200"
+                message.role === "user" ? "bg-birka-50 text-slate-900" : "bg-slate-100 text-slate-700"
               }`}
             >
-              <span className="mb-1 block text-xs uppercase tracking-wide text-slate-400">
+              <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
                 {message.role === "user" ? "Вы" : "AI"}
               </span>
               {message.text}
@@ -71,10 +71,10 @@ export function AIPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
-        <label className="block text-sm text-slate-300">
+        <label className="block text-sm text-slate-600">
           Сообщение
           <textarea
-            className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-400 focus:outline-none"
+            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 shadow-soft focus:border-birka-500 focus:outline-none focus:ring-2 focus:ring-birka-100"
             rows={3}
             placeholder="Например: какие статусы у последних заявок?"
             value={draft}

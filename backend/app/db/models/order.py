@@ -41,6 +41,8 @@ class OrderItem(Base):
     received_qty: Mapped[int] = mapped_column(Integer, default=0)
     packed_qty: Mapped[int] = mapped_column(Integer, default=0)
     defect_qty: Mapped[int] = mapped_column(Integer, default=0)
+    adjustment_qty: Mapped[int] = mapped_column(Integer, default=0)
+    adjustment_note: Mapped[str | None] = mapped_column(String(256))
 
     order = relationship("Order", back_populates="items")
     product = relationship("Product", back_populates="order_items")

@@ -1,14 +1,28 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../services/api";
 
 export function useWarehouse() {
+  const queryClient = useQueryClient();
   const completeReceiving = useMutation({
-    mutationFn: (payload: { order_id: number; items: { order_item_id: number; received_qty: number; defect_qty: number }[] }) =>
+    mutationFn: (payload: {
+      order_id: number;
+      items: {
+        order_item_id: number;
+        received_qty: number;
+        defect_qty: number;
+        adjustment_qty: number;
+        adjustment_note?: string;
+      }[];
+    }) =>
       apiClient.api("/warehouse/receiving/complete", {
         method: "POST",
         body: JSON.stringify(payload),
       }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["order-items"] });
+    },
   });
 
   const createPacking = useMutation({
@@ -28,6 +42,10 @@ export function useWarehouse() {
         method: "POST",
         body: JSON.stringify(payload),
       }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["order-items"] });
+    },
   });
 
   const validateBarcode = useMutation({

@@ -14,6 +14,7 @@ type ProductFormProps = {
     wb_article?: string;
     wb_url?: string;
     packing_instructions?: string;
+    supplier_name?: string;
   };
   isSubmitting?: boolean;
   submitLabel?: string;
@@ -26,6 +27,7 @@ type ProductFormProps = {
     wb_article?: string;
     wb_url?: string;
     packing_instructions?: string;
+    supplier_name?: string;
     photo?: File | null;
   }) => void;
 };
@@ -39,6 +41,7 @@ export function ProductForm({ initial, isSubmitting, submitLabel, onSubmit }: Pr
   const [article, setArticle] = useState("");
   const [wbUrl, setWbUrl] = useState("");
   const [packing, setPacking] = useState("");
+  const [supplier, setSupplier] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
   const [errors, setErrors] = useState<{ name?: string }>({});
 
@@ -51,6 +54,7 @@ export function ProductForm({ initial, isSubmitting, submitLabel, onSubmit }: Pr
     setArticle(initial?.wb_article ?? "");
     setWbUrl(initial?.wb_url ?? "");
     setPacking(initial?.packing_instructions ?? "");
+    setSupplier(initial?.supplier_name ?? "");
     setPhoto(null);
     setErrors({});
   }, [initial]);
@@ -74,6 +78,7 @@ export function ProductForm({ initial, isSubmitting, submitLabel, onSubmit }: Pr
           wb_article: article.trim() || undefined,
           wb_url: wbUrl.trim() || undefined,
           packing_instructions: packing.trim() || undefined,
+          supplier_name: supplier.trim() || undefined,
           photo,
         });
       }}
@@ -85,6 +90,11 @@ export function ProductForm({ initial, isSubmitting, submitLabel, onSubmit }: Pr
       <Input label="Баркод" value={barcode} onChange={(event) => setBarcode(event.target.value)} />
       <Input label="Артикул WB" value={article} onChange={(event) => setArticle(event.target.value)} />
       <Input label="Ссылка WB" value={wbUrl} onChange={(event) => setWbUrl(event.target.value)} />
+      <Input
+        label="Поставщик (для этикетки)"
+        value={supplier}
+        onChange={(event) => setSupplier(event.target.value)}
+      />
       <Input
         label="ТЗ на упаковку"
         value={packing}

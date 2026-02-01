@@ -30,6 +30,9 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
   const [materials, setMaterials] = useState("");
   const [time, setTime] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  const selected = items.find((item) => item.product_id === Number(productId));
 
   return (
     <form
@@ -64,7 +67,7 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
     >
       <Input label="ID сотрудника" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} />
       {items.length === 0 ? (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-200">
+        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-soft">
           В этой заявке нет позиций для упаковки.
         </div>
       ) : (
@@ -79,13 +82,34 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
           ))}
         </Select>
       )}
+      {selected ? (
+        <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+          <div>
+            ШК: {selected.barcode ?? "—"} · План: {selected.planned_qty} · Принято: {selected.received_qty}
+          </div>
+          <Button type="button" variant="ghost" onClick={() => setShowDetails((prev) => !prev)}>
+            {showDetails ? "Скрыть карточку товара" : "Показать карточку товара"}
+          </Button>
+          {showDetails ? (
+            <div className="space-y-1">
+              <div>Бренд: {selected.brand ?? "—"}</div>
+              <div>Размер: {selected.size ?? "—"}</div>
+              <div>Цвет: {selected.color ?? "—"}</div>
+              <div>Артикул WB: {selected.wb_article ?? "—"}</div>
+              <div>Ссылка WB: {selected.wb_url ?? "—"}</div>
+              <div>ТЗ: {selected.packing_instructions ?? "—"}</div>
+              <div>Поставщик: {selected.supplier_name ?? "—"}</div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <Input label="Номер паллеты" value={pallet} onChange={(e) => setPallet(e.target.value)} />
       <Input label="Номер короба" value={box} onChange={(e) => setBox(e.target.value)} />
       <Input label="Количество в коробе" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
       <Input label="Склад назначения" value={warehouse} onChange={(e) => setWarehouse(e.target.value)} />
       <Input label="Использованные материалы" value={materials} onChange={(e) => setMaterials(e.target.value)} />
       <Input label="Время упаковки (мин)" value={time} onChange={(e) => setTime(e.target.value)} />
-      {error ? <div className="text-sm text-rose-300">{error}</div> : null}
+      {error ? <div className="text-sm text-rose-500">{error}</div> : null}
       <Button type="submit" disabled={isSubmitting || items.length === 0}>
         Завершить упаковку
       </Button>

@@ -12,7 +12,7 @@ export function Pagination({ page, totalPages, onPageChange }: PaginationProps) 
   }
 
   return (
-    <div className="flex items-center justify-between gap-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+    <div className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-soft">
       <Button
         type="button"
         variant="ghost"
@@ -21,7 +21,7 @@ export function Pagination({ page, totalPages, onPageChange }: PaginationProps) 
       >
         Назад
       </Button>
-      <span className="text-xs text-slate-300">
+      <span className="text-xs text-slate-600">
         Страница {page} из {totalPages}
       </span>
       <Button

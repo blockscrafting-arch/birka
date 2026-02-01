@@ -12,14 +12,30 @@
 
 ## Деплой на Beget VPS
 
-1. Установить Docker + Docker Compose на VPS.
-2. Скопировать проект на сервер.
-3. Заполнить `.env` (Postgres, S3, OpenAI).
-4. Запустить:
+### Вручную
+
+1. На VPS: установить Docker и Docker Compose, клонировать репозиторий в каталог деплоя (например `/opt/birka`).
+2. В каталоге проекта создать `.env` (Postgres, S3, OpenAI, Telegram и т.д.).
+3. Запустить:
    ```bash
    docker compose -f docker-compose.prod.yml up --build -d
    ```
-5. Убедиться, что `nginx` проксирует `/api/` на backend.
+4. Nginx проксирует `/` на frontend, `/api/` на backend. Для HTTPS настроить certbot и пути к сертификатам в `docker/nginx.conf`.
+
+### Автодеплой через GitHub Actions
+
+При пуше в `main` (или по кнопке «Run workflow») workflow подключается по SSH к VPS и обновляет код и контейнеры.
+
+**Секреты репозитория (Settings → Secrets and variables → Actions):**
+
+| Секрет | Описание |
+|--------|----------|
+| `SSH_HOST` | IP или домен VPS |
+| `SSH_USER` | Пользователь для SSH |
+| `SSH_PRIVATE_KEY` | Приватный SSH-ключ (содержимое файла, без пароля) |
+| `DEPLOY_PATH` | Каталог с клоном репозитория на сервере, например `/opt/birka` |
+
+На сервере должны быть установлены Docker, Docker Compose и Git; репозиторий уже склонирован в `DEPLOY_PATH`, `.env` создан.
 
 ## Важные настройки
 

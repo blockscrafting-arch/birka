@@ -11,6 +11,7 @@ from app.db.models.product import Product
 from app.db.models.warehouse_employee import WarehouseEmployee
 from app.db.session import get_db
 from app.schemas.warehouse import BarcodeValidateRequest, PackingRecordCreate, ReceivingComplete
+from app.core.logging import logger
 from app.db.models.user import User
 
 router = APIRouter()
@@ -23,38 +24,50 @@ async def complete_receiving(
     current_user: User = Depends(require_roles("warehouse", "admin")),
 ) -> dict:
     """Complete receiving for order."""
-    result = await db.execute(select(Order).where(Order.id == payload.order_id))
-    order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    company_result = await db.execute(
-        select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
-    )
-    if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+    try:
+        result = await db.execute(select(Order).where(Order.id == payload.order_id))
+        order = result.scalar_one_or_none()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        company_result = await db.execute(select(Company).where(Company.id == order.company_id))
+        if not company_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Company not found")
 
-    total_received = 0
-    total_defect = 0
-    for item in payload.items:
-        item_result = await db.execute(select(OrderItem).where(OrderItem.id == item.order_item_id))
-        order_item = item_result.scalar_one_or_none()
-        if not order_item:
-            continue
-        order_item.received_qty = item.received_qty
-        order_item.defect_qty = item.defect_qty
-        total_received += item.received_qty
-        total_defect += item.defect_qty
+        total_received = 0
+        total_defect = 0
+        for item in payload.items:
+            if item.received_qty < 0 or item.defect_qty < 0 or item.adjustment_qty < 0:
+                raise HTTPException(status_code=400, detail="Invalid quantities")
+            if item.received_qty < item.defect_qty + item.adjustment_qty:
+                raise HTTPException(status_code=400, detail="Received quantity is меньше списаний/брака")
+            item_result = await db.execute(select(OrderItem).where(OrderItem.id == item.order_item_id))
+            order_item = item_result.scalar_one_or_none()
+            if not order_item:
+                continue
+            order_item.received_qty = item.received_qty
+            order_item.defect_qty = item.defect_qty
+            order_item.adjustment_qty = item.adjustment_qty
+            order_item.adjustment_note = item.adjustment_note
+            total_received += item.received_qty
+            total_defect += item.defect_qty
 
-        product_result = await db.execute(select(Product).where(Product.id == order_item.product_id))
-        product = product_result.scalar_one_or_none()
-        if product:
-            product.stock_quantity += max(item.received_qty - item.defect_qty, 0)
-            product.defect_quantity += item.defect_qty
+            product_result = await db.execute(select(Product).where(Product.id == order_item.product_id))
+            product = product_result.scalar_one_or_none()
+            if product:
+                net_received = item.received_qty - item.defect_qty - item.adjustment_qty
+                product.stock_quantity += max(net_received, 0)
+                product.defect_quantity += item.defect_qty
 
-    order.received_qty = total_received
-    order.status = "Принято"
-    await db.commit()
-    return {"received": total_received, "defects": total_defect}
+        order.received_qty = total_received
+        order.status = "Принято"
+        await db.commit()
+        return {"received": total_received, "defects": total_defect}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("receiving_complete_failed", order_id=payload.order_id, error=str(exc))
+        raise HTTPException(status_code=500, detail="Receiving completion failed")
 
 
 @router.post("/packing/record")
@@ -64,47 +77,52 @@ async def create_packing_record(
     current_user: User = Depends(require_roles("warehouse", "admin")),
 ) -> dict:
     """Create packing record."""
-    employee_result = await db.execute(
-        select(WarehouseEmployee).where(WarehouseEmployee.employee_code == payload.employee_code)
-    )
-    employee = employee_result.scalar_one_or_none()
-    if not employee:
-        raise HTTPException(status_code=404, detail="Employee not found")
+    try:
+        employee_result = await db.execute(
+            select(WarehouseEmployee).where(WarehouseEmployee.employee_code == payload.employee_code)
+        )
+        employee = employee_result.scalar_one_or_none()
+        if not employee:
+            raise HTTPException(status_code=404, detail="Employee not found")
 
-    order_result = await db.execute(select(Order).where(Order.id == payload.order_id))
-    order = order_result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    company_result = await db.execute(
-        select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
-    )
-    if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        order_result = await db.execute(select(Order).where(Order.id == payload.order_id))
+        order = order_result.scalar_one_or_none()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        company_result = await db.execute(select(Company).where(Company.id == order.company_id))
+        if not company_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Company not found")
 
-    record = PackingRecord(
-        order_id=payload.order_id,
-        product_id=payload.product_id,
-        employee_id=employee.id,
-        pallet_number=payload.pallet_number,
-        box_number=payload.box_number,
-        quantity=payload.quantity,
-        warehouse=payload.warehouse,
-        box_barcode=payload.box_barcode,
-        materials_used=payload.materials_used,
-        time_spent_minutes=payload.time_spent_minutes,
-    )
-    db.add(record)
+        record = PackingRecord(
+            order_id=payload.order_id,
+            product_id=payload.product_id,
+            employee_id=employee.id,
+            pallet_number=payload.pallet_number,
+            box_number=payload.box_number,
+            quantity=payload.quantity,
+            warehouse=payload.warehouse,
+            box_barcode=payload.box_barcode,
+            materials_used=payload.materials_used,
+            time_spent_minutes=payload.time_spent_minutes,
+        )
+        db.add(record)
 
-    order.packed_qty += payload.quantity
-    order.status = "Готово к отгрузке"
+        order.packed_qty += payload.quantity
+        order.status = "Готово к отгрузке"
 
-    product_result = await db.execute(select(Product).where(Product.id == payload.product_id))
-    product = product_result.scalar_one_or_none()
-    if product:
-        product.stock_quantity = max(product.stock_quantity - payload.quantity, 0)
+        product_result = await db.execute(select(Product).where(Product.id == payload.product_id))
+        product = product_result.scalar_one_or_none()
+        if product:
+            product.stock_quantity = max(product.stock_quantity - payload.quantity, 0)
 
-    await db.commit()
-    return {"status": "ok"}
+        await db.commit()
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("packing_record_failed", order_id=payload.order_id, error=str(exc))
+        raise HTTPException(status_code=500, detail="Packing record failed")
 
 
 @router.post("/barcode/validate")
@@ -114,13 +132,15 @@ async def validate_barcode(
     current_user: User = Depends(require_roles("warehouse", "admin")),
 ) -> dict:
     """Validate barcode against products."""
-    result = await db.execute(select(Product).where(Product.barcode == payload.barcode))
-    product = result.scalar_one_or_none()
-    if not product:
-        return {"valid": False, "message": "ШК не найден"}
-    company_result = await db.execute(
-        select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
-    )
-    if not company_result.scalar_one_or_none():
-        return {"valid": False, "message": "ШК не найден"}
-    return {"valid": True, "message": f"ШК найден: {product.name}"}
+    try:
+        result = await db.execute(select(Product).where(Product.barcode == payload.barcode))
+        product = result.scalar_one_or_none()
+        if not product:
+            return {"valid": False, "message": "ШК не найден"}
+        company_result = await db.execute(select(Company).where(Company.id == product.company_id))
+        if not company_result.scalar_one_or_none():
+            return {"valid": False, "message": "ШК не найден"}
+        return {"valid": True, "message": f"ШК найден: {product.name}"}
+    except Exception as exc:
+        logger.exception("barcode_validate_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail="Barcode validation failed")

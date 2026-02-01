@@ -20,17 +20,22 @@ type ProductCreate = {
   wb_article?: string;
   wb_url?: string;
   packing_instructions?: string;
+  supplier_name?: string;
 };
 
 type ProductUpdate = Partial<Omit<ProductCreate, "company_id">> & { id: number };
 
-export function useProducts(companyId?: number, page = 1, limit = 20) {
+export function useProducts(companyId?: number, page = 1, limit = 20, search?: string) {
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: ["products", companyId, page, limit],
-    queryFn: () =>
-      apiClient.api<Paginated<Product>>(`/products?company_id=${companyId}&page=${page}&limit=${limit}`),
+    queryKey: ["products", companyId, page, limit, search],
+    queryFn: () => {
+      const searchParam = search ? `&search=${encodeURIComponent(search)}` : "";
+      return apiClient.api<Paginated<Product>>(
+        `/products?company_id=${companyId}&page=${page}&limit=${limit}${searchParam}`
+      );
+    },
     enabled: Boolean(companyId),
   });
 

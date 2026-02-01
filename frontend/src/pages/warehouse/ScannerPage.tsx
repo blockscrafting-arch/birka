@@ -30,11 +30,11 @@ export function ScannerPage() {
         />
       ) : null}
       {result ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-200">
+        <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-soft">
           Результат: {result}
         </div>
       ) : null}
-      {message ? <div className="text-xs text-slate-400">{message}</div> : null}
+      {message ? <div className="text-xs text-slate-500">{message}</div> : null}
     </div>
   );
 }

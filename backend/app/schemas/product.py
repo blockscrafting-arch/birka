@@ -14,6 +14,7 @@ class ProductCreate(BaseModel):
     wb_article: str | None = None
     wb_url: str | None = None
     packing_instructions: str | None = None
+    supplier_name: str | None = None
 
 
 class ProductUpdate(BaseModel):
@@ -27,6 +28,7 @@ class ProductUpdate(BaseModel):
     wb_article: str | None = None
     wb_url: str | None = None
     packing_instructions: str | None = None
+    supplier_name: str | None = None
 
 
 class ProductOut(BaseModel):
@@ -42,6 +44,7 @@ class ProductOut(BaseModel):
     wb_article: str | None
     wb_url: str | None
     packing_instructions: str | None
+    supplier_name: str | None
     stock_quantity: int
     defect_quantity: int
 

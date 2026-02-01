@@ -6,6 +6,7 @@ from app.db.models.order_photo import OrderPhoto
 from app.db.models.packing_record import PackingRecord
 from app.db.models.product import Product, ProductPhoto
 from app.db.models.session import Session
+from app.db.models.shipment_request import ShipmentRequest
 from app.db.models.user import User
 from app.db.models.warehouse_employee import WarehouseEmployee
 
@@ -19,6 +20,7 @@ __all__ = [
     "Product",
     "ProductPhoto",
     "Session",
+    "ShipmentRequest",
     "User",
     "WarehouseEmployee",
 ]

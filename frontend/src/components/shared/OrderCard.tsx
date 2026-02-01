@@ -4,9 +4,10 @@ type OrderCardProps = {
   title: string;
   status: "На приемке" | "Принято" | "Упаковка" | "Готово к отгрузке" | "Завершено";
   onClick?: () => void;
+  photoCount?: number;
 };
 
-export function OrderCard({ title, status, onClick }: OrderCardProps) {
+export function OrderCard({ title, status, onClick, photoCount }: OrderCardProps) {
   return (
     <button
       type="button"
@@ -17,6 +18,7 @@ export function OrderCard({ title, status, onClick }: OrderCardProps) {
         <div className="text-sm font-semibold text-slate-100">{title}</div>
         <StatusBadge status={status} />
       </div>
+      {photoCount ? <div className="mt-1 text-xs text-slate-400">Фото: {photoCount}</div> : null}
     </button>
   );
 }

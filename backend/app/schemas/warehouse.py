@@ -8,6 +8,8 @@ class ReceivingItem(BaseModel):
     order_item_id: int
     received_qty: int
     defect_qty: int = 0
+    adjustment_qty: int = 0
+    adjustment_note: str | None = None
 
 
 class ReceivingComplete(BaseModel):

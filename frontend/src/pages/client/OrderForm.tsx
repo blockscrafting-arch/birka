@@ -61,14 +61,14 @@ export function OrderForm({ products, isSubmitting, onSubmit }: OrderFormProps) 
       <Input label="Адрес/назначение" value={destination} onChange={(e) => setDestination(e.target.value)} />
 
       {products.length === 0 ? (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-200">
+        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-soft">
           Сначала добавьте товары, чтобы создавать заявки.
         </div>
       ) : null}
 
       <div className="space-y-2">
         {items.map((item, index) => (
-          <div key={`item-${index}`} className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+          <div key={`item-${index}`} className="rounded-lg border border-slate-200 bg-white p-3 shadow-soft">
             <Select
               label="Товар"
               value={item.productId}
@@ -79,7 +79,7 @@ export function OrderForm({ products, isSubmitting, onSubmit }: OrderFormProps) 
               </option>
               {products.map((product) => (
                 <option key={product.id} value={product.id}>
-                  {product.name}
+                  {product.name} {product.barcode ? `(${product.barcode})` : ""}
                 </option>
               ))}
             </Select>
@@ -102,7 +102,7 @@ export function OrderForm({ products, isSubmitting, onSubmit }: OrderFormProps) 
         Добавить позицию
       </Button>
 
-      {error ? <div className="text-sm text-rose-300">{error}</div> : null}
+      {error ? <div className="text-sm text-rose-500">{error}</div> : null}
       <Button type="submit" disabled={isSubmitting || products.length === 0}>
         Создать заявку
       </Button>

@@ -12,10 +12,12 @@ import { OrdersPage } from "./pages/client/OrdersPage";
 import { ProductsPage } from "./pages/client/ProductsPage";
 import { OrderDetail } from "./pages/client/OrderDetail";
 import { AIPage } from "./pages/client/AIPage";
+import { ShippingPage } from "./pages/client/ShippingPage";
 import { PrintPage } from "./pages/warehouse/PrintPage";
 import { ReceivingPage } from "./pages/warehouse/ReceivingPage";
 import { PackingPage } from "./pages/warehouse/PackingPage";
 import { ScannerPage } from "./pages/warehouse/ScannerPage";
+import { ShippingPage as WarehouseShippingPage } from "./pages/warehouse/ShippingPage";
 
 export default function App() {
   const { webApp } = useTelegram();
@@ -42,7 +44,7 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div className="min-h-screen bg-slate-950 p-4">
+      <div className="min-h-screen bg-slate-50 p-4">
         <Loader text="Подключение к Telegram..." />
       </div>
     );
@@ -63,10 +65,12 @@ export default function App() {
           <Route path="/client/orders" element={<OrdersPage />} />
           <Route path="/client/orders/:orderId" element={<OrderDetail />} />
           <Route path="/client/ai" element={<AIPage />} />
+          <Route path="/client/shipping" element={<ShippingPage />} />
           <Route path="/warehouse/print" element={<PrintPage />} />
           <Route path="/warehouse/receiving" element={<ReceivingPage />} />
           <Route path="/warehouse/packing" element={<PackingPage />} />
           <Route path="/warehouse/scanner" element={<ScannerPage />} />
+          <Route path="/warehouse/shipping" element={<WarehouseShippingPage />} />
         </Routes>
       </Page>
     </BrowserRouter>

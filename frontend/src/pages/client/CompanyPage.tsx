@@ -58,8 +58,10 @@ export function CompanyPage() {
       link.download = filename ?? `contract_${companyId}.pdf`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setToast({ message: "Договор скачан" });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Не удалось скачать договор");
+      setToast({ message: "Не удалось скачать договор", variant: "error" });
     } finally {
       setBusyId(null);
     }
@@ -72,7 +74,7 @@ export function CompanyPage() {
         <Button variant="primary" onClick={() => setOpen(true)}>
           Добавить компанию
         </Button>
-        {pageError ? <div className="text-sm text-rose-300">{pageError}</div> : null}
+        {pageError ? <div className="text-sm text-rose-500">{pageError}</div> : null}
       </div>
 
       {isLoading ? (
@@ -81,18 +83,18 @@ export function CompanyPage() {
           <Skeleton className="h-20" />
         </div>
       ) : null}
-      {error ? <div className="text-sm text-rose-300">Не удалось загрузить компании</div> : null}
+      {error ? <div className="text-sm text-rose-500">Не удалось загрузить компании</div> : null}
       {!isLoading && companies.length === 0 ? (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-200">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
           Пока нет компаний. Добавьте первую, чтобы начать работу.
         </div>
       ) : null}
 
       <div className="space-y-3">
         {companies.map((company) => (
-          <div key={company.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
-            <div className="text-base font-semibold text-slate-100">{company.name}</div>
-            <div className="mt-1 text-xs text-slate-400">ИНН: {company.inn}</div>
+          <div key={company.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
+            <div className="text-base font-semibold text-slate-900">{company.name}</div>
+            <div className="mt-1 text-xs text-slate-500">ИНН: {company.inn}</div>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => setEditing(company)}>
                 Редактировать

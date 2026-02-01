@@ -2,11 +2,13 @@ import { useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
 
 import { PhotoGallery } from "../../components/shared/PhotoGallery";
+import { PhotoUpload } from "../../components/shared/PhotoUpload";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
 import { useOrders } from "../../hooks/useOrders";
 import { useOrderItems } from "../../hooks/useOrderItems";
+import { useOrderPhotos } from "../../hooks/useOrderPhotos";
 
 export function OrderDetail() {
   const { orderId } = useParams();
@@ -16,6 +18,7 @@ export function OrderDetail() {
   const { items: orders } = useOrders(activeCompanyId ?? undefined, 1, 200);
   const order = useMemo(() => orders.find((item) => item.id === Number(orderId)), [orders, orderId]);
   const { data: items = [] } = useOrderItems(order?.id);
+  const { data: photos = [], upload } = useOrderPhotos(order?.id);
 
   useEffect(() => {
     if (!companyId && companies.length > 0) {
@@ -25,7 +28,7 @@ export function OrderDetail() {
 
   if (!order) {
     return (
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-200">
+      <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
         Заявка не найдена или недоступна.
       </div>
     );
@@ -33,26 +36,29 @@ export function OrderDetail() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
         <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold text-slate-100">{order.order_number}</div>
+          <div className="text-sm font-semibold text-slate-900">{order.order_number}</div>
           <StatusBadge status={order.status} />
         </div>
-        <div className="mt-2 text-xs text-slate-400">
+        <div className="mt-2 text-xs text-slate-500">
           План: {order.planned_qty} · Принято: {order.received_qty} · Упаковано: {order.packed_qty}
         </div>
+        {order.destination ? (
+          <div className="mt-1 text-xs text-slate-500">Назначение: {order.destination}</div>
+        ) : null}
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
-        <div className="text-sm font-semibold text-slate-100">Позиции</div>
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
+        <div className="text-sm font-semibold text-slate-900">Позиции</div>
         {items.length === 0 ? (
-          <div className="mt-2 text-sm text-slate-300">Позиции пока не добавлены.</div>
+          <div className="mt-2 text-sm text-slate-600">Позиции пока не добавлены.</div>
         ) : (
-          <div className="mt-2 space-y-2 text-sm text-slate-300">
+          <div className="mt-2 space-y-2 text-sm text-slate-700">
             {items.map((item) => (
-              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
                 <span>{item.product_name}</span>
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-500">
                   План: {item.planned_qty} · Принято: {item.received_qty} · Брак: {item.defect_qty}
                 </span>
               </div>
@@ -61,10 +67,19 @@ export function OrderDetail() {
         )}
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
-        <div className="text-sm font-semibold text-slate-100">Фото</div>
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
+        <div className="text-sm font-semibold text-slate-900">Фото</div>
         <div className="mt-2">
-          <PhotoGallery photos={[]} />
+          <PhotoGallery photos={photos.map((photo) => photo.url)} />
+        </div>
+        <div className="mt-3">
+          <PhotoUpload
+            label="Добавить фото к заявке"
+            onFileChange={(file) => {
+              if (!order) return;
+              upload.mutate({ orderId: order.id, file, photo_type: "order" });
+            }}
+          />
         </div>
       </div>
     </div>

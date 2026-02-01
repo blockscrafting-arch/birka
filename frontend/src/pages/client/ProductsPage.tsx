@@ -11,6 +11,7 @@ import { Toast } from "../../components/ui/Toast";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
 import { useProducts } from "../../hooks/useProducts";
+import { useProductDefectPhotos } from "../../hooks/useProductDefectPhotos";
 import { apiClient } from "../../services/api";
 import { Product } from "../../types";
 import { ProductForm } from "./ProductForm";
@@ -19,19 +20,24 @@ export function ProductsPage() {
   const { items: companies = [] } = useCompanies();
   const { companyId, setCompanyId } = useActiveCompany();
   const activeCompanyId = companyId ?? companies[0]?.id ?? null;
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const limit = 20;
   const { items, total, isLoading, error, create, update, uploadPhoto, importExcel } = useProducts(
     activeCompanyId ?? undefined,
     page,
-    limit
+    limit,
+    search
   );
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
-  const [query, setQuery] = useState("");
+  const [defectProduct, setDefectProduct] = useState<Product | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
+  const { data: defectPhotos = [], isLoading: defectLoading } = useProductDefectPhotos(defectProduct?.id);
 
   useEffect(() => {
     if (!companyId && companies.length > 0) {
@@ -43,21 +49,23 @@ export function ProductsPage() {
     setPage(1);
   }, [activeCompanyId]);
 
+  useEffect(() => {
+    const handler = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(handler);
+  }, [searchInput]);
+
   if (companies.length === 0) {
     return (
-      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-200">
+      <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
         Сначала добавьте компанию, чтобы управлять товарами.
       </div>
     );
   }
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
-  const filtered = items.filter((product) => {
-    const term = query.trim().toLowerCase();
-    if (!term) return true;
-    return product.name.toLowerCase().includes(term) || product.barcode?.includes(term);
-  });
-
   const handleCreate = async (payload: {
     name: string;
     brand?: string;
@@ -67,6 +75,7 @@ export function ProductsPage() {
     wb_article?: string;
     wb_url?: string;
     packing_instructions?: string;
+    supplier_name?: string;
     photo?: File | null;
   }) => {
     if (!activeCompanyId) return;
@@ -94,6 +103,7 @@ export function ProductsPage() {
     wb_article?: string;
     wb_url?: string;
     packing_instructions?: string;
+    supplier_name?: string;
     photo?: File | null;
   }) => {
     if (!editing) return;
@@ -115,8 +125,8 @@ export function ProductsPage() {
     if (!activeCompanyId) return;
     setPageError(null);
     try {
-      await importExcel.mutateAsync({ companyId: activeCompanyId, file });
-      setToast({ message: "Импорт завершён" });
+      const result = await importExcel.mutateAsync({ companyId: activeCompanyId, file });
+      setToast({ message: `Импорт завершён: ${result.imported}` });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Ошибка импорта");
     }
@@ -125,6 +135,11 @@ export function ProductsPage() {
   const handleExport = async () => {
     if (!activeCompanyId) return;
     setPageError(null);
+    if (total === 0) {
+      setToast({ message: "Нет товаров для экспорта", variant: "error" });
+      return;
+    }
+    setExporting(true);
     try {
       const { blob, filename } = await apiClient.apiFile(`/products/export?company_id=${activeCompanyId}`);
       const url = URL.createObjectURL(blob);
@@ -136,6 +151,8 @@ export function ProductsPage() {
       setToast({ message: "Файл экспорта скачан" });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Ошибка экспорта");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -146,11 +163,30 @@ export function ProductsPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => setOpen(true)}>Добавить товар</Button>
-        <Button variant="secondary" onClick={() => importRef.current?.click()}>
-          Импорт Excel
+        <Button variant="secondary" onClick={() => importRef.current?.click()} disabled={importExcel.isPending}>
+          {importExcel.isPending ? "Импортирую..." : "Импорт Excel"}
         </Button>
-        <Button variant="ghost" onClick={handleExport}>
-          Экспорт Excel
+        <Button
+          variant="secondary"
+          onClick={async () => {
+            setPageError(null);
+            try {
+              const { blob, filename } = await apiClient.apiFile("/products/template");
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement("a");
+              link.href = url;
+              link.download = filename ?? "products_template.xlsx";
+              link.click();
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+            } catch (err) {
+              setPageError(err instanceof Error ? err.message : "Ошибка скачивания шаблона");
+            }
+          }}
+        >
+          Скачать шаблон
+        </Button>
+        <Button variant="ghost" onClick={handleExport} disabled={exporting}>
+          {exporting ? "Экспортирую..." : "Экспорт Excel"}
         </Button>
         <input
           ref={importRef}
@@ -170,26 +206,26 @@ export function ProductsPage() {
       <Input
         label="Поиск"
         placeholder="Название или штрихкод"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        value={searchInput}
+        onChange={(event) => setSearchInput(event.target.value)}
       />
 
-      {pageError ? <div className="text-sm text-rose-300">{pageError}</div> : null}
+      {pageError ? <div className="text-sm text-rose-500">{pageError}</div> : null}
       {isLoading ? (
         <div className="space-y-2">
           <Skeleton className="h-20" />
           <Skeleton className="h-20" />
         </div>
       ) : null}
-      {error ? <div className="text-sm text-rose-300">Не удалось загрузить товары</div> : null}
-      {!isLoading && filtered.length === 0 ? (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-200">
+      {error ? <div className="text-sm text-rose-500">Не удалось загрузить товары</div> : null}
+      {!isLoading && items.length === 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
           Нет товаров для выбранной компании.
         </div>
       ) : null}
 
       <div className="space-y-3">
-        {filtered.map((product) => (
+        {items.map((product) => (
           <ProductCard
             key={product.id}
             name={product.name}
@@ -197,6 +233,7 @@ export function ProductsPage() {
             stock={product.stock_quantity}
             defect={product.defect_quantity}
             onClick={() => setEditing(product)}
+            onShowDefects={() => setDefectProduct(product)}
           />
         ))}
       </div>
@@ -213,6 +250,24 @@ export function ProductsPage() {
           onSubmit={handleUpdate}
           submitLabel="Сохранить"
         />
+      </Modal>
+
+      <Modal title="Фото брака" open={Boolean(defectProduct)} onClose={() => setDefectProduct(null)}>
+        {defectLoading ? (
+          <div className="text-sm text-slate-600">Загрузка фото...</div>
+        ) : (
+          <div className="space-y-2">
+            {defectPhotos.length === 0 ? (
+              <div className="text-sm text-slate-600">Фото брака не найдено.</div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {defectPhotos.map((url) => (
+                  <img key={url} src={url} alt="defect" className="h-24 w-full rounded-xl object-cover" />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );
