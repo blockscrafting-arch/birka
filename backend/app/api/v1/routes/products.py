@@ -2,17 +2,17 @@
 from datetime import datetime
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
 from app.db.models.company import Company
 from app.db.models.product import Product, ProductPhoto
 from app.db.session import get_db
-from app.schemas.product import ProductCreate, ProductOut, ProductUpdate
+from app.schemas.product import ProductCreate, ProductList, ProductOut, ProductUpdate
 from app.services.excel import export_products, parse_products_excel
 from app.services.pdf import LabelData, render_label_pdf
 from app.services.s3 import S3Service
@@ -41,20 +41,27 @@ async def create_product(
     return product
 
 
-@router.get("", response_model=list[ProductOut])
+@router.get("", response_model=ProductList)
 async def list_products(
     company_id: int,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[ProductOut]:
-    """List products by company."""
+) -> ProductList:
+    """List products by company with pagination."""
     company_result = await db.execute(
         select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
     )
     if not company_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Company not found")
-    result = await db.execute(select(Product).where(Product.company_id == company_id))
-    return list(result.scalars().all())
+    base_query = select(Product).where(Product.company_id == company_id)
+    total_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
+    total = int(total_result.scalar_one())
+    offset = (page - 1) * limit
+    result = await db.execute(base_query.offset(offset).limit(limit))
+    items = list(result.scalars().all())
+    return ProductList(items=items, total=total, page=page, limit=limit)
 
 
 @router.patch("/{product_id}", response_model=ProductOut)

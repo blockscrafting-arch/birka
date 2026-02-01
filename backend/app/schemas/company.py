@@ -36,3 +36,12 @@ class CompanyOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CompanyList(BaseModel):
+    """Paginated company list."""
+
+    items: list[CompanyOut]
+    total: int
+    page: int
+    limit: int

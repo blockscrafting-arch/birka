@@ -5,6 +5,7 @@ import { ProductCard } from "../../components/shared/ProductCard";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
+import { Pagination } from "../../components/ui/Pagination";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { Toast } from "../../components/ui/Toast";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
@@ -15,11 +16,15 @@ import { Product } from "../../types";
 import { ProductForm } from "./ProductForm";
 
 export function ProductsPage() {
-  const { data: companies = [] } = useCompanies();
+  const { items: companies = [] } = useCompanies();
   const { companyId, setCompanyId } = useActiveCompany();
   const activeCompanyId = companyId ?? companies[0]?.id ?? null;
-  const { data, isLoading, error, create, update, uploadPhoto, importExcel } = useProducts(
+  const [page, setPage] = useState(1);
+  const limit = 20;
+  const { items, total, isLoading, error, create, update, uploadPhoto, importExcel } = useProducts(
     activeCompanyId ?? undefined,
+    page,
+    limit
   );
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -34,6 +39,10 @@ export function ProductsPage() {
     }
   }, [companies, companyId, setCompanyId]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [activeCompanyId]);
+
   if (companies.length === 0) {
     return (
       <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-200">
@@ -42,8 +51,8 @@ export function ProductsPage() {
     );
   }
 
-  const products = data ?? [];
-  const filtered = products.filter((product) => {
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const filtered = items.filter((product) => {
     const term = query.trim().toLowerCase();
     if (!term) return true;
     return product.name.toLowerCase().includes(term) || product.barcode?.includes(term);
@@ -69,6 +78,7 @@ export function ProductsPage() {
         await uploadPhoto.mutateAsync({ productId: created.id, file: photo });
       }
       setOpen(false);
+      setPage(1);
       setToast({ message: "Товар создан" });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Не удалось создать товар");
@@ -190,6 +200,7 @@ export function ProductsPage() {
           />
         ))}
       </div>
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
       <Modal title="Новый товар" open={open} onClose={() => setOpen(false)}>
         <ProductForm isSubmitting={create.isPending} onSubmit={handleCreate} submitLabel="Создать" />

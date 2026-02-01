@@ -5,6 +5,7 @@ import { CompanySelect } from "../../components/shared/CompanySelect";
 import { OrderCard } from "../../components/shared/OrderCard";
 import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
+import { Pagination } from "../../components/ui/Pagination";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { Toast } from "../../components/ui/Toast";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
@@ -15,11 +16,13 @@ import { OrderForm } from "./OrderForm";
 
 export function OrdersPage() {
   const navigate = useNavigate();
-  const { data: companies = [] } = useCompanies();
+  const { items: companies = [] } = useCompanies();
   const { companyId, setCompanyId } = useActiveCompany();
   const activeCompanyId = companyId ?? companies[0]?.id ?? null;
-  const { data, isLoading, error, create } = useOrders(activeCompanyId ?? undefined);
-  const { data: products = [] } = useProducts(activeCompanyId ?? undefined);
+  const [page, setPage] = useState(1);
+  const limit = 20;
+  const { items, total, isLoading, error, create } = useOrders(activeCompanyId ?? undefined, page, limit);
+  const { items: products = [] } = useProducts(activeCompanyId ?? undefined, 1, 200);
   const [open, setOpen] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
@@ -30,6 +33,10 @@ export function OrdersPage() {
     }
   }, [companies, companyId, setCompanyId]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [activeCompanyId]);
+
   if (companies.length === 0) {
     return (
       <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-200">
@@ -38,7 +45,8 @@ export function OrdersPage() {
     );
   }
 
-  const orders = data ?? [];
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const orders = items;
 
   const handleCreate = async (payload: { destination?: string; items: { product_id: number; planned_qty: number }[] }) => {
     if (!activeCompanyId) return;
@@ -46,6 +54,7 @@ export function OrdersPage() {
     try {
       await create.mutateAsync({ company_id: activeCompanyId, ...payload });
       setOpen(false);
+      setPage(1);
       setToast({ message: "Заявка создана" });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Не удалось создать заявку");
@@ -84,6 +93,7 @@ export function OrdersPage() {
           />
         ))}
       </div>
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
       <Modal title="Новая заявка" open={open} onClose={() => setOpen(false)}>
         <OrderForm products={products} isSubmitting={create.isPending} onSubmit={handleCreate} />

@@ -39,6 +39,15 @@ class OrderOut(BaseModel):
         from_attributes = True
 
 
+class OrderList(BaseModel):
+    """Paginated order list."""
+
+    items: list[OrderOut]
+    total: int
+    page: int
+    limit: int
+
+
 class OrderItemOut(BaseModel):
     """Order item response with product info."""
 

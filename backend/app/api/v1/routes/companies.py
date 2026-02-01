@@ -1,6 +1,6 @@
 """Company endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.company import Company
@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 
 from app.api.v1.deps import get_current_user
 from app.db.models.user import User
-from app.schemas.company import CompanyCreate, CompanyOut, CompanyUpdate
+from app.schemas.company import CompanyCreate, CompanyList, CompanyOut, CompanyUpdate
 from app.services.dadata import fetch_company_by_inn
 from app.services.pdf import ContractData, render_contract_pdf
 
@@ -44,14 +44,21 @@ async def create_company(
     return company
 
 
-@router.get("", response_model=list[CompanyOut])
+@router.get("", response_model=CompanyList)
 async def list_companies(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[CompanyOut]:
-    """List companies for a user."""
-    result = await db.execute(select(Company).where(Company.user_id == current_user.id))
-    return list(result.scalars().all())
+) -> CompanyList:
+    """List companies for a user with pagination."""
+    base_query = select(Company).where(Company.user_id == current_user.id)
+    total_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
+    total = int(total_result.scalar_one())
+    offset = (page - 1) * limit
+    result = await db.execute(base_query.offset(offset).limit(limit))
+    items = list(result.scalars().all())
+    return CompanyList(items=items, total=total, page=page, limit=limit)
 
 
 @router.patch("/{company_id}", response_model=CompanyOut)

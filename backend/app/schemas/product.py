@@ -47,3 +47,12 @@ class ProductOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ProductList(BaseModel):
+    """Paginated product list."""
+
+    items: list[ProductOut]
+    total: int
+    page: int
+    limit: int

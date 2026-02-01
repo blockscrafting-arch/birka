@@ -2,7 +2,7 @@
 from datetime import date, datetime
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +14,7 @@ from app.db.models.order_counter import OrderCounter
 from app.db.models.order_photo import OrderPhoto
 from app.db.models.product import Product
 from app.db.session import get_db
-from app.schemas.order import OrderCreate, OrderItemOut, OrderOut, OrderStatusUpdate
+from app.schemas.order import OrderCreate, OrderItemOut, OrderList, OrderOut, OrderStatusUpdate
 from app.services.s3 import S3Service
 from app.core.config import settings
 from app.db.models.user import User
@@ -73,20 +73,27 @@ async def create_order(
     return order
 
 
-@router.get("", response_model=list[OrderOut])
+@router.get("", response_model=OrderList)
 async def list_orders(
     company_id: int,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[OrderOut]:
-    """List orders by company."""
+) -> OrderList:
+    """List orders by company with pagination."""
     company_result = await db.execute(
         select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
     )
     if not company_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Company not found")
-    result = await db.execute(select(Order).where(Order.company_id == company_id))
-    return list(result.scalars().all())
+    base_query = select(Order).where(Order.company_id == company_id)
+    total_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
+    total = int(total_result.scalar_one())
+    offset = (page - 1) * limit
+    result = await db.execute(base_query.offset(offset).limit(limit))
+    items = list(result.scalars().all())
+    return OrderList(items=items, total=total, page=page, limit=limit)
 
 
 @router.get("/{order_id}/items", response_model=list[OrderItemOut])

@@ -9,10 +9,10 @@ import { useProducts } from "../../hooks/useProducts";
 import { apiClient } from "../../services/api";
 
 export function PrintPage() {
-  const { data: companies = [] } = useCompanies();
+  const { items: companies = [] } = useCompanies();
   const { companyId, setCompanyId } = useActiveCompany();
   const activeCompanyId = companyId ?? companies[0]?.id ?? null;
-  const { data: products = [], isLoading } = useProducts(activeCompanyId ?? undefined);
+  const { items: products = [], isLoading } = useProducts(activeCompanyId ?? undefined, 1, 200);
   const [query, setQuery] = useState("");
   const [pageError, setPageError] = useState<string | null>(null);
 

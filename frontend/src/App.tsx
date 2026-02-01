@@ -11,6 +11,7 @@ import { CompanyPage } from "./pages/client/CompanyPage";
 import { OrdersPage } from "./pages/client/OrdersPage";
 import { ProductsPage } from "./pages/client/ProductsPage";
 import { OrderDetail } from "./pages/client/OrderDetail";
+import { AIPage } from "./pages/client/AIPage";
 import { PrintPage } from "./pages/warehouse/PrintPage";
 import { ReceivingPage } from "./pages/warehouse/ReceivingPage";
 import { PackingPage } from "./pages/warehouse/PackingPage";
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="/client/products" element={<ProductsPage />} />
           <Route path="/client/orders" element={<OrdersPage />} />
           <Route path="/client/orders/:orderId" element={<OrderDetail />} />
+          <Route path="/client/ai" element={<AIPage />} />
           <Route path="/warehouse/print" element={<PrintPage />} />
           <Route path="/warehouse/receiving" element={<ReceivingPage />} />
           <Route path="/warehouse/packing" element={<PackingPage />} />

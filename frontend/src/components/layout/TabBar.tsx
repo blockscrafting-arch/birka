@@ -9,6 +9,7 @@ const clientTabs = [
   { to: "/client/company", label: "Компании" },
   { to: "/client/products", label: "Товары" },
   { to: "/client/orders", label: "Заявки" },
+  { to: "/client/ai", label: "AI-помощник" },
 ];
 
 const warehouseTabs = [

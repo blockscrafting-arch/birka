@@ -5,25 +5,30 @@ import { apiClient } from "../../services/api";
 import { Company } from "../../types";
 import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
+import { Pagination } from "../../components/ui/Pagination";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { Toast } from "../../components/ui/Toast";
 import { CompanyForm } from "./CompanyForm";
 
 export function CompanyPage() {
-  const { data, isLoading, error, create, update } = useCompanies();
+  const [page, setPage] = useState(1);
+  const limit = 20;
+  const { items, total, isLoading, error, create, update } = useCompanies(page, limit);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Company | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
 
-  const companies = data ?? [];
+  const companies = items;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
 
   const handleCreate = async (payload: { inn: string; name?: string; bank_bik?: string; bank_account?: string }) => {
     setPageError(null);
     try {
       await create.mutateAsync(payload);
       setOpen(false);
+      setPage(1);
       setToast({ message: "Компания создана" });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Не удалось создать компанию");
@@ -103,6 +108,7 @@ export function CompanyPage() {
           </div>
         ))}
       </div>
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
       <Modal title="Новая компания" open={open} onClose={() => setOpen(false)}>
         <CompanyForm isSubmitting={create.isPending} onSubmit={handleCreate} submitLabel="Создать" />
@@ -110,7 +116,16 @@ export function CompanyPage() {
 
       <Modal title="Редактирование компании" open={Boolean(editing)} onClose={() => setEditing(null)}>
         <CompanyForm
-          initial={editing ? { inn: editing.inn, name: editing.name } : undefined}
+          initial={
+            editing
+              ? {
+                  inn: editing.inn,
+                  name: editing.name,
+                  bank_bik: editing.bank_bik ?? undefined,
+                  bank_account: editing.bank_account ?? undefined,
+                }
+              : undefined
+          }
           isSubmitting={update.isPending}
           onSubmit={handleUpdate}
           submitLabel="Сохранить"

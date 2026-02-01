@@ -20,6 +20,7 @@ export function CompanyForm({ initial, isSubmitting, submitLabel, onSubmit }: Co
   const [name, setName] = useState("");
   const [bik, setBik] = useState("");
   const [account, setAccount] = useState("");
+  const [showBankDetails, setShowBankDetails] = useState(false);
   const [errors, setErrors] = useState<{ inn?: string; name?: string; bank_bik?: string; bank_account?: string }>({});
 
   useEffect(() => {
@@ -27,6 +28,7 @@ export function CompanyForm({ initial, isSubmitting, submitLabel, onSubmit }: Co
     setName(initial?.name ?? "");
     setBik(initial?.bank_bik ?? "");
     setAccount(initial?.bank_account ?? "");
+    setShowBankDetails(Boolean(initial?.bank_bik || initial?.bank_account));
     setErrors({});
   }, [initial]);
 
@@ -77,22 +79,34 @@ export function CompanyForm({ initial, isSubmitting, submitLabel, onSubmit }: Co
         onChange={(event) => setInn(event.target.value)}
       />
       <Input label="Название компании" value={name} onChange={(event) => setName(event.target.value)} />
-      <Input
-        label="БИК"
-        value={bik}
-        error={errors.bank_bik}
-        inputMode="numeric"
-        placeholder="9 цифр"
-        onChange={(event) => setBik(event.target.value)}
-      />
-      <Input
-        label="Расчётный счёт"
-        value={account}
-        error={errors.bank_account}
-        inputMode="numeric"
-        placeholder="20 цифр"
-        onChange={(event) => setAccount(event.target.value)}
-      />
+      <Button
+        type="button"
+        variant="ghost"
+        className="w-full justify-center border border-dashed border-slate-700"
+        onClick={() => setShowBankDetails((current) => !current)}
+      >
+        {showBankDetails ? "Скрыть банковские реквизиты" : "Добавить банковские реквизиты"}
+      </Button>
+      {showBankDetails && (
+        <>
+          <Input
+            label="БИК"
+            value={bik}
+            error={errors.bank_bik}
+            inputMode="numeric"
+            placeholder="9 цифр"
+            onChange={(event) => setBik(event.target.value)}
+          />
+          <Input
+            label="Расчётный счёт"
+            value={account}
+            error={errors.bank_account}
+            inputMode="numeric"
+            placeholder="20 цифр"
+            onChange={(event) => setAccount(event.target.value)}
+          />
+        </>
+      )}
       <Button type="submit" disabled={isSubmitting}>
         {submitLabel ?? "Сохранить"}
       </Button>

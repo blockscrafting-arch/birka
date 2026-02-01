@@ -3,6 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../services/api";
 import { Product } from "../types";
 
+type Paginated<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
 type ProductCreate = {
   company_id: number;
   name: string;
@@ -17,12 +24,13 @@ type ProductCreate = {
 
 type ProductUpdate = Partial<Omit<ProductCreate, "company_id">> & { id: number };
 
-export function useProducts(companyId?: number) {
+export function useProducts(companyId?: number, page = 1, limit = 20) {
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: ["products", companyId],
-    queryFn: () => apiClient.api<Product[]>(`/products?company_id=${companyId}`),
+    queryKey: ["products", companyId, page, limit],
+    queryFn: () =>
+      apiClient.api<Paginated<Product>>(`/products?company_id=${companyId}&page=${page}&limit=${limit}`),
     enabled: Boolean(companyId),
   });
 
@@ -67,5 +75,15 @@ export function useProducts(companyId?: number) {
     },
   });
 
-  return { ...query, create, update, uploadPhoto, importExcel };
+  return {
+    ...query,
+    items: query.data?.items ?? [],
+    total: query.data?.total ?? 0,
+    page: query.data?.page ?? page,
+    limit: query.data?.limit ?? limit,
+    create,
+    update,
+    uploadPhoto,
+    importExcel,
+  };
 }

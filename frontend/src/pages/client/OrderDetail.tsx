@@ -10,11 +10,11 @@ import { useOrderItems } from "../../hooks/useOrderItems";
 
 export function OrderDetail() {
   const { orderId } = useParams();
-  const { data: companies = [] } = useCompanies();
+  const { items: companies = [] } = useCompanies();
   const { companyId, setCompanyId } = useActiveCompany();
   const activeCompanyId = companyId ?? companies[0]?.id ?? null;
-  const { data } = useOrders(activeCompanyId ?? undefined);
-  const order = useMemo(() => data?.find((item) => item.id === Number(orderId)), [data, orderId]);
+  const { items } = useOrders(activeCompanyId ?? undefined, 1, 200);
+  const order = useMemo(() => items.find((item) => item.id === Number(orderId)), [items, orderId]);
   const { data: items = [] } = useOrderItems(order?.id);
 
   useEffect(() => {

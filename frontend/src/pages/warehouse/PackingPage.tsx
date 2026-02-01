@@ -12,10 +12,10 @@ import { useWarehouse } from "../../hooks/useWarehouse";
 import { PackingForm } from "./PackingForm";
 
 export function PackingPage() {
-  const { data: companies = [] } = useCompanies();
+  const { items: companies = [] } = useCompanies();
   const { companyId, setCompanyId } = useActiveCompany();
   const activeCompanyId = companyId ?? companies[0]?.id ?? null;
-  const { data: orders = [], isLoading } = useOrders(activeCompanyId ?? undefined);
+  const { items: orders = [], isLoading } = useOrders(activeCompanyId ?? undefined, 1, 200);
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
   const { data: items = [], isLoading: itemsLoading } = useOrderItems(activeOrderId ?? undefined);
   const { createPacking } = useWarehouse();
