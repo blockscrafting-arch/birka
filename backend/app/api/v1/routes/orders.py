@@ -37,7 +37,8 @@ async def create_order(
 
     today = date.today()
     prefix = datetime.utcnow().strftime("Заявка %d/%m/%y")
-    async with db.begin():
+    transaction = db.begin_nested() if db.in_transaction() else db.begin()
+    async with transaction:
         counter_result = await db.execute(
             select(OrderCounter).where(OrderCounter.counter_date == today).with_for_update()
         )

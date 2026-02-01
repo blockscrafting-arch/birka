@@ -19,7 +19,10 @@ describe("apiClient", () => {
 
   it("sends initData header when no session", async () => {
     localStorage.removeItem("birka_session_token");
-    (window as any).Telegram = { WebApp: { initData: "init-data" } };
+    const telegramWindow = window as Window & {
+      Telegram?: { WebApp?: { initData?: string } };
+    };
+    telegramWindow.Telegram = { WebApp: { initData: "init-data" } };
     vi.spyOn(global, "fetch").mockResolvedValueOnce({
       ok: true,
       json: async () => ({}),

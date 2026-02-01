@@ -12,18 +12,24 @@ class S3Service:
     """S3 helper for uploads and URL building."""
 
     def __init__(self) -> None:
-        self.client = boto3.client(
-            "s3",
-            endpoint_url=settings.S3_ENDPOINT_URL,
-            aws_access_key_id=settings.S3_ACCESS_KEY,
-            aws_secret_access_key=settings.S3_SECRET_KEY,
-            region_name=settings.S3_REGION,
-        )
+        self._client = None
+
+    def _get_client(self):
+        """Create and cache an S3 client instance."""
+        if self._client is None:
+            self._client = boto3.client(
+                "s3",
+                endpoint_url=settings.S3_ENDPOINT_URL,
+                aws_access_key_id=settings.S3_ACCESS_KEY,
+                aws_secret_access_key=settings.S3_SECRET_KEY,
+                region_name=settings.S3_REGION,
+            )
+        return self._client
 
     def upload_bytes(self, key: str, data: bytes, content_type: str) -> str:
         """Upload bytes without multipart (non-chunked)."""
         stream: BinaryIO = BytesIO(data)
-        self.client.put_object(
+        self._get_client().put_object(
             Bucket=settings.S3_BUCKET_NAME,
             Key=key,
             Body=stream,

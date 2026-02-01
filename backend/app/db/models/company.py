@@ -1,7 +1,7 @@
 """Company model."""
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, JSON, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,7 +21,7 @@ class Company(Base):
     director: Mapped[str | None] = mapped_column(String(128))
     bank_bik: Mapped[str | None] = mapped_column(String(16))
     bank_account: Mapped[str | None] = mapped_column(String(32))
-    contract_data: Mapped[dict | None] = mapped_column(JSONB)
+    contract_data: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON, "sqlite"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="companies")

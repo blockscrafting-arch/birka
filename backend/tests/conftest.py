@@ -1,5 +1,6 @@
 """Test fixtures."""
 import asyncio
+import itertools
 from datetime import datetime, timedelta
 
 import pytest
@@ -12,6 +13,8 @@ from app.db.models.session import Session
 from app.db.models.user import User
 from app.db.session import get_db
 from app.main import app
+
+_telegram_id_counter = itertools.count(1)
 
 
 @pytest.fixture(scope="session")
@@ -49,12 +52,18 @@ async def client(db_session):
 
 @pytest.fixture()
 async def auth_headers(db_session):
-    user = User(telegram_id=1, telegram_username="user", first_name="Test", role="client")
+    telegram_id = next(_telegram_id_counter)
+    user = User(
+        telegram_id=telegram_id,
+        telegram_username=f"user-{telegram_id}",
+        first_name="Test",
+        role="client",
+    )
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
 
-    token = "test-token"
+    token = f"test-token-{telegram_id}"
     session = Session(user_id=user.id, token=token, expires_at=datetime.utcnow() + timedelta(days=1))
     db_session.add(session)
     await db_session.commit()
@@ -64,12 +73,18 @@ async def auth_headers(db_session):
 
 @pytest.fixture()
 async def warehouse_headers(db_session):
-    user = User(telegram_id=2, telegram_username="worker", first_name="Worker", role="warehouse")
+    telegram_id = next(_telegram_id_counter)
+    user = User(
+        telegram_id=telegram_id,
+        telegram_username=f"worker-{telegram_id}",
+        first_name="Worker",
+        role="warehouse",
+    )
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
 
-    token = "warehouse-token"
+    token = f"warehouse-token-{telegram_id}"
     session = Session(user_id=user.id, token=token, expires_at=datetime.utcnow() + timedelta(days=1))
     db_session.add(session)
     await db_session.commit()
