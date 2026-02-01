@@ -27,5 +27,6 @@ jobs:
             git reset --hard origin/main
             docker compose -f docker-compose.prod.yml build
             docker compose -f docker-compose.prod.yml up -d
+            docker compose -f docker-compose.prod.yml exec -T backend alembic upgrade head || true
             docker image prune -f
             docker builder prune -f --keep-storage 512MB

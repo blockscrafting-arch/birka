@@ -72,3 +72,22 @@ docker system prune -a -f
 ```
 
 На VPS лучше **не** использовать `build --no-cache`: обычный `build` переиспользует слои и занимает меньше места. В деплой-воркфлоу после сборки уже добавлен лёгкий prune.
+
+## Просмотр логов
+
+```bash
+# Все логи в реальном времени
+docker compose -f docker-compose.prod.yml logs -f
+
+# Только backend
+docker compose -f docker-compose.prod.yml logs -f backend
+
+# Последние 100 строк backend
+docker compose -f docker-compose.prod.yml logs --tail 100 backend
+
+# Логи Nginx
+docker compose -f docker-compose.prod.yml logs -f nginx
+
+# Логи с временными метками
+docker compose -f docker-compose.prod.yml logs -t backend
+```

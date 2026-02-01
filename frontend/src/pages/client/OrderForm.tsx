@@ -1,12 +1,13 @@
 import { useState } from "react";
 
-import { Product } from "../../types";
+import { Destination, Product } from "../../types";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Select } from "../../components/ui/Select";
 
 type OrderFormProps = {
   products: Product[];
+  destinations?: Destination[];
   isSubmitting?: boolean;
   onSubmit: (payload: { destination?: string; items: { product_id: number; planned_qty: number }[] }) => void;
 };
@@ -16,10 +17,16 @@ type ItemRow = {
   qty: string;
 };
 
-export function OrderForm({ products, isSubmitting, onSubmit }: OrderFormProps) {
-  const [destination, setDestination] = useState("");
+export function OrderForm({ products, destinations = [], isSubmitting, onSubmit }: OrderFormProps) {
+  const [destinationId, setDestinationId] = useState("");
+  const [destinationCustom, setDestinationCustom] = useState("");
   const [items, setItems] = useState<ItemRow[]>([{ productId: "", qty: "1" }]);
   const [error, setError] = useState<string | null>(null);
+
+  const destination =
+    destinationId === "__custom__"
+      ? destinationCustom.trim()
+      : destinations.find((d) => String(d.id) === destinationId)?.name ?? "";
 
   const updateItem = (index: number, patch: Partial<ItemRow>) => {
     setItems((prev) => prev.map((item, idx) => (idx === index ? { ...item, ...patch } : item)));
@@ -53,12 +60,36 @@ export function OrderForm({ products, isSubmitting, onSubmit }: OrderFormProps) 
         }
 
         onSubmit({
-          destination: destination.trim() || undefined,
+          destination: destination || undefined,
           items: prepared,
         });
       }}
     >
-      <Input label="Адрес/назначение" value={destination} onChange={(e) => setDestination(e.target.value)} />
+      {destinations.length > 0 ? (
+        <Select
+          label="Адрес/назначение"
+          value={destinationId}
+          onChange={(e) => {
+            setDestinationId(e.target.value);
+            if (e.target.value !== "__custom__") setDestinationCustom("");
+          }}
+        >
+          <option value="">Не выбрано</option>
+          {destinations.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+          <option value="__custom__">Свой вариант</option>
+        </Select>
+      ) : null}
+      {destinationId === "__custom__" ? (
+        <Input
+          label="Адрес/назначение (свой вариант)"
+          value={destinationCustom}
+          onChange={(e) => setDestinationCustom(e.target.value)}
+        />
+      ) : null}
 
       {products.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-soft">

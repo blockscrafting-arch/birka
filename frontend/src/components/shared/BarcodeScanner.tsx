@@ -11,6 +11,7 @@ export function BarcodeScanner({ onScan, onError }: BarcodeScannerProps) {
 
   useEffect(() => {
     const scanner = new Html5Qrcode(scannerId.current);
+    let isRunning = false;
     scanner
       .start(
         { facingMode: "environment" },
@@ -18,11 +19,15 @@ export function BarcodeScanner({ onScan, onError }: BarcodeScannerProps) {
         (decodedText) => onScan(decodedText),
         (error) => onError?.(String(error))
       )
+      .then(() => {
+        isRunning = true;
+      })
       .catch((error) => onError?.(String(error)));
 
     return () => {
-      scanner.stop().catch(() => undefined);
-      scanner.clear().catch(() => undefined);
+      if (isRunning) {
+        scanner.stop().catch(() => undefined);
+      }
     };
   }, [onScan, onError]);
 

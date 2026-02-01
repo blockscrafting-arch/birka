@@ -8,6 +8,12 @@ export type Company = {
   bank_account?: string;
 };
 
+export type Destination = {
+  id: number;
+  name: string;
+  is_active: boolean;
+};
+
 export type Product = {
   id: number;
   company_id: number;

@@ -15,7 +15,7 @@ export function OrderDetail() {
   const { items: companies = [] } = useCompanies();
   const { companyId, setCompanyId } = useActiveCompany();
   const activeCompanyId = companyId ?? companies[0]?.id ?? null;
-  const { items: orders } = useOrders(activeCompanyId ?? undefined, 1, 200);
+  const { items: orders } = useOrders(activeCompanyId ?? undefined, 1, 100);
   const order = useMemo(() => orders.find((item) => item.id === Number(orderId)), [orders, orderId]);
   const { data: items = [] } = useOrderItems(order?.id);
   const { data: photos = [], upload } = useOrderPhotos(order?.id);

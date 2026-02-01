@@ -17,7 +17,6 @@ export function Header({ title, subtitle, right }: HeaderProps) {
           <div>
             <h1 className="text-lg font-semibold text-slate-800">{title}</h1>
             {subtitle ? <p className="text-xs text-slate-600">{subtitle}</p> : null}
-            <p className="text-[11px] text-slate-500">Build: {__BUILD_ID__}</p>
           </div>
         </div>
         {right}

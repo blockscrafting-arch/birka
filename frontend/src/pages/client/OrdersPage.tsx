@@ -22,7 +22,8 @@ export function OrdersPage() {
   const [page, setPage] = useState(1);
   const limit = 20;
   const { items, total, isLoading, error, create } = useOrders(activeCompanyId ?? undefined, page, limit);
-  const { items: products = [] } = useProducts(activeCompanyId ?? undefined, 1, 200);
+  const { items: products = [] } = useProducts(activeCompanyId ?? undefined, 1, 100);
+  const { items: destinations = [] } = useDestinations(true);
   const [open, setOpen] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
@@ -97,7 +98,12 @@ export function OrdersPage() {
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
       <Modal title="Новая заявка" open={open} onClose={() => setOpen(false)}>
-        <OrderForm products={products} isSubmitting={create.isPending} onSubmit={handleCreate} />
+        <OrderForm
+          products={products}
+          destinations={destinations}
+          isSubmitting={create.isPending}
+          onSubmit={handleCreate}
+        />
       </Modal>
     </div>
   );
