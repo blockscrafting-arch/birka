@@ -16,7 +16,7 @@
 
 1. На VPS: установить Docker и Docker Compose, клонировать репозиторий в каталог деплоя (например `/opt/birka`).
 2. В каталоге проекта создать `.env` (Postgres, S3, OpenAI, Telegram и т.д.).
-3. Запустить:
+3. Запустить (без `--no-cache`, чтобы не забивать диск):
    ```bash
    docker compose -f docker-compose.prod.yml up --build -d
    ```
@@ -57,3 +57,18 @@ docker compose -f docker-compose.prod.yml logs frontend --tail 20
 - Контейнеры `backend` и `frontend` должны быть в статусе `Up`. Если `Exit` — смотреть логи.
 - Частая причина падения backend: нет `.env` или неверный `POSTGRES_DSN`. Проверить наличие `.env` в каталоге проекта.
 - После правок: `docker compose -f docker-compose.prod.yml up -d` и при необходимости перезапустить nginx.
+
+## Место на диске VPS
+
+Docker копит образы и кэш сборки. Чтобы освободить место:
+
+```bash
+# Удалить неиспользуемые образы и кэш сборки (оставить ~512MB кэша)
+docker image prune -a -f
+docker builder prune -f --keep-storage 512MB
+
+# Или жёстко: всё неиспользуемое
+docker system prune -a -f
+```
+
+На VPS лучше **не** использовать `build --no-cache`: обычный `build` переиспользует слои и занимает меньше места. В деплой-воркфлоу после сборки уже добавлен лёгкий prune.
