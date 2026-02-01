@@ -2,7 +2,21 @@
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        birka: {
+          50: "#EBF5FF",
+          100: "#D6EBFF",
+          500: "#0A8CF1",
+          600: "#0070CC",
+          700: "#005599",
+        },
+      },
+      boxShadow: {
+        soft: "0 2px 8px rgba(15, 23, 42, 0.08)",
+        card: "0 8px 20px rgba(15, 23, 42, 0.12)",
+      },
+    },
   },
   plugins: [],
 };

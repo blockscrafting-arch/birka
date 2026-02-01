@@ -7,11 +7,10 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const variantClasses: Record<Variant, string> = {
-  primary:
-    "bg-gradient-to-r from-indigo-500 to-sky-500 text-white hover:from-indigo-400 hover:to-sky-400 shadow-lg shadow-indigo-500/20",
-  secondary: "border border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800",
-  danger: "bg-rose-600 text-white hover:bg-rose-500",
-  ghost: "text-slate-300 hover:bg-slate-800/80",
+  primary: "bg-birka-500 text-white shadow-soft hover:bg-birka-600 active:bg-birka-700",
+  secondary: "border border-slate-200 bg-white text-slate-700 shadow-soft hover:border-birka-200 hover:text-slate-900",
+  danger: "bg-rose-500 text-white shadow-soft hover:bg-rose-600",
+  ghost: "text-slate-600 hover:bg-slate-100",
 };
 
 export function Button({ variant = "primary", className = "", ...props }: ButtonProps) {

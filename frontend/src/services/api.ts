@@ -1,5 +1,8 @@
 const API_URL = import.meta.env.VITE_API_URL ?? "/api/v1";
 
+export const LOGO_URL =
+  "https://s3.ru1.storage.beget.cloud/00bd59427133-s3bot/photo_2025-01-16_19-20-18.jpg";
+
 function getTelegramInitData(): string | undefined {
   return window.Telegram?.WebApp?.initData;
 }
