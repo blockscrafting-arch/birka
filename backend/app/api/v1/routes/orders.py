@@ -22,7 +22,7 @@ from app.db.models.user import User
 router = APIRouter()
 
 
-@router.post("/", response_model=OrderOut)
+@router.post("", response_model=OrderOut)
 async def create_order(
     payload: OrderCreate,
     db: AsyncSession = Depends(get_db),
@@ -72,7 +72,7 @@ async def create_order(
     return order
 
 
-@router.get("/", response_model=list[OrderOut])
+@router.get("", response_model=list[OrderOut])
 async def list_orders(
     company_id: int,
     db: AsyncSession = Depends(get_db),

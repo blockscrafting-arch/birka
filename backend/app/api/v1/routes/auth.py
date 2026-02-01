@@ -49,13 +49,15 @@ async def telegram_auth(
 
     token = secrets.token_hex(32)
     expires_at = datetime.utcnow() + timedelta(days=7)
-    session = Session(user_id=user.id, token=token, expires_at=expires_at)
+    user_id = user.id
+    role = user.role
+    session = Session(user_id=user_id, token=token, expires_at=expires_at)
     db.add(session)
     await db.commit()
 
     return TelegramAuthResponse(
-        user_id=user.id,
-        role=user.role,
+        user_id=user_id,
+        role=role,
         session_token=token,
         expires_at=expires_at.isoformat(),
     )

@@ -22,7 +22,7 @@ from app.db.models.user import User
 router = APIRouter()
 
 
-@router.post("/", response_model=ProductOut)
+@router.post("", response_model=ProductOut)
 async def create_product(
     payload: ProductCreate,
     db: AsyncSession = Depends(get_db),
@@ -41,7 +41,7 @@ async def create_product(
     return product
 
 
-@router.get("/", response_model=list[ProductOut])
+@router.get("", response_model=list[ProductOut])
 async def list_products(
     company_id: int,
     db: AsyncSession = Depends(get_db),

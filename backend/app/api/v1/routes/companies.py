@@ -16,7 +16,7 @@ from app.services.pdf import ContractData, render_contract_pdf
 router = APIRouter()
 
 
-@router.post("/", response_model=CompanyOut)
+@router.post("", response_model=CompanyOut)
 async def create_company(
     payload: CompanyCreate,
     db: AsyncSession = Depends(get_db),
@@ -44,7 +44,7 @@ async def create_company(
     return company
 
 
-@router.get("/", response_model=list[CompanyOut])
+@router.get("", response_model=list[CompanyOut])
 async def list_companies(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
