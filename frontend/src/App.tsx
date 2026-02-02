@@ -7,17 +7,81 @@ import { Header } from "./components/layout/Header";
 import { Page } from "./components/layout/Page";
 import { TabBar } from "./components/layout/TabBar";
 import { Loader } from "./components/ui/Loader";
+import { UserProvider, useUser } from "./contexts/UserContext";
 import { CompanyPage } from "./pages/client/CompanyPage";
 import { OrdersPage } from "./pages/client/OrdersPage";
 import { ProductsPage } from "./pages/client/ProductsPage";
 import { OrderDetail } from "./pages/client/OrderDetail";
 import { AIPage } from "./pages/client/AIPage";
 import { ShippingPage } from "./pages/client/ShippingPage";
+import { AdminPage } from "./pages/admin/AdminPage";
+import { UsersPage } from "./pages/admin/UsersPage";
+import { DestinationsPage } from "./pages/admin/DestinationsPage";
+import { ContractTemplatesPage } from "./pages/admin/ContractTemplatesPage";
 import { PrintPage } from "./pages/warehouse/PrintPage";
 import { ReceivingPage } from "./pages/warehouse/ReceivingPage";
 import { PackingPage } from "./pages/warehouse/PackingPage";
 import { ScannerPage } from "./pages/warehouse/ScannerPage";
 import { ShippingPage as WarehouseShippingPage } from "./pages/warehouse/ShippingPage";
+
+function AppRoutes() {
+  const { user, isLoading } = useUser();
+  const canWarehouse = user?.role === "warehouse" || user?.role === "admin";
+  const canAdmin = user?.role === "admin";
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4">
+        <Loader text="Загрузка профиля..." />
+      </div>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to="/client/company" replace />} />
+      <Route path="/client/company" element={<CompanyPage />} />
+      <Route path="/client/products" element={<ProductsPage />} />
+      <Route path="/client/orders" element={<OrdersPage />} />
+      <Route path="/client/orders/:orderId" element={<OrderDetail />} />
+      <Route path="/client/ai" element={<AIPage />} />
+      <Route path="/client/shipping" element={<ShippingPage />} />
+      <Route
+        path="/warehouse/print"
+        element={canWarehouse ? <PrintPage /> : <Navigate to="/client/company" replace />}
+      />
+      <Route
+        path="/warehouse/receiving"
+        element={canWarehouse ? <ReceivingPage /> : <Navigate to="/client/company" replace />}
+      />
+      <Route
+        path="/warehouse/packing"
+        element={canWarehouse ? <PackingPage /> : <Navigate to="/client/company" replace />}
+      />
+      <Route
+        path="/warehouse/scanner"
+        element={canWarehouse ? <ScannerPage /> : <Navigate to="/client/company" replace />}
+      />
+      <Route
+        path="/warehouse/shipping"
+        element={canWarehouse ? <WarehouseShippingPage /> : <Navigate to="/client/company" replace />}
+      />
+      <Route path="/admin" element={canAdmin ? <AdminPage /> : <Navigate to="/client/company" replace />} />
+      <Route
+        path="/admin/users"
+        element={canAdmin ? <UsersPage /> : <Navigate to="/client/company" replace />}
+      />
+      <Route
+        path="/admin/destinations"
+        element={canAdmin ? <DestinationsPage /> : <Navigate to="/client/company" replace />}
+      />
+      <Route
+        path="/admin/templates"
+        element={canAdmin ? <ContractTemplatesPage /> : <Navigate to="/client/company" replace />}
+      />
+    </Routes>
+  );
+}
 
 export default function App() {
   const { webApp } = useTelegram();
@@ -52,27 +116,13 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Page>
-        <Header
-          title="Бирка — Mini App"
-          subtitle={`Telegram ID: ${webApp?.initDataUnsafe?.user?.id ?? "—"}`}
-        />
-        <TabBar />
-        <Routes>
-          <Route path="/" element={<Navigate to="/client/company" replace />} />
-          <Route path="/client/company" element={<CompanyPage />} />
-          <Route path="/client/products" element={<ProductsPage />} />
-          <Route path="/client/orders" element={<OrdersPage />} />
-          <Route path="/client/orders/:orderId" element={<OrderDetail />} />
-          <Route path="/client/ai" element={<AIPage />} />
-          <Route path="/client/shipping" element={<ShippingPage />} />
-          <Route path="/warehouse/print" element={<PrintPage />} />
-          <Route path="/warehouse/receiving" element={<ReceivingPage />} />
-          <Route path="/warehouse/packing" element={<PackingPage />} />
-          <Route path="/warehouse/scanner" element={<ScannerPage />} />
-          <Route path="/warehouse/shipping" element={<WarehouseShippingPage />} />
-        </Routes>
-      </Page>
+      <UserProvider>
+        <Page>
+          <Header title="Бирка — Mini App" />
+          <TabBar />
+          <AppRoutes />
+        </Page>
+      </UserProvider>
     </BrowserRouter>
   );
 }

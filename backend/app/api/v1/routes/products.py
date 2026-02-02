@@ -1,5 +1,5 @@
 """Product endpoints."""
-from datetime import datetime
+from datetime import date, datetime
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from PIL import Image
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.api.v1.deps import get_current_user
 from app.db.models.company import Company
@@ -15,6 +16,7 @@ from app.db.models.product import Product, ProductPhoto
 from app.db.session import get_db
 from app.schemas.product import ProductCreate, ProductList, ProductOut, ProductUpdate
 from app.services.excel import export_products, export_products_template, parse_products_excel
+from app.services.files import content_disposition
 from app.services.pdf import LabelData, render_label_pdf
 from app.services.s3 import S3Service
 from app.core.config import settings
@@ -59,7 +61,8 @@ async def list_products(
         company_result = await db.execute(
             select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
         )
-    if not company_result.scalar_one_or_none():
+    company = company_result.scalar_one_or_none()
+    if not company:
         raise HTTPException(status_code=404, detail="Company not found")
     base_query = select(Product).where(Product.company_id == company_id)
     if search:
@@ -91,9 +94,12 @@ async def update_product(
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    company_result = await db.execute(
-        select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
-    )
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == product.company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
+        )
     if not company_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Company not found")
     for key, value in payload.model_dump(exclude_unset=True).items():
@@ -158,15 +164,21 @@ async def export_products_excel(
     if not company_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Company not found")
     try:
-        result = await db.execute(select(Product).where(Product.company_id == company_id))
-        products = list(result.scalars().all())
+        company = company_result.scalar_one_or_none()
+        result = await db.execute(
+            select(Product)
+            .options(joinedload(Product.company))
+            .where(Product.company_id == company_id)
+        )
+        products = list(result.unique().scalars().all())
         if not products:
             raise HTTPException(status_code=400, detail="No products to export")
         buffer = export_products(products)
+        filename = f"Товары_{company.name}_{date.today().strftime('%d.%m.%Y')}.xlsx"
         return StreamingResponse(
             buffer,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": "attachment; filename=products.xlsx"},
+            headers={"Content-Disposition": content_disposition(filename)},
         )
     except HTTPException:
         raise
@@ -183,10 +195,11 @@ async def export_products_template_excel(
     try:
         _ = current_user
         buffer = export_products_template()
+        filename = "Шаблон_импорта_товаров.xlsx"
         return StreamingResponse(
             buffer,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": "attachment; filename=products_template.xlsx"},
+            headers={"Content-Disposition": content_disposition(filename)},
         )
     except Exception as exc:
         logger.exception("product_template_failed", error=str(exc))
@@ -272,10 +285,11 @@ async def generate_label(
         barcode_value=product.barcode or "-",
     )
     pdf_bytes = render_label_pdf(label)
+    filename = f"Этикетка_{product.name}_{product.barcode}.pdf"
     return StreamingResponse(
         iter([pdf_bytes]),
         media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=label.pdf"},
+        headers={"Content-Disposition": content_disposition(filename)},
     )
 
 

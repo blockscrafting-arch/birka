@@ -14,7 +14,12 @@ export function PrintPage() {
   const activeCompanyId = companyId ?? companies[0]?.id ?? null;
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const { items: products = [], isLoading } = useProducts(activeCompanyId ?? undefined, 1, 200, search);
+  const { items: products = [], isLoading, error } = useProducts(
+    activeCompanyId ?? undefined,
+    1,
+    100,
+    search
+  );
   const [pageError, setPageError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,6 +69,10 @@ export function PrintPage() {
 
       {pageError ? <div className="text-sm text-rose-500">{pageError}</div> : null}
       {isLoading ? <div className="text-sm text-slate-600">Загрузка товаров...</div> : null}
+      {error ? <div className="text-sm text-rose-500">Ошибка загрузки товаров</div> : null}
+      {!isLoading && products.length === 0 ? (
+        <div className="text-sm text-slate-500">Товары не найдены</div>
+      ) : null}
 
       <div className="space-y-2">
         {products.map((product) => (

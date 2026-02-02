@@ -3,9 +3,11 @@ from datetime import date, datetime
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.api.v1.deps import get_current_user
 from app.db.models.company import Company
@@ -15,6 +17,8 @@ from app.db.models.order_photo import OrderPhoto
 from app.db.models.product import Product
 from app.db.session import get_db
 from app.schemas.order import OrderCreate, OrderItemOut, OrderList, OrderOut, OrderPhotoOut, OrderStatusUpdate
+from app.services.excel import export_receiving
+from app.services.files import content_disposition
 from app.services.s3 import S3Service
 from app.core.config import settings
 from app.core.logging import logger
@@ -88,6 +92,7 @@ async def create_order(
                     )
                 )
 
+        await db.commit()
         await db.refresh(order)
         return order
     except HTTPException:
@@ -116,7 +121,7 @@ async def list_orders(
         )
     if not company_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Company not found")
-    base_query = select(Order).where(Order.company_id == company_id).order_by(Order.created_at.asc())
+    base_query = select(Order).where(Order.company_id == company_id).order_by(Order.created_at.desc())
     if status:
         statuses = [value.strip() for value in status.split(",") if value.strip()]
         if statuses:
@@ -134,7 +139,7 @@ async def list_orders(
         .outerjoin(OrderPhoto, OrderPhoto.order_id == Order.id)
         .where(*conditions)
         .group_by(Order.id)
-        .order_by(Order.created_at.asc())
+        .order_by(Order.created_at.desc())
         .offset(offset)
         .limit(limit)
     )
@@ -318,3 +323,39 @@ async def list_order_photos(
             )
         )
     return response
+
+
+@router.get("/{order_id}/export-receiving")
+async def export_receiving_excel(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Export receiving data for order to Excel."""
+    order_result = await db.execute(select(Order).where(Order.id == order_id))
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == order.company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
+        )
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Company not found")
+    result = await db.execute(
+        select(OrderItem)
+        .options(joinedload(OrderItem.product), joinedload(OrderItem.order))
+        .where(OrderItem.order_id == order_id)
+    )
+    items = list(result.unique().scalars().all())
+    if not items:
+        raise HTTPException(status_code=400, detail="No items to export")
+    buffer = export_receiving(items)
+    filename = f"Приемка_заявка_{order.order_number}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": content_disposition(filename)},
+    )

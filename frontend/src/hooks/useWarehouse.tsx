@@ -50,7 +50,19 @@ export function useWarehouse() {
 
   const validateBarcode = useMutation({
     mutationFn: (payload: { barcode: string }) =>
-      apiClient.api<{ valid: boolean; message: string }>("/warehouse/barcode/validate", {
+      apiClient.api<{
+        valid: boolean;
+        message: string;
+        product?: {
+          id: number;
+          name: string;
+          brand?: string | null;
+          size?: string | null;
+          color?: string | null;
+          wb_article?: string | null;
+          barcode?: string | null;
+        };
+      }>("/warehouse/barcode/validate", {
         method: "POST",
         body: JSON.stringify(payload),
       }),

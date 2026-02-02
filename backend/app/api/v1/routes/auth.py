@@ -7,10 +7,11 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import validate_telegram_init_data
+from app.api.v1.deps import get_current_user
 from app.db.models.session import Session
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.auth import TelegramAuthRequest, TelegramAuthResponse
+from app.schemas.auth import TelegramAuthRequest, TelegramAuthResponse, UserMe
 from app.core.config import settings
 from app.services.telegram import parse_init_data_user
 
@@ -74,3 +75,9 @@ async def logout(
     await db.execute(delete(Session).where(Session.token == x_session_token))
     await db.commit()
     return {"status": "ok"}
+
+
+@router.get("/me", response_model=UserMe)
+async def get_me(current_user: User = Depends(get_current_user)) -> UserMe:
+    """Get current user info."""
+    return current_user

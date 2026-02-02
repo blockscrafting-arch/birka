@@ -21,7 +21,7 @@ export function PackingPage() {
   const { items: orders = [], isLoading, updateStatus } = useOrders(
     activeCompanyId ?? undefined,
     1,
-    200,
+    100,
     "Принято,Упаковка"
   );
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);

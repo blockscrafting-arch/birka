@@ -18,7 +18,7 @@ export function ReceivingPage() {
   const { items: companies = [] } = useCompanies();
   const { companyId, setCompanyId } = useActiveCompany();
   const activeCompanyId = companyId ?? companies[0]?.id ?? null;
-  const { items: orders = [], isLoading } = useOrders(activeCompanyId ?? undefined, 1, 200, "На приемке");
+  const { items: orders = [], isLoading } = useOrders(activeCompanyId ?? undefined, 1, 100, "На приемке");
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
   const { data: items = [], isLoading: itemsLoading } = useOrderItems(activeOrderId ?? undefined);
   const { completeReceiving } = useWarehouse();

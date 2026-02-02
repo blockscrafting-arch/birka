@@ -78,3 +78,31 @@ export type ShippingRequest = {
   status: string;
   created_at: string;
 };
+
+export type CurrentUser = {
+  id: number;
+  telegram_id: number;
+  telegram_username?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  role: "client" | "warehouse" | "admin";
+};
+
+export type AdminUser = {
+  id: number;
+  telegram_id: number;
+  telegram_username?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  role: "client" | "warehouse" | "admin";
+  created_at: string;
+};
+
+export type ContractTemplate = {
+  id: number;
+  name: string;
+  html_content: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+};

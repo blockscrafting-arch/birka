@@ -73,8 +73,17 @@ async function apiFile(path: string, options?: RequestInit): Promise<{ blob: Blo
     throw new Error(`API error: ${response.status}`);
   }
   const contentDisposition = response.headers.get("content-disposition");
-  const match = contentDisposition?.match(/filename="?([^"]+)"?/);
-  return { blob: await response.blob(), filename: match?.[1] ?? null };
+  let filename: string | null = null;
+  if (contentDisposition) {
+    const matchStar = contentDisposition.match(/filename\*=(?:UTF-8'')?([^;]+)/i);
+    if (matchStar?.[1]) {
+      filename = decodeURIComponent(matchStar[1].trim().replace(/^"|"$/g, ""));
+    } else {
+      const match = contentDisposition.match(/filename="?([^"]+)"?/i);
+      filename = match?.[1] ?? null;
+    }
+  }
+  return { blob: await response.blob(), filename };
 }
 
 export const apiClient = { api, apiForm, apiFile };

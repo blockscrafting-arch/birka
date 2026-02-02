@@ -12,9 +12,28 @@
 
 ## Деплой на Beget VPS
 
-### Вручную
+### Работа прямо на сервере
 
-1. На VPS: установить Docker и Docker Compose, клонировать репозиторий в каталог деплоя (например `/opt/birka`).
+Если правишь код прямо на сервере (SSH, Cursor на сервере и т.п.), **git и GitHub Actions не нужны**. После правок пересобери и перезапусти контейнеры:
+
+```bash
+cd /opt/birka   # или твой каталог проекта
+export BUILD_TIMESTAMP=$(date +%s)
+docker compose -f docker-compose.prod.yml build --build-arg BUILD_TIMESTAMP=$BUILD_TIMESTAMP
+docker compose -f docker-compose.prod.yml up -d --force-recreate
+```
+
+Миграции БД (если менял модели):
+
+```bash
+docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
+```
+
+Git на сервере можно использовать только для истории и бэкапа (при желании пушить в GitHub). Деплой через Actions нужен только если разрабатываешь в другом месте и хочешь по `git push` обновлять сервер.
+
+### Вручную (первый раз или после клонирования)
+
+1. На VPS: установить Docker и Docker Compose, скопировать или клонировать проект в каталог (например `/opt/birka`).
 2. В каталоге проекта создать `.env` (Postgres, S3, OpenAI, Telegram и т.д.).
 3. Запустить (фронт пересоберётся за счёт `BUILD_TIMESTAMP`):
    ```bash

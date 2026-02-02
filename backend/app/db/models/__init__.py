@@ -1,5 +1,6 @@
 """ORM models."""
 from app.db.models.company import Company
+from app.db.models.contract_template import ContractTemplate
 from app.db.models.destination import Destination
 from app.db.models.order import Order, OrderItem
 from app.db.models.order_counter import OrderCounter
@@ -13,6 +14,7 @@ from app.db.models.warehouse_employee import WarehouseEmployee
 
 __all__ = [
     "Company",
+    "ContractTemplate",
     "Destination",
     "Order",
     "OrderCounter",

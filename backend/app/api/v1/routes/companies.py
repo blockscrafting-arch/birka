@@ -1,9 +1,12 @@
 """Company endpoints."""
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.company import Company
+from app.db.models.contract_template import ContractTemplate
 from app.db.session import get_db
 from fastapi.responses import StreamingResponse
 
@@ -13,6 +16,7 @@ from app.schemas.company import CompanyCreate, CompanyList, CompanyOut, CompanyU
 from app.core.logging import logger
 from app.services.dadata import fetch_company_by_inn
 from app.services.pdf import ContractData, render_contract_pdf
+from app.services.files import content_disposition
 
 router = APIRouter()
 
@@ -101,19 +105,29 @@ async def generate_contract(
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
 
+    contract_date = date.today().strftime("%d.%m.%Y")
+    contract_number = f"{company.id}-{date.today().strftime('%Y%m%d')}"
     contract = ContractData(
         company_name=company.name,
         inn=company.inn,
         director=company.director,
         bank_bik=company.bank_bik,
         bank_account=company.bank_account,
+        contract_number=contract_number,
+        contract_date=contract_date,
+        service_description="Оказание услуг фулфилмента и сопутствующих работ на условиях настоящего договора.",
     )
     try:
-        pdf_bytes = render_contract_pdf(contract)
+        template_result = await db.execute(
+            select(ContractTemplate).where(ContractTemplate.is_default.is_(True))
+        )
+        template = template_result.scalar_one_or_none()
+        pdf_bytes = render_contract_pdf(contract, template.html_content if template else None)
+        filename = f"Договор_{company.name}_{contract_date}.pdf"
         return StreamingResponse(
             iter([pdf_bytes]),
             media_type="application/pdf",
-            headers={"Content-Disposition": "attachment; filename=contract.pdf"},
+            headers={"Content-Disposition": content_disposition(filename)},
         )
     except Exception as exc:
         logger.exception("contract_pdf_failed", company_id=company_id, error=str(exc))

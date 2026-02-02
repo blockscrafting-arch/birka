@@ -1,8 +1,11 @@
 import { NavLink, useLocation } from "react-router-dom";
 
+import { useUser } from "../../contexts/UserContext";
+
 const primaryTabs = [
   { to: "/client/company", label: "Клиент" },
   { to: "/warehouse/receiving", label: "Склад" },
+  { to: "/admin/users", label: "Админка" },
 ];
 
 const clientTabs = [
@@ -21,10 +24,29 @@ const warehouseTabs = [
   { to: "/warehouse/scanner", label: "Сканер" },
 ];
 
+const adminTabs = [
+  { to: "/admin/users", label: "Пользователи" },
+  { to: "/admin/destinations", label: "Адреса" },
+  { to: "/admin/templates", label: "Шаблоны" },
+];
+
 export function TabBar() {
   const location = useLocation();
+  const { user } = useUser();
+  const canWarehouse = user?.role === "warehouse" || user?.role === "admin";
+  const canAdmin = user?.role === "admin";
+  const isAdmin = location.pathname.startsWith("/admin");
   const isWarehouse = location.pathname.startsWith("/warehouse");
-  const tabs = isWarehouse ? warehouseTabs : clientTabs;
+  const tabs = isAdmin ? adminTabs : isWarehouse ? warehouseTabs : clientTabs;
+  const visiblePrimaryTabs = primaryTabs.filter((tab) => {
+    if (tab.to.startsWith("/warehouse")) {
+      return canWarehouse;
+    }
+    if (tab.to.startsWith("/admin")) {
+      return canAdmin;
+    }
+    return true;
+  });
 
   return (
     <div className="mb-6 space-y-3">
@@ -46,7 +68,7 @@ export function TabBar() {
 
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-lg items-center justify-around p-2">
-          {primaryTabs.map((tab) => (
+          {visiblePrimaryTabs.map((tab) => (
             <NavLink
               key={tab.to}
               to={tab.to}

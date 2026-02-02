@@ -1,7 +1,9 @@
 """Warehouse endpoints."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.api.v1.deps import get_current_user, require_roles
 from app.db.models.company import Company
@@ -11,6 +13,8 @@ from app.db.models.product import Product
 from app.db.models.warehouse_employee import WarehouseEmployee
 from app.db.session import get_db
 from app.schemas.warehouse import BarcodeValidateRequest, PackingRecordCreate, ReceivingComplete
+from app.services.excel import export_fbo_shipping
+from app.services.files import content_disposition
 from app.core.logging import logger
 from app.db.models.user import User
 
@@ -140,7 +144,53 @@ async def validate_barcode(
         company_result = await db.execute(select(Company).where(Company.id == product.company_id))
         if not company_result.scalar_one_or_none():
             return {"valid": False, "message": "ШК не найден"}
-        return {"valid": True, "message": f"ШК найден: {product.name}"}
+        return {
+            "valid": True,
+            "message": f"ШК найден: {product.name}",
+            "product": {
+                "id": product.id,
+                "name": product.name,
+                "brand": product.brand,
+                "size": product.size,
+                "color": product.color,
+                "wb_article": product.wb_article,
+                "barcode": product.barcode,
+            },
+        }
     except Exception as exc:
         logger.exception("barcode_validate_failed", error=str(exc))
         raise HTTPException(status_code=500, detail="Barcode validation failed")
+
+
+@router.get("/export-fbo")
+async def export_fbo_excel(
+    order_id: int = Query(..., description="Order ID"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("warehouse", "admin")),
+) -> StreamingResponse:
+    """Export FBO shipping (packing records) for order to Excel."""
+    order_result = await db.execute(select(Order).where(Order.id == order_id))
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    company_result = await db.execute(select(Company).where(Company.id == order.company_id))
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Company not found")
+    result = await db.execute(
+        select(PackingRecord)
+        .options(
+            joinedload(PackingRecord.product),
+            joinedload(PackingRecord.employee),
+        )
+        .where(PackingRecord.order_id == order_id)
+    )
+    records = list(result.unique().scalars().all())
+    if not records:
+        raise HTTPException(status_code=400, detail="No packing records to export")
+    buffer = export_fbo_shipping(records)
+    filename = f"Отгрузка_FBO_заявка_{order.order_number}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": content_disposition(filename)},
+    )

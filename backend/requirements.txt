@@ -15,6 +15,7 @@ boto3==1.35.25
 Pillow==10.4.0
 python-barcode==0.15.1
 weasyprint==61.2
+pydyf==0.10.0
 openai==1.50.2
 pgvector==0.3.2
 tenacity==9.0.0
