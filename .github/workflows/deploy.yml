@@ -25,8 +25,9 @@ jobs:
             cd "${{ secrets.DEPLOY_PATH }}"
             git fetch origin
             git reset --hard origin/main
-            docker compose -f docker-compose.prod.yml build
-            docker compose -f docker-compose.prod.yml up -d
+            export BUILD_TIMESTAMP=$(date +%s)
+            docker compose -f docker-compose.prod.yml build --build-arg BUILD_TIMESTAMP=$BUILD_TIMESTAMP
+            docker compose -f docker-compose.prod.yml up -d --force-recreate
             docker compose -f docker-compose.prod.yml exec -T backend alembic upgrade head || true
             docker image prune -f
             docker builder prune -f --keep-storage 512MB

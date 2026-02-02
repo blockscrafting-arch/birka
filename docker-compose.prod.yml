@@ -17,6 +17,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.frontend
+      args:
+        BUILD_TIMESTAMP: "0"
     expose:
       - "80"
     restart: unless-stopped

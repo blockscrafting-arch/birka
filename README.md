@@ -16,9 +16,11 @@
 
 1. На VPS: установить Docker и Docker Compose, клонировать репозиторий в каталог деплоя (например `/opt/birka`).
 2. В каталоге проекта создать `.env` (Postgres, S3, OpenAI, Telegram и т.д.).
-3. Запустить (без `--no-cache`, чтобы не забивать диск):
+3. Запустить (фронт пересоберётся за счёт `BUILD_TIMESTAMP`):
    ```bash
-   docker compose -f docker-compose.prod.yml up --build -d
+   export BUILD_TIMESTAMP=$(date +%s)
+   docker compose -f docker-compose.prod.yml build --build-arg BUILD_TIMESTAMP=$BUILD_TIMESTAMP
+   docker compose -f docker-compose.prod.yml up -d --force-recreate
    ```
 4. Nginx проксирует `/` на frontend, `/api/` на backend. Для HTTPS настроить certbot и пути к сертификатам в `docker/nginx.conf`.
 
@@ -36,6 +38,21 @@
 | `DEPLOY_PATH` | Каталог с клоном репозитория на сервере, например `/opt/birka` |
 
 На сервере должны быть установлены Docker, Docker Compose и Git; репозиторий уже склонирован в `DEPLOY_PATH`, `.env` создан.
+
+В каждом деплое передаётся `BUILD_TIMESTAMP`, чтобы фронт всегда пересобирался; после поднятия контейнеров выполняется `up -d --force-recreate`.
+
+### Почему в проде всё ещё старое приложение
+
+1. **Проверить GitHub Actions** — вкладка Actions в репозитории: workflow **Deploy** должен был запуститься после пуша в `main`. Если он не запускался или упал с ошибкой (SSH, путь, сборка), на сервере ничего не обновилось.
+2. **Кэш браузера / Telegram** — открыть сайт в режиме инкогнито или «Другая вкладка» в Telegram; при необходимости закрыть и заново открыть Mini App.
+3. **На сервере вручную** — зайти по SSH и выполнить:
+   ```bash
+   cd "$DEPLOY_PATH"   # например /opt/birka
+   git fetch origin && git status   # должен быть на main
+   docker compose -f docker-compose.prod.yml ps   # контейнеры Up
+   docker compose -f docker-compose.prod.yml logs frontend --tail 5
+   ```
+   Если код старый — `git pull` или `git reset --hard origin/main`, затем пересобрать и поднять контейнеры (см. раздел «Деплой вручную»).
 
 ## Важные настройки
 
