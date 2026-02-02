@@ -5,7 +5,7 @@ from io import BytesIO
 import html
 
 import barcode
-from barcode.writer import SVGWriter
+from barcode.writer import ImageWriter
 from weasyprint import HTML
 
 from app.core.logging import logger
@@ -118,8 +118,8 @@ def _apply_contract_template(template_html: str, context: dict[str, str]) -> str
     return html_content
 
 
-def _render_barcode_svg(barcode_value: str) -> str:
-    """Generate EAN13 barcode as SVG string for embedding in HTML."""
+def _render_barcode_base64(barcode_value: str) -> str:
+    """Generate EAN13 barcode as base64 PNG for embedding in HTML (avoids WeasyPrint SVG issues)."""
     if not barcode_value or not barcode_value.strip():
         return ""
     code = barcode_value.strip()
@@ -128,12 +128,12 @@ def _render_barcode_svg(barcode_value: str) -> str:
     elif len(code) != 12:
         return ""
     try:
-        ean = barcode.get("ean13", code, writer=SVGWriter())
+        ean = barcode.get("ean13", code, writer=ImageWriter())
         buf = BytesIO()
         ean.write(buf)
-        return buf.getvalue().decode("utf-8")
+        return base64.b64encode(buf.getvalue()).decode("ascii")
     except Exception as exc:
-        logger.warning("barcode_svg_failed", code=code, error=str(exc))
+        logger.warning("barcode_png_failed", code=code, error=str(exc))
         return ""
 
 
@@ -144,11 +144,10 @@ def render_label_pdf(label: LabelData) -> bytes:
         article = html.escape(label.article or "")
         supplier = html.escape(label.supplier or "")
         barcode_value = html.escape(label.barcode_value or "")
-        barcode_svg = _render_barcode_svg(label.barcode_value or "")
+        barcode_b64 = _render_barcode_base64(label.barcode_value or "")
         barcode_img = ""
-        if barcode_svg:
-            b64 = base64.b64encode(barcode_svg.encode("utf-8")).decode("ascii")
-            barcode_img = f'<img src="data:image/svg+xml;base64,{b64}" alt="" style="max-width:100%;height:auto;" />'
+        if barcode_b64:
+            barcode_img = f'<img src="data:image/png;base64,{barcode_b64}" alt="" style="max-width:100%;height:auto;" />'
         html_content = f"""
         <html>
           <body style="width:58mm;height:40mm;margin:0;padding:3mm;font-family:Arial;">

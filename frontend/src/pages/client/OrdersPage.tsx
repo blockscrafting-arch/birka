@@ -5,6 +5,7 @@ import { CompanySelect } from "../../components/shared/CompanySelect";
 import { OrderCard } from "../../components/shared/OrderCard";
 import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
+import { Select } from "../../components/ui/Select";
 import { Pagination } from "../../components/ui/Pagination";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { Toast } from "../../components/ui/Toast";
@@ -67,8 +68,23 @@ export function OrdersPage() {
     <div className="space-y-4">
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
       <CompanySelect companies={companies} value={activeCompanyId} onChange={setCompanyId} />
-      <div className="flex items-center justify-between gap-2">
-        <Button onClick={() => setOpen(true)}>Создать заявку</Button>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Select
+            value={statusFilter ?? ""}
+            onChange={(e) => {
+              setStatusFilter(e.target.value || undefined);
+              setPage(1);
+            }}
+          >
+            <option value="">Все статусы</option>
+            <option value="На приемке">На приемке</option>
+            <option value="Принято">Принято</option>
+            <option value="Готово к отгрузке">Готово к отгрузке</option>
+            <option value="Завершено">Завершено</option>
+          </Select>
+          <Button onClick={() => setOpen(true)}>Создать заявку</Button>
+        </div>
         {pageError ? <div className="text-sm text-rose-500">{pageError}</div> : null}
       </div>
 

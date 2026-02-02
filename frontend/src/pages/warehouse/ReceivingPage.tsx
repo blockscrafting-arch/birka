@@ -97,6 +97,7 @@ export function ReceivingPage() {
           <div className="space-y-4">
             <ReceivingForm
               items={items}
+              defectPhotosByProduct={defectPhotosByProduct}
               isSubmitting={completeReceiving.isPending}
               onSubmit={handleSubmit}
               onSelectItem={(itemId) => setSelectedItemId(itemId)}

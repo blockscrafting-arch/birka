@@ -7,6 +7,7 @@ import { OrderItem } from "../../types";
 
 type ReceivingFormProps = {
   items: OrderItem[];
+  defectPhotosByProduct?: Record<number, number>;
   isSubmitting?: boolean;
   onSubmit: (payload: {
     order_item_id: number;
@@ -18,7 +19,13 @@ type ReceivingFormProps = {
   onSelectItem?: (itemId: number | null) => void;
 };
 
-export function ReceivingForm({ items, isSubmitting, onSubmit, onSelectItem }: ReceivingFormProps) {
+export function ReceivingForm({
+  items,
+  defectPhotosByProduct = {},
+  isSubmitting,
+  onSubmit,
+  onSelectItem,
+}: ReceivingFormProps) {
   const [itemId, setItemId] = useState("");
   const [received, setReceived] = useState("0");
   const [defect, setDefect] = useState("0");
@@ -117,6 +124,17 @@ export function ReceivingForm({ items, isSubmitting, onSubmit, onSelectItem }: R
         onChange={(e) => setReceived(e.target.value)}
       />
       <Input label="Брак" inputMode="numeric" value={defect} onChange={(e) => setDefect(e.target.value)} />
+      {selected && Number(defect) > 0 ? (
+        (() => {
+          const count = defectPhotosByProduct[selected.product_id] ?? 0;
+          const needPhoto = count === 0;
+          return (
+            <div className={needPhoto ? "text-amber-600 text-sm" : "text-slate-600 text-sm"}>
+              {needPhoto ? "Нужно фото брака для этой позиции" : `Фото брака: ${count} шт.`}
+            </div>
+          );
+        })()
+      ) : null}
       <Input
         label="Списание (фотосессия и др.)"
         inputMode="numeric"
@@ -129,9 +147,22 @@ export function ReceivingForm({ items, isSubmitting, onSubmit, onSelectItem }: R
         onChange={(e) => setAdjustmentNote(e.target.value)}
       />
       {error ? <div className="text-sm text-rose-500">{error}</div> : null}
-      <Button type="submit" disabled={isSubmitting || items.length === 0}>
-        Завершить приёмку
-      </Button>
+      {(() => {
+        const defectQty = Number(defect);
+        const needDefectPhoto =
+          selected &&
+          !Number.isNaN(defectQty) &&
+          defectQty > 0 &&
+          (defectPhotosByProduct[selected.product_id] ?? 0) === 0;
+        return (
+          <Button
+            type="submit"
+            disabled={isSubmitting || items.length === 0 || needDefectPhoto}
+          >
+            Завершить приёмку
+          </Button>
+        );
+      })()}
     </form>
   );
 }

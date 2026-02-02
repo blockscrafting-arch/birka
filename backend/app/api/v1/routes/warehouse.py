@@ -1,13 +1,16 @@
 """Warehouse endpoints."""
+from datetime import datetime as dt
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.api.v1.deps import get_current_user, require_roles
 from app.db.models.company import Company
 from app.db.models.order import Order, OrderItem
+from app.db.models.order_photo import OrderPhoto
 from app.db.models.packing_record import PackingRecord
 from app.db.models.product import Product
 from app.db.models.warehouse_employee import WarehouseEmployee
@@ -15,6 +18,7 @@ from app.db.session import get_db
 from app.schemas.warehouse import BarcodeValidateRequest, PackingRecordCreate, ReceivingComplete
 from app.services.excel import export_fbo_shipping
 from app.services.files import content_disposition
+from app.services.telegram import send_notification
 from app.core.logging import logger
 from app.db.models.user import User
 
@@ -48,6 +52,21 @@ async def complete_receiving(
             order_item = item_result.scalar_one_or_none()
             if not order_item:
                 continue
+            if item.defect_qty > 0:
+                photo_count_result = await db.execute(
+                    select(func.count())
+                    .select_from(OrderPhoto)
+                    .where(
+                        OrderPhoto.order_id == payload.order_id,
+                        OrderPhoto.product_id == order_item.product_id,
+                        OrderPhoto.photo_type == "defect",
+                    )
+                )
+                if int(photo_count_result.scalar_one()) == 0:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Требуется фото брака для товара (product_id={order_item.product_id})",
+                    )
             order_item.received_qty = item.received_qty
             order_item.defect_qty = item.defect_qty
             order_item.adjustment_qty = item.adjustment_qty
@@ -64,7 +83,16 @@ async def complete_receiving(
 
         order.received_qty = total_received
         order.status = "Принято"
+        company_result = await db.execute(
+            select(Company).where(Company.id == order.company_id).options(joinedload(Company.user))
+        )
+        company = company_result.scalar_one_or_none()
         await db.commit()
+        if company and company.user and company.user.telegram_id:
+            await send_notification(
+                company.user.telegram_id,
+                f"Заявка {order.order_number} принята на склад.",
+            )
         return {"received": total_received, "defects": total_defect}
     except HTTPException:
         raise
@@ -112,14 +140,33 @@ async def create_packing_record(
         db.add(record)
 
         order.packed_qty += payload.quantity
-        order.status = "Готово к отгрузке"
+        items_result = await db.execute(select(OrderItem).where(OrderItem.order_id == payload.order_id))
+        order_items = items_result.scalars().all()
+        total_defect = sum(i.defect_qty for i in order_items)
+        effective_plan = order.received_qty - total_defect
+        if order.packed_qty >= effective_plan:
+            order.status = "Завершено"
+            order.completed_at = dt.utcnow()
+            status_msg = "Завершено"
+        else:
+            order.status = "Готово к отгрузке"
+            status_msg = "Готово к отгрузке"
 
         product_result = await db.execute(select(Product).where(Product.id == payload.product_id))
         product = product_result.scalar_one_or_none()
         if product:
             product.stock_quantity = max(product.stock_quantity - payload.quantity, 0)
 
+        company_result = await db.execute(
+            select(Company).where(Company.id == order.company_id).options(joinedload(Company.user))
+        )
+        company = company_result.scalar_one_or_none()
         await db.commit()
+        if company and company.user and company.user.telegram_id:
+            await send_notification(
+                company.user.telegram_id,
+                f"Заявка {order.order_number}: {status_msg}.",
+            )
         return {"status": "ok"}
     except HTTPException:
         raise
@@ -160,6 +207,26 @@ async def validate_barcode(
     except Exception as exc:
         logger.exception("barcode_validate_failed", error=str(exc))
         raise HTTPException(status_code=500, detail="Barcode validation failed")
+
+
+@router.post("/order/{order_id}/complete")
+async def complete_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("warehouse", "admin")),
+) -> dict:
+    """Mark order as completed (warehouse/admin)."""
+    order_result = await db.execute(select(Order).where(Order.id == order_id))
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    company_result = await db.execute(select(Company).where(Company.id == order.company_id))
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Company not found")
+    order.status = "Завершено"
+    order.completed_at = dt.utcnow()
+    await db.commit()
+    return {"status": "ok"}
 
 
 @router.get("/export-fbo")

@@ -22,6 +22,7 @@ class Order(Base):
     packed_qty: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     company = relationship("Company", back_populates="orders")
     items = relationship("OrderItem", back_populates="order")

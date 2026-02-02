@@ -67,6 +67,7 @@ export type OrderPhoto = {
   s3_key: string;
   url: string;
   photo_type?: string | null;
+  product_id?: number | null;
   created_at: string;
 };
 

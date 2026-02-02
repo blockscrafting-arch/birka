@@ -6,12 +6,14 @@ import { PhotoUpload } from "../../components/shared/PhotoUpload";
 import { Button } from "../../components/ui/Button";
 import { Loader } from "../../components/ui/Loader";
 import { Modal } from "../../components/ui/Modal";
+import { Toast } from "../../components/ui/Toast";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
 import { useOrderItems } from "../../hooks/useOrderItems";
 import { useOrders } from "../../hooks/useOrders";
 import { useWarehouse } from "../../hooks/useWarehouse";
 import { useOrderPhotos } from "../../hooks/useOrderPhotos";
+import { apiClient } from "../../services/api";
 import { PackingForm } from "./PackingForm";
 
 export function PackingPage() {
@@ -29,6 +31,22 @@ export function PackingPage() {
   const { createPacking } = useWarehouse();
   const { data: photos = [], upload } = useOrderPhotos(activeOrderId ?? undefined);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
+
+  const handleExportFBO = async (orderId: number, orderNumber: string) => {
+    try {
+      const { blob, filename } = await apiClient.apiFile(`/warehouse/export-fbo?order_id=${orderId}`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename ?? `Отгрузка_FBO_${orderNumber}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setToast({ message: "Файл скачан" });
+    } catch (err) {
+      setToast({ message: err instanceof Error ? err.message : "Ошибка выгрузки", variant: "error" });
+    }
+  };
 
   useEffect(() => {
     if (!companyId && companies.length > 0) {
@@ -66,6 +84,7 @@ export function PackingPage() {
 
   return (
     <div className="space-y-4">
+      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
       <CompanySelect companies={companies} value={activeCompanyId} onChange={setCompanyId} />
       {pageError ? <div className="text-sm text-rose-500">{pageError}</div> : null}
 
@@ -80,22 +99,29 @@ export function PackingPage() {
         {orders.map((order) => (
           <div key={order.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
             <div className="text-sm font-semibold text-slate-900">{order.order_number}</div>
-            <Button
-              className="mt-2"
-              onClick={async () => {
-                setPageError(null);
-                try {
-                  if (order.status === "Принято") {
-                    await updateStatus.mutateAsync({ id: order.id, status: "Упаковка" });
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                onClick={async () => {
+                  setPageError(null);
+                  try {
+                    if (order.status === "Принято") {
+                      await updateStatus.mutateAsync({ id: order.id, status: "Упаковка" });
+                    }
+                    setActiveOrderId(order.id);
+                  } catch (err) {
+                    setPageError(err instanceof Error ? err.message : "Не удалось взять заявку в работу");
                   }
-                  setActiveOrderId(order.id);
-                } catch (err) {
-                  setPageError(err instanceof Error ? err.message : "Не удалось взять заявку в работу");
-                }
-              }}
-            >
-              Взять в работу
-            </Button>
+                }}
+              >
+                Взять в работу
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => handleExportFBO(order.id, order.order_number)}
+              >
+                Скачать FBO (Excel)
+              </Button>
+            </div>
           </div>
         ))}
       </div>
@@ -105,6 +131,22 @@ export function PackingPage() {
           <Loader text="Загрузка позиций..." />
         ) : (
           <div className="space-y-4">
+            {activeOrder && effectivePlan > 0 ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                Упаковано {activeOrder.packed_qty} из {effectivePlan}
+                {isFullyPacked ? (
+                  <div className="mt-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => activeOrderId && completeOrder.mutate(activeOrderId)}
+                      disabled={completeOrder.isPending}
+                    >
+                      Завершить заказ
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <PackingForm items={items} isSubmitting={createPacking.isPending} onSubmit={handleSubmit} />
             <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-soft">
               <div className="text-sm font-semibold text-slate-900">Фото заявки</div>

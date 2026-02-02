@@ -2,6 +2,7 @@
 from app.db.models.company import Company
 from app.db.models.contract_template import ContractTemplate
 from app.db.models.destination import Destination
+from app.db.models.document_chunk import DocumentChunk
 from app.db.models.order import Order, OrderItem
 from app.db.models.order_counter import OrderCounter
 from app.db.models.order_photo import OrderPhoto
@@ -16,6 +17,7 @@ __all__ = [
     "Company",
     "ContractTemplate",
     "Destination",
+    "DocumentChunk",
     "Order",
     "OrderCounter",
     "OrderItem",

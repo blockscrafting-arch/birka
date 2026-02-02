@@ -68,5 +68,14 @@ export function useWarehouse() {
       }),
   });
 
-  return { completeReceiving, createPacking, validateBarcode };
+  const completeOrder = useMutation({
+    mutationFn: (orderId: number) =>
+      apiClient.api(`/warehouse/order/${orderId}/complete`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["order-items"] });
+    },
+  });
+
+  return { completeReceiving, createPacking, validateBarcode, completeOrder };
 }
