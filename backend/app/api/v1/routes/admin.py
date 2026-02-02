@@ -4,6 +4,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import require_roles
+from app.core.logging import logger
 from app.db.models.contract_template import ContractTemplate
 from app.db.models.user import User
 from app.db.session import get_db
@@ -43,7 +44,7 @@ async def update_user_role(
     user_id: int,
     payload: RoleUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles("admin")),
+    current_user: User = Depends(require_roles("admin")),
 ) -> dict:
     """Update user role."""
     if payload.role not in {"client", "warehouse", "admin"}:
@@ -53,6 +54,7 @@ async def update_user_role(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     user.role = payload.role
+    logger.info("role_changed", target_user_id=user_id, new_role=payload.role, by_admin=current_user.id)
     await db.commit()
     return {"status": "ok"}
 

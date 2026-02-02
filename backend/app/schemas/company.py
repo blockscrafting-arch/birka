@@ -11,6 +11,13 @@ class CompanyCreate(BaseModel):
     director: str | None = None
     bank_bik: str | None = None
     bank_account: str | None = None
+    kpp: str | None = None
+    ogrn: str | None = None
+    legal_address: str | None = None
+    okved: str | None = None
+    okved_name: str | None = None
+    bank_name: str | None = None
+    bank_corr_account: str | None = None
 
 
 class CompanyUpdate(BaseModel):
@@ -21,6 +28,13 @@ class CompanyUpdate(BaseModel):
     director: str | None = None
     bank_bik: str | None = None
     bank_account: str | None = None
+    kpp: str | None = None
+    ogrn: str | None = None
+    legal_address: str | None = None
+    okved: str | None = None
+    okved_name: str | None = None
+    bank_name: str | None = None
+    bank_corr_account: str | None = None
 
 
 class CompanyOut(BaseModel):
@@ -33,6 +47,13 @@ class CompanyOut(BaseModel):
     director: str | None
     bank_bik: str | None
     bank_account: str | None
+    kpp: str | None
+    ogrn: str | None
+    legal_address: str | None
+    okved: str | None
+    okved_name: str | None
+    bank_name: str | None
+    bank_corr_account: str | None
 
     class Config:
         from_attributes = True

@@ -6,6 +6,13 @@ export type Company = {
   director?: string;
   bank_bik?: string;
   bank_account?: string;
+  kpp?: string;
+  ogrn?: string;
+  legal_address?: string;
+  okved?: string;
+  okved_name?: string;
+  bank_name?: string;
+  bank_corr_account?: string;
 };
 
 export type Destination = {

@@ -33,6 +33,11 @@ class ContractData:
     contract_number: str
     contract_date: str
     service_description: str
+    kpp: str | None = None
+    ogrn: str | None = None
+    legal_address: str | None = None
+    bank_name: str | None = None
+    bank_corr_account: str | None = None
 
 
 DEFAULT_CONTRACT_TEMPLATE = """
@@ -90,9 +95,13 @@ DEFAULT_CONTRACT_TEMPLATE = """
     <div class="section-title">6. Реквизиты Заказчика</div>
     <table>
       <tr><td>Наименование</td><td>{{company_name}}</td></tr>
-      <tr><td>ИНН</td><td>{{inn}}</td></tr>
+      <tr><td>ИНН / КПП</td><td>{{inn}} / {{kpp}}</td></tr>
+      <tr><td>ОГРН</td><td>{{ogrn}}</td></tr>
+      <tr><td>Юридический адрес</td><td>{{legal_address}}</td></tr>
       <tr><td>Подписант</td><td>{{director}}</td></tr>
+      <tr><td>Банк</td><td>{{bank_name}}</td></tr>
       <tr><td>БИК</td><td>{{bank_bik}}</td></tr>
+      <tr><td>Корр. счёт</td><td>{{bank_corr_account}}</td></tr>
       <tr><td>Расчетный счет</td><td>{{bank_account}}</td></tr>
     </table>
 
@@ -181,6 +190,11 @@ def render_contract_pdf(contract: ContractData, template_html: str | None = None
             "contract_number": contract.contract_number or "-",
             "contract_date": contract.contract_date or "-",
             "service_description": contract.service_description or "-",
+            "kpp": contract.kpp or "-",
+            "ogrn": contract.ogrn or "-",
+            "legal_address": contract.legal_address or "-",
+            "bank_name": contract.bank_name or "-",
+            "bank_corr_account": contract.bank_corr_account or "-",
         }
         html_content = _apply_contract_template(template_html or DEFAULT_CONTRACT_TEMPLATE, context)
         return HTML(string=html_content).write_pdf()

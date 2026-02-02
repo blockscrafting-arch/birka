@@ -15,6 +15,8 @@ type CompanyCreate = {
   name?: string;
   bank_bik?: string;
   bank_account?: string;
+  bank_name?: string;
+  bank_corr_account?: string;
 };
 
 type CompanyUpdate = Partial<CompanyCreate> & {

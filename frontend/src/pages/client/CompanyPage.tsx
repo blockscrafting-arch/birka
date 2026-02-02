@@ -23,7 +23,14 @@ export function CompanyPage() {
   const companies = items;
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
-  const handleCreate = async (payload: { inn: string; name?: string; bank_bik?: string; bank_account?: string }) => {
+  const handleCreate = async (payload: {
+    inn: string;
+    name?: string;
+    bank_bik?: string;
+    bank_account?: string;
+    bank_name?: string;
+    bank_corr_account?: string;
+  }) => {
     setPageError(null);
     try {
       await create.mutateAsync(payload);
@@ -35,7 +42,14 @@ export function CompanyPage() {
     }
   };
 
-  const handleUpdate = async (payload: { inn: string; name?: string; bank_bik?: string; bank_account?: string }) => {
+  const handleUpdate = async (payload: {
+    inn: string;
+    name?: string;
+    bank_bik?: string;
+    bank_account?: string;
+    bank_name?: string;
+    bank_corr_account?: string;
+  }) => {
     if (!editing) return;
     setPageError(null);
     try {
@@ -94,7 +108,22 @@ export function CompanyPage() {
         {companies.map((company) => (
           <div key={company.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
             <div className="text-base font-semibold text-slate-900">{company.name}</div>
-            <div className="mt-1 text-xs text-slate-500">ИНН: {company.inn}</div>
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
+              <span>ИНН: {company.inn}</span>
+              {company.kpp && <span>КПП: {company.kpp}</span>}
+              {company.ogrn && <span>ОГРН: {company.ogrn}</span>}
+            </div>
+            {company.legal_address && (
+              <div className="mt-1 text-xs text-slate-600">{company.legal_address}</div>
+            )}
+            {(company.okved || company.okved_name) && (
+              <div className="mt-0.5 text-xs text-slate-500">
+                ОКВЭД: {[company.okved, company.okved_name].filter(Boolean).join(" — ")}
+              </div>
+            )}
+            {company.bank_name && (
+              <div className="mt-0.5 text-xs text-slate-500">Банк: {company.bank_name}</div>
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => setEditing(company)}>
                 Редактировать
@@ -125,6 +154,13 @@ export function CompanyPage() {
                   name: editing.name,
                   bank_bik: editing.bank_bik ?? undefined,
                   bank_account: editing.bank_account ?? undefined,
+                  kpp: editing.kpp ?? undefined,
+                  ogrn: editing.ogrn ?? undefined,
+                  legal_address: editing.legal_address ?? undefined,
+                  okved: editing.okved ?? undefined,
+                  okved_name: editing.okved_name ?? undefined,
+                  bank_name: editing.bank_name ?? undefined,
+                  bank_corr_account: editing.bank_corr_account ?? undefined,
                 }
               : undefined
           }

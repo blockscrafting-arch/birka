@@ -2,10 +2,12 @@
 from datetime import datetime, timedelta
 import secrets
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.limiter import limiter
+from app.core.logging import logger
 from app.core.security import validate_telegram_init_data
 from app.api.v1.deps import get_current_user
 from app.db.models.session import Session
@@ -19,7 +21,9 @@ router = APIRouter()
 
 
 @router.post("/telegram", response_model=TelegramAuthResponse)
+@limiter.limit("10/minute")
 async def telegram_auth(
+    request: Request,
     payload: TelegramAuthRequest,
     db: AsyncSession = Depends(get_db),
 ) -> TelegramAuthResponse:
@@ -55,6 +59,8 @@ async def telegram_auth(
     session = Session(user_id=user_id, token=token, expires_at=expires_at)
     db.add(session)
     await db.commit()
+
+    logger.info("user_authenticated", telegram_id=telegram_id, user_id=user_id)
 
     return TelegramAuthResponse(
         user_id=user_id,

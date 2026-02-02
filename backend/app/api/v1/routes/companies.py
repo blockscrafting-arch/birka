@@ -14,11 +14,30 @@ from app.api.v1.deps import get_current_user
 from app.db.models.user import User
 from app.schemas.company import CompanyCreate, CompanyList, CompanyOut, CompanyUpdate
 from app.core.logging import logger
-from app.services.dadata import fetch_company_by_inn
+from app.services.dadata import fetch_bank_by_bik, fetch_company_by_inn
 from app.services.pdf import ContractData, render_contract_pdf
 from app.services.files import content_disposition
 
 router = APIRouter()
+
+
+@router.get("/bank-by-bik")
+async def bank_by_bik(
+    bik: str = Query(..., min_length=1, max_length=20),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Return bank name and correspondent account by BIK for autofill."""
+    bik = bik.strip()
+    if len(bik) != 9 or not bik.isdigit():
+        raise HTTPException(status_code=422, detail="БИК должен быть 9 цифр")
+    bank = await fetch_bank_by_bik(bik)
+    if not bank:
+        return {"bank_name": None, "bank_corr_account": None}
+    data = bank.get("data", {})
+    name_obj = data.get("name") or {}
+    bank_name = name_obj.get("payment") or name_obj.get("full") or bank.get("value")
+    bank_corr_account = data.get("correspondent_account")
+    return {"bank_name": bank_name, "bank_corr_account": bank_corr_account}
 
 
 @router.post("", response_model=CompanyOut)
@@ -29,9 +48,19 @@ async def create_company(
 ) -> CompanyOut:
     """Create a company and optionally enrich via DaData."""
     company_data = await fetch_company_by_inn(payload.inn)
+    data = (company_data or {}).get("data") or {}
     name = payload.name or (company_data or {}).get("value") or payload.inn
-    legal_form = payload.legal_form or (company_data or {}).get("data", {}).get("opf", {}).get("short")
-    director = payload.director or (company_data or {}).get("data", {}).get("management", {}).get("name")
+    legal_form = payload.legal_form or data.get("opf", {}).get("short")
+    director = payload.director or data.get("management", {}).get("name")
+    kpp = payload.kpp or data.get("kpp")
+    ogrn = payload.ogrn or data.get("ogrn")
+    addr = data.get("address") or {}
+    legal_address = payload.legal_address or addr.get("unrestricted_value") or addr.get("value")
+    okved = payload.okved or data.get("okved")
+    okveds = data.get("okveds") or []
+    okved_name = payload.okved_name or next(
+        (o.get("name") for o in okveds if o.get("main")), None
+    )
 
     company = Company(
         user_id=current_user.id,
@@ -41,6 +70,13 @@ async def create_company(
         director=director,
         bank_bik=payload.bank_bik,
         bank_account=payload.bank_account,
+        kpp=kpp,
+        ogrn=ogrn,
+        legal_address=legal_address,
+        okved=okved,
+        okved_name=okved_name,
+        bank_name=payload.bank_name,
+        bank_corr_account=payload.bank_corr_account,
         contract_data=company_data,
     )
     db.add(company)
@@ -116,6 +152,11 @@ async def generate_contract(
         contract_number=contract_number,
         contract_date=contract_date,
         service_description="Оказание услуг фулфилмента и сопутствующих работ на условиях настоящего договора.",
+        kpp=company.kpp,
+        ogrn=company.ogrn,
+        legal_address=company.legal_address,
+        bank_name=company.bank_name,
+        bank_corr_account=company.bank_corr_account,
     )
     try:
         template_result = await db.execute(
