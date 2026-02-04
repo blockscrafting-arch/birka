@@ -38,7 +38,7 @@ def parse_docx(content: bytes) -> str:
 
 
 def parse_rtf(content: bytes) -> str:
-    """Extract plain text from RTF. Tries UTF-8, UTF-16 (BOM), then cp1252."""
+    """Extract plain text from RTF. Tries UTF-8, UTF-16 (BOM), then cp1251, then cp1252."""
     try:
         from striprtf.striprtf import rtf_to_text
     except ImportError:
@@ -54,12 +54,15 @@ def parse_rtf(content: bytes) -> str:
                 raise
         except Exception:
             try:
-                rtf_str = content.decode("cp1252")
-            except Exception as exc:
-                logger.warning("rtf_decode_failed", error=str(exc))
-                raise ValueError(
-                    "Файл RTF должен быть в кодировке UTF-8, UTF-16 или Windows-1252"
-                ) from exc
+                rtf_str = content.decode("cp1251")
+            except Exception:
+                try:
+                    rtf_str = content.decode("cp1252")
+                except Exception as exc:
+                    logger.warning("rtf_decode_failed", error=str(exc))
+                    raise ValueError(
+                        "Файл RTF должен быть в кодировке UTF-8, UTF-16, Windows-1251 или Windows-1252"
+                    ) from exc
     try:
         text = rtf_to_text(rtf_str)
         return (text or "").strip()

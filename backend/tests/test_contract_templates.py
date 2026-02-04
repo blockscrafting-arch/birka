@@ -10,6 +10,7 @@ from app.services.contract_template_service import (
     _get_libreoffice_cmd,
     _is_valid_docx,
     contract_data_to_context,
+    get_docx_bytes_for_template,
     upload_template_file,
     validate_template_upload,
 )
@@ -292,6 +293,25 @@ def test_upload_template_file_rtf_uploads_single_file():
     call_args = s3.upload_bytes.call_args[0]
     assert call_args[0] == file_key
     assert call_args[1] == content
+
+
+def test_get_docx_bytes_legacy_pdf_uses_docx_key():
+    """Legacy PDF template with docx_key returns DOCX from docx_key."""
+    s3 = MagicMock()
+    s3.get_bytes.side_effect = lambda key: b"docx-from-" + key.encode() if isinstance(key, str) else b""
+    result = get_docx_bytes_for_template(
+        s3, "contract-templates/old.pdf", "pdf", "contract-templates/old-converted.docx"
+    )
+    assert result == b"docx-from-contract-templates/old-converted.docx"
+    s3.get_bytes.assert_called_once_with("contract-templates/old-converted.docx")
+
+
+def test_get_docx_bytes_legacy_pdf_without_docx_key_raises():
+    """Legacy PDF template without docx_key raises RuntimeError with clear message."""
+    s3 = MagicMock()
+    with pytest.raises(RuntimeError, match="Старый шаблон|PDF|конвертированной"):
+        get_docx_bytes_for_template(s3, "contract-templates/old.pdf", "pdf", None)
+    s3.get_bytes.assert_not_called()
 
 
 async def test_delete_contract_template(client, admin_headers, db_session, minimal_docx):

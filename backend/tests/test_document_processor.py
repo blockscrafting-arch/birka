@@ -95,6 +95,13 @@ def test_parse_rtf_utf16_bom():
     assert "Hello" in result
 
 
+def test_parse_rtf_cp1251():
+    """RTF в Windows-1251 (кириллица) декодируется."""
+    rtf_cp1251 = b"{\\rtf1\\ansi " + "Привет".encode("cp1251") + b"}"
+    result = parse_rtf(rtf_cp1251)
+    assert "Привет" in result
+
+
 # ----- split_into_chunks -----
 
 

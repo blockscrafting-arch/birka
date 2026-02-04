@@ -19,7 +19,7 @@ export function AIPage() {
   const [showScrollDown, setShowScrollDown] = useState(false);
   const lastMessageCountRef = useRef(0);
 
-  const serverLoadedOnce = historyQuery.data !== undefined;
+  const serverLoadedOnce = historyQuery.isSuccess || historyQuery.isError;
   const messages = serverLoadedOnce ? getMessages(companyId ?? null) : [];
 
   // Hydrate store from server history when loaded
@@ -118,6 +118,29 @@ export function AIPage() {
         >
           {historyQuery.isLoading && !serverLoadedOnce ? (
             <div className="text-sm text-slate-500">Загрузка истории…</div>
+          ) : historyQuery.isError ? (
+            <>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                История не загрузилась, показываем локальные сообщения.
+              </div>
+              {messages.length === 0 ? (
+                <div className="text-sm text-slate-500">Сообщений пока нет.</div>
+              ) : (
+                messages.map((message, index) => (
+                  <div
+                    key={`${message.role}-${index}`}
+                    className={`rounded-xl px-3 py-2 text-sm ${
+                      message.role === "user" ? "bg-birka-50 text-slate-900" : "bg-slate-100 text-slate-700"
+                    }`}
+                  >
+                    <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
+                      {message.role === "user" ? "Вы" : "AI"}
+                    </span>
+                    <span className="whitespace-pre-wrap break-words">{message.text}</span>
+                  </div>
+                ))
+              )}
+            </>
           ) : messages.length === 0 ? (
             <div className="text-sm text-slate-500">Сообщений пока нет.</div>
           ) : (
