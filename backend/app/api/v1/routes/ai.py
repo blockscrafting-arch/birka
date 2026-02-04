@@ -79,12 +79,18 @@ async def chat(
     history_rows = list(result.scalars().all())
     history_rows.reverse()
 
-    # Build OpenAI messages: history + new user message with RAG context
-    openai_messages = [{"role": m.role, "content": m.text} for m in history_rows]
+    # Build OpenAI messages: system instruction + history + new user message with RAG context
+    AI_SYSTEM_INSTRUCTION = (
+        "Ты помощник фулфилмента Бирка. На вопросы о заявках, товарах, остатках, браке, отгрузках, "
+        "прайсе или реквизитах компании всегда вызывай соответствующие функции (tools) и отвечай "
+        "только на основе полученных данных. Не придумывай номера заявок и не используй заглушки вроде [номер заявки]."
+    )
+    openai_messages = [{"role": "system", "content": AI_SYSTEM_INSTRUCTION}]
+    openai_messages.extend([{"role": m.role, "content": m.text} for m in history_rows])
     prompt = await build_rag_context_async(db, payload.message) or payload.message
     openai_messages.append({"role": "user", "content": prompt})
 
-    answer = await service.chat(openai_messages)
+    answer = await service.chat(openai_messages, db=db, user=current_user, company_id=payload.company_id)
 
     # Persist user message and assistant reply
     user_msg = ChatMessage(

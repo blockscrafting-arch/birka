@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 
 import { Button } from "../../components/ui/Button";
 import { Toast } from "../../components/ui/Toast";
@@ -123,7 +124,9 @@ export function AIPage() {
             </button>
           )}
         </div>
-        <span className="whitespace-pre-wrap break-words">{message.text}</span>
+        <div className="prose prose-sm prose-slate max-w-none whitespace-pre-wrap break-words prose-p:my-0 prose-ul:my-1">
+          <ReactMarkdown remarkPlugins={[remarkBreaks]}>{message.text}</ReactMarkdown>
+        </div>
       </div>
     );
   };
@@ -177,6 +180,16 @@ export function AIPage() {
             <div className="text-sm text-slate-500">Сообщений пока нет.</div>
           ) : (
             messages.map((message, index) => renderMessage(message, index))
+          )}
+          {chat.isPending && (
+            <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700">
+              <span className="text-xs uppercase tracking-wide text-slate-500">AI</span>
+              <div className="mt-1 flex gap-1">
+                <span className="animate-bounce">.</span>
+                <span className="animate-bounce [animation-delay:0.2s]">.</span>
+                <span className="animate-bounce [animation-delay:0.4s]">.</span>
+              </div>
+            </div>
           )}
           <div ref={messagesEndRef} />
         </div>
