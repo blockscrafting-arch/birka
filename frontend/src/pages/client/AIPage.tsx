@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../../components/ui/Button";
+import { Toast } from "../../components/ui/Toast";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useAIChat, useAIHistory, useClearAIHistory } from "../../hooks/useAI";
 import { useQueryClient } from "@tanstack/react-query";
@@ -17,7 +18,17 @@ export function AIPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollDown, setShowScrollDown] = useState(false);
+  const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
   const lastMessageCountRef = useRef(0);
+
+  const handleCopyMessage = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setToast({ message: "Скопировано в буфер обмена", variant: "success" });
+    } catch {
+      setToast({ message: "Не удалось скопировать", variant: "error" });
+    }
+  }, []);
 
   const serverLoadedOnce = historyQuery.isSuccess || historyQuery.isError;
   const messages = serverLoadedOnce ? getMessages(companyId ?? null) : [];
@@ -85,8 +96,40 @@ export function AIPage() {
     });
   };
 
+  const renderMessage = (message: { role: "user" | "assistant"; text: string }, index: number) => {
+    const isUser = message.role === "user";
+    return (
+      <div
+        key={`${message.role}-${index}`}
+        className={`rounded-xl px-3 py-2 text-sm ${
+          isUser ? "bg-birka-50 text-slate-900" : "bg-slate-100 text-slate-700"
+        }`}
+      >
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="text-xs uppercase tracking-wide text-slate-500">
+            {isUser ? "Вы" : "AI"}
+          </span>
+          {!isUser && (
+            <button
+              type="button"
+              onClick={() => handleCopyMessage(message.text)}
+              className="rounded p-1 text-slate-500 hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
+              title="Скопировать"
+              aria-label="Скопировать сообщение"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </button>
+          )}
+        </div>
+        <span className="whitespace-pre-wrap break-words">{message.text}</span>
+      </div>
+    );
+  };
+
   return (
-    <div className="flex min-h-[280px] h-[calc(100vh-9rem)] max-h-[calc(100vh-5rem)] flex-col gap-0">
+    <div className="flex min-h-[280px] h-[calc(100vh-7rem)] max-h-[calc(100vh-3rem)] flex-col gap-0">
       <div className="shrink-0 rounded-t-2xl border border-b-0 border-slate-200 bg-white p-4 shadow-soft">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -108,7 +151,7 @@ export function AIPage() {
         </div>
       </div>
 
-      <div className="relative min-h-[8rem] min-w-0 flex-1">
+      <div className="relative min-h-[12rem] min-w-0 flex-1">
         <div
           ref={messagesContainerRef}
           onScroll={handleScroll}
@@ -127,37 +170,13 @@ export function AIPage() {
               {messages.length === 0 ? (
                 <div className="text-sm text-slate-500">Сообщений пока нет.</div>
               ) : (
-                messages.map((message, index) => (
-                  <div
-                    key={`${message.role}-${index}`}
-                    className={`rounded-xl px-3 py-2 text-sm ${
-                      message.role === "user" ? "bg-birka-50 text-slate-900" : "bg-slate-100 text-slate-700"
-                    }`}
-                  >
-                    <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
-                      {message.role === "user" ? "Вы" : "AI"}
-                    </span>
-                    <span className="whitespace-pre-wrap break-words">{message.text}</span>
-                  </div>
-                ))
+                messages.map((message, index) => renderMessage(message, index))
               )}
             </>
           ) : messages.length === 0 ? (
             <div className="text-sm text-slate-500">Сообщений пока нет.</div>
           ) : (
-            messages.map((message, index) => (
-              <div
-                key={`${message.role}-${index}`}
-                className={`rounded-xl px-3 py-2 text-sm ${
-                  message.role === "user" ? "bg-birka-50 text-slate-900" : "bg-slate-100 text-slate-700"
-                }`}
-              >
-                <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">
-                  {message.role === "user" ? "Вы" : "AI"}
-                </span>
-                <span className="whitespace-pre-wrap break-words">{message.text}</span>
-              </div>
-            ))
+            messages.map((message, index) => renderMessage(message, index))
           )}
           <div ref={messagesEndRef} />
         </div>
@@ -191,6 +210,9 @@ export function AIPage() {
           {chat.isPending ? "Отправляю..." : "Отправить"}
         </Button>
       </form>
+      {toast ? (
+        <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />
+      ) : null}
     </div>
   );
 }
