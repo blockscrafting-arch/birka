@@ -102,6 +102,21 @@ def test_parse_rtf_cp1251():
     assert "Привет" in result
 
 
+def test_parse_rtf_ansicpg1251():
+    """RTF с \\ansicpg1251 и кириллицей декодируется по указанной кодировке."""
+    rtf = b"{\\rtf1\\ansi\\ansicpg1251 " + "Договор".encode("cp1251") + b"}"
+    result = parse_rtf(rtf)
+    assert "Договор" in result
+
+
+def test_parse_rtf_ansicpg1252():
+    """RTF с \\ansicpg1252 и латиницей декодируется по указанной кодировке."""
+    rtf = b"{\\rtf1\\ansi\\ansicpg1252 Hello World}"
+    result = parse_rtf(rtf)
+    assert "Hello" in result
+    assert "World" in result
+
+
 # ----- split_into_chunks -----
 
 

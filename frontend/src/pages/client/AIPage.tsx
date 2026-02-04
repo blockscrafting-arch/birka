@@ -116,7 +116,7 @@ export function AIPage() {
           aria-label="История сообщений"
           className="h-full space-y-3 overflow-y-auto border-x border-slate-200 bg-white p-4"
         >
-          {historyQuery.isLoading && !serverLoadedOnce ? (
+          {historyQuery.isLoading && !hasLocalMessages ? (
             <div className="text-sm text-slate-500">Загрузка истории…</div>
           ) : historyQuery.isError ? (
             <>

@@ -1,4 +1,5 @@
 """Document processing for RAG: DOCX/TXT parsing, chunking, indexing."""
+import re
 from datetime import datetime, timezone
 from io import BytesIO
 
@@ -13,6 +14,24 @@ from app.services.rag import get_embedding
 # Ограничения, чтобы не ронять воркер при больших файлах и множестве эмбеддингов
 MAX_DOCUMENT_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB
 MAX_CHUNKS_PER_DOCUMENT = 80
+
+# RTF \ansicpg code page -> Python encoding name (common Windows/Office code pages)
+_ANSI_CPG_TO_ENCODING: dict[int, str] = {
+    1250: "cp1250",  # Central Europe
+    1251: "cp1251",  # Cyrillic
+    1252: "cp1252",  # Western Europe
+    1254: "cp1254",  # Turkish
+    1257: "cp1257",  # Baltic
+}
+
+
+def _get_rtf_ansicpg(content: bytes) -> int | None:
+    """Extract \\ansicpgN from RTF header (first 2 KB). Returns code page number or None."""
+    header = content[:2048]
+    match = re.search(rb"\\ansicpg(\d+)", header)
+    if match:
+        return int(match.group(1))
+    return None
 
 
 def parse_txt(content: bytes) -> str:
@@ -38,31 +57,58 @@ def parse_docx(content: bytes) -> str:
 
 
 def parse_rtf(content: bytes) -> str:
-    """Extract plain text from RTF. Tries UTF-8, UTF-16 (BOM), then cp1251, then cp1252."""
+    """
+    Extract plain text from RTF. Uses \\ansicpg when present, else UTF-8/UTF-16 (BOM)/cp1251/cp1252.
+    """
     try:
         from striprtf.striprtf import rtf_to_text
     except ImportError:
         raise ValueError("Обработка RTF недоступна (установите striprtf)") from None
     rtf_str: str
+    # 1) UTF-16 BOM
+    if content.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            rtf_str = content.decode("utf-16")
+        except Exception as exc:
+            logger.warning("rtf_utf16_decode_failed", error=str(exc))
+            rtf_str = ""
+        if rtf_str:
+            try:
+                text = rtf_to_text(rtf_str)
+                return (text or "").strip()
+            except Exception as exc:
+                logger.exception("rtf_parse_failed", error=str(exc))
+                raise ValueError("Не удалось извлечь текст из RTF") from exc
+    # 2) \ansicpg in header
+    cpg = _get_rtf_ansicpg(content)
+    if cpg is not None and cpg in _ANSI_CPG_TO_ENCODING:
+        enc = _ANSI_CPG_TO_ENCODING[cpg]
+        try:
+            rtf_str = content.decode(enc)
+        except Exception as exc:
+            logger.warning("rtf_ansicpg_decode_failed", ansicpg=cpg, encoding=enc, error=str(exc))
+            rtf_str = ""
+        if rtf_str:
+            try:
+                text = rtf_to_text(rtf_str)
+                return (text or "").strip()
+            except Exception as exc:
+                logger.exception("rtf_parse_failed", error=str(exc))
+                raise ValueError("Не удалось извлечь текст из RTF") from exc
+    # 3) Fallback: UTF-8, then cp1251, then cp1252
     try:
         rtf_str = content.decode("utf-8")
     except UnicodeDecodeError:
         try:
-            if content.startswith((b"\xff\xfe", b"\xfe\xff")):
-                rtf_str = content.decode("utf-16")
-            else:
-                raise
+            rtf_str = content.decode("cp1251")
         except Exception:
             try:
-                rtf_str = content.decode("cp1251")
-            except Exception:
-                try:
-                    rtf_str = content.decode("cp1252")
-                except Exception as exc:
-                    logger.warning("rtf_decode_failed", error=str(exc))
-                    raise ValueError(
-                        "Файл RTF должен быть в кодировке UTF-8, UTF-16, Windows-1251 или Windows-1252"
-                    ) from exc
+                rtf_str = content.decode("cp1252")
+            except Exception as exc:
+                logger.warning("rtf_decode_failed", error=str(exc))
+                raise ValueError(
+                    "Файл RTF должен быть в кодировке UTF-8, UTF-16 или Windows (ansicpg 1250/1251/1252/1254/1257)"
+                ) from exc
     try:
         text = rtf_to_text(rtf_str)
         return (text or "").strip()
