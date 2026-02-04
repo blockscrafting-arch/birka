@@ -140,7 +140,9 @@ export default function App() {
         <Page>
           <Header title="Бирка — фулфилмент" />
           <TabBar />
-          <AppRoutes />
+          <main className="min-h-0 flex-1">
+            <AppRoutes />
+          </main>
         </Page>
       </UserProvider>
     </BrowserRouter>

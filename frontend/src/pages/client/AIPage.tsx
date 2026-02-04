@@ -129,7 +129,7 @@ export function AIPage() {
   };
 
   return (
-    <div className="flex min-h-[280px] h-[calc(100vh-7rem)] max-h-[calc(100vh-3rem)] flex-col gap-0">
+    <div className="flex h-full min-h-0 flex-col gap-0">
       <div className="shrink-0 rounded-t-2xl border border-b-0 border-slate-200 bg-white p-4 shadow-soft">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -151,7 +151,7 @@ export function AIPage() {
         </div>
       </div>
 
-      <div className="relative min-h-[12rem] min-w-0 flex-1">
+      <div className="relative min-h-0 min-w-0 flex-1">
         <div
           ref={messagesContainerRef}
           onScroll={handleScroll}
