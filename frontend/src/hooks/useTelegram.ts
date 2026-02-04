@@ -6,6 +6,11 @@ type TelegramWebApp = {
     user?: { id?: number; username?: string };
   };
   ready: () => void;
+  openLink?: (url: string) => void;
+  showAlert?: (message: string) => void;
+  hapticFeedback?: {
+    impactOccurred: (style: string) => void;
+  };
 };
 
 declare global {

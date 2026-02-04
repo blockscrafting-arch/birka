@@ -51,7 +51,7 @@ async def update_destination(
     result = await db.execute(select(Destination).where(Destination.id == destination_id))
     dest = result.scalar_one_or_none()
     if not dest:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destination not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Адрес не найден")
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(dest, key, value)
     await db.commit()
@@ -69,6 +69,6 @@ async def delete_destination(
     result = await db.execute(select(Destination).where(Destination.id == destination_id))
     dest = result.scalar_one_or_none()
     if not dest:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Destination not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Адрес не найден")
     dest.is_active = False
     await db.commit()

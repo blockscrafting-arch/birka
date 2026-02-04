@@ -3,15 +3,12 @@ import { FormEvent, useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useAIChat } from "../../hooks/useAI";
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  text: string;
-};
+import { useAIChatStore } from "../../stores/aiChatStore";
 
 export function AIPage() {
   const { companyId } = useActiveCompany();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const { getMessages, addMessage } = useAIChatStore();
+  const messages = getMessages(companyId ?? null);
   const [draft, setDraft] = useState("");
   const chat = useAIChat();
 
@@ -22,20 +19,21 @@ export function AIPage() {
       return;
     }
 
-    setMessages((current) => [...current, { role: "user", text: trimmed }]);
+    const historyToSend = getMessages(companyId ?? null);
+    addMessage(companyId ?? null, { role: "user", text: trimmed });
     setDraft("");
 
     chat.mutate(
-      { message: trimmed, company_id: companyId },
+      { message: trimmed, company_id: companyId, history: historyToSend },
       {
         onSuccess: (data) => {
-          setMessages((current) => [...current, { role: "assistant", text: data.answer }]);
+          addMessage(companyId ?? null, { role: "assistant", text: data.answer });
         },
         onError: () => {
-          setMessages((current) => [
-            ...current,
-            { role: "assistant", text: "Не удалось получить ответ. Попробуйте позже." },
-          ]);
+          addMessage(companyId ?? null, {
+            role: "assistant",
+            text: "Не удалось получить ответ. Попробуйте позже.",
+          });
         },
       }
     );

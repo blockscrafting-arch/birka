@@ -1,5 +1,7 @@
 """RAG for project documentation."""
-from sqlalchemy import select
+from datetime import datetime, timezone
+
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
@@ -33,6 +35,72 @@ async def get_embedding(text: str) -> list[float] | None:
         return resp.data[0].embedding
     except Exception:
         return None
+
+
+def _split_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list[str]:
+    """Split text into chunks with overlap (simple paragraph-aware splitter)."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    if len(text) <= chunk_size:
+        return [text]
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        if end < len(text):
+            split_at = text.rfind("\n\n", start, end + 1)
+            if split_at > start:
+                end = split_at + 2
+            else:
+                split_at = text.rfind("\n", start, end + 1)
+                if split_at > start:
+                    end = split_at + 1
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        start = end - overlap
+        if start >= len(text):
+            break
+    return chunks
+
+
+async def upload_document_to_rag(db: AsyncSession, content: str, name: str) -> int:
+    """Upload plain text content into document_chunks with embeddings."""
+    source_file = (name or "document").strip() or "document"
+    chunks_text = _split_text(content, chunk_size=1000, overlap=200)
+    if not chunks_text:
+        return 0
+
+    version_result = await db.execute(
+        select(func.coalesce(func.max(DocumentChunk.version), 0)).where(
+            DocumentChunk.source_file == source_file
+        )
+    )
+    next_version = int(version_result.scalar_one() or 0) + 1
+
+    await db.execute(delete(DocumentChunk).where(DocumentChunk.source_file == source_file))
+
+    now = datetime.now(timezone.utc)
+    count = 0
+    for i, chunk_content in enumerate(chunks_text):
+        embedding = await get_embedding(chunk_content)
+        if not embedding:
+            continue
+        chunk = DocumentChunk(
+            content=chunk_content,
+            source_file=source_file,
+            chunk_index=i,
+            embedding=embedding,
+            created_at=now,
+            document_type="txt",
+            version=next_version,
+        )
+        db.add(chunk)
+        count += 1
+
+    await db.commit()
+    return count
 
 
 async def build_rag_context_async(db: AsyncSession, message: str) -> str:

@@ -90,3 +90,24 @@ async def warehouse_headers(db_session):
     await db_session.commit()
 
     return {"X-Session-Token": token}
+
+
+@pytest.fixture()
+async def admin_headers(db_session):
+    telegram_id = next(_telegram_id_counter)
+    user = User(
+        telegram_id=telegram_id,
+        telegram_username=f"admin-{telegram_id}",
+        first_name="Admin",
+        role="admin",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    token = f"admin-token-{telegram_id}"
+    session = Session(user_id=user.id, token=token, expires_at=datetime.utcnow() + timedelta(days=1))
+    db_session.add(session)
+    await db_session.commit()
+
+    return {"X-Session-Token": token}

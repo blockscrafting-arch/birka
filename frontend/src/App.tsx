@@ -13,11 +13,14 @@ import { OrdersPage } from "./pages/client/OrdersPage";
 import { ProductsPage } from "./pages/client/ProductsPage";
 import { OrderDetail } from "./pages/client/OrderDetail";
 import { AIPage } from "./pages/client/AIPage";
+import { PricingPage } from "./pages/client/PricingPage";
 import { ShippingPage } from "./pages/client/ShippingPage";
 import { AdminPage } from "./pages/admin/AdminPage";
 import { UsersPage } from "./pages/admin/UsersPage";
 import { DestinationsPage } from "./pages/admin/DestinationsPage";
 import { ContractTemplatesPage } from "./pages/admin/ContractTemplatesPage";
+import { DocumentsPage } from "./pages/admin/DocumentsPage";
+import { ServicesPage } from "./pages/admin/ServicesPage";
 import { PrintPage } from "./pages/warehouse/PrintPage";
 import { ReceivingPage } from "./pages/warehouse/ReceivingPage";
 import { PackingPage } from "./pages/warehouse/PackingPage";
@@ -45,6 +48,7 @@ function AppRoutes() {
       <Route path="/client/orders" element={<OrdersPage />} />
       <Route path="/client/orders/:orderId" element={<OrderDetail />} />
       <Route path="/client/ai" element={<AIPage />} />
+      <Route path="/client/pricing" element={<PricingPage />} />
       <Route path="/client/shipping" element={<ShippingPage />} />
       <Route
         path="/warehouse/print"
@@ -79,6 +83,14 @@ function AppRoutes() {
         path="/admin/templates"
         element={canAdmin ? <ContractTemplatesPage /> : <Navigate to="/client/company" replace />}
       />
+      <Route
+        path="/admin/services"
+        element={canAdmin ? <ServicesPage /> : <Navigate to="/client/company" replace />}
+      />
+      <Route
+        path="/admin/documents"
+        element={canAdmin ? <DocumentsPage /> : <Navigate to="/client/company" replace />}
+      />
     </Routes>
   );
 }
@@ -106,6 +118,10 @@ export default function App() {
       .finally(() => setReady(true));
   }, [webApp]);
 
+  useEffect(() => {
+    if (ready) document.getElementById("splash")?.remove();
+  }, [ready]);
+
   if (!ready) {
     return (
       <div className="min-h-screen bg-slate-50 p-4">
@@ -118,7 +134,7 @@ export default function App() {
     <BrowserRouter>
       <UserProvider>
         <Page>
-          <Header title="Бирка — Mini App" />
+          <Header title="Бирка — фулфилмент" />
           <TabBar />
           <AppRoutes />
         </Page>

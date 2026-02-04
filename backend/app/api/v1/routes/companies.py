@@ -118,7 +118,7 @@ async def update_company(
     )
     company = result.scalar_one_or_none()
     if not company:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
 
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(company, key, value)
@@ -139,7 +139,7 @@ async def generate_contract(
     )
     company = result.scalar_one_or_none()
     if not company:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
 
     contract_date = date.today().strftime("%d.%m.%Y")
     contract_number = f"{company.id}-{date.today().strftime('%Y%m%d')}"
@@ -172,4 +172,4 @@ async def generate_contract(
         )
     except Exception as exc:
         logger.exception("contract_pdf_failed", company_id=company_id, error=str(exc))
-        raise HTTPException(status_code=500, detail="Contract PDF generation failed")
+        raise HTTPException(status_code=500, detail="Не удалось сформировать PDF договора")

@@ -14,6 +14,7 @@ type OrderCreate = {
   company_id: number;
   destination?: string;
   items: { product_id: number; planned_qty: number }[];
+  services?: { service_id: number; quantity: number }[];
 };
 
 export function useOrders(companyId?: number, page = 1, limit = 20, status?: string) {

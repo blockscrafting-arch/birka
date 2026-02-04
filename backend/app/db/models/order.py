@@ -26,6 +26,7 @@ class Order(Base):
 
     company = relationship("Company", back_populates="orders")
     items = relationship("OrderItem", back_populates="order")
+    order_services = relationship("OrderService", back_populates="order")
     photos = relationship("OrderPhoto", back_populates="order")
     packing_records = relationship("PackingRecord", back_populates="order")
 

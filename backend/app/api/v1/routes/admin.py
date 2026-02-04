@@ -1,11 +1,12 @@
 """Admin endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select, update
+from fastapi import APIRouter, Depends, File, HTTPException, Query, status, UploadFile
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import require_roles
 from app.core.logging import logger
 from app.db.models.contract_template import ContractTemplate
+from app.db.models.document_chunk import DocumentChunk
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.admin import AdminUserOut, RoleUpdate
@@ -13,6 +14,10 @@ from app.schemas.contract_template import (
     ContractTemplateCreate,
     ContractTemplateOut,
     ContractTemplateUpdate,
+)
+from app.services.document_processor import (
+    MAX_DOCUMENT_SIZE_BYTES,
+    index_document,
 )
 
 router = APIRouter()
@@ -123,5 +128,100 @@ async def delete_contract_template(
     if not template:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
     await db.delete(template)
+    await db.commit()
+    return {"status": "ok"}
+
+
+# ----- RAG documents (для AI) -----
+
+
+@router.get("/documents")
+async def list_documents(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+) -> list[dict]:
+    """Список документов в RAG: source_file, chunks_count, document_type, version."""
+    q = (
+        select(
+            DocumentChunk.source_file,
+            func.count(DocumentChunk.id).label("chunks_count"),
+            func.max(DocumentChunk.document_type).label("document_type"),
+            func.max(DocumentChunk.version).label("version"),
+        )
+        .where(DocumentChunk.source_file.isnot(None))
+        .group_by(DocumentChunk.source_file)
+        .order_by(DocumentChunk.source_file)
+    )
+    result = await db.execute(q)
+    rows = result.all()
+    return [
+        {
+            "source_file": r.source_file,
+            "chunks_count": r.chunks_count,
+            "document_type": r.document_type or "",
+            "version": r.version or 0,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/documents")
+async def upload_document(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+) -> dict:
+    """
+    Загрузить PDF или DOCX в RAG (парсинг, чанки, эмбеддинги).
+    Ограничения: размер до 15 MB, до 80 чанков. Любая ошибка возвращает 503 без падения воркера.
+    """
+    try:
+        content = await file.read()
+    except Exception as e:
+        logger.exception("document_upload_read_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Не удалось прочитать файл",
+        ) from e
+    if len(content) > MAX_DOCUMENT_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Файл слишком большой. Максимум {MAX_DOCUMENT_SIZE_BYTES // (1024*1024)} MB",
+        )
+    name = (file.filename or "document").strip() or "document"
+    if name.lower().endswith(".pdf"):
+        document_type = "pdf"
+    elif name.lower().endswith(".docx"):
+        document_type = "docx"
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Поддерживаются только PDF и DOCX",
+        )
+    try:
+        chunks_added = await index_document(db, name, content, document_type)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except Exception as e:
+        logger.exception(
+            "document_index_failed",
+            source_file=name,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ошибка обработки документа. Попробуйте меньший файл или позже.",
+        ) from e
+    return {"source_file": name, "chunks_added": chunks_added}
+
+
+@router.delete("/documents/{source_file:path}")
+async def delete_document(
+    source_file: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+) -> dict:
+    """Удалить все чанки документа по имени файла."""
+    await db.execute(delete(DocumentChunk).where(DocumentChunk.source_file == source_file))
     await db.commit()
     return {"status": "ok"}

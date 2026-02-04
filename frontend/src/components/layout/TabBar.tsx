@@ -13,6 +13,7 @@ const clientTabs = [
   { to: "/client/products", label: "Товары" },
   { to: "/client/orders", label: "Заявки" },
   { to: "/client/shipping", label: "Отгрузка" },
+  { to: "/client/pricing", label: "Прайс" },
   { to: "/client/ai", label: "AI-помощник" },
 ];
 
@@ -28,6 +29,8 @@ const adminTabs = [
   { to: "/admin/users", label: "Пользователи" },
   { to: "/admin/destinations", label: "Адреса" },
   { to: "/admin/templates", label: "Шаблоны" },
+  { to: "/admin/services", label: "Прайс" },
+  { to: "/admin/documents", label: "Документы" },
 ];
 
 export function TabBar() {
@@ -50,7 +53,7 @@ export function TabBar() {
 
   return (
     <div className="mb-6 space-y-3">
-      <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-soft">
+      <div className="grid grid-cols-3 gap-2 rounded-2xl border border-slate-200 bg-white py-2 px-2 shadow-soft sm:flex sm:flex-wrap sm:px-3">
         {tabs.map((tab) => (
           <NavLink
             key={tab.to}
@@ -66,14 +69,14 @@ export function TabBar() {
         ))}
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
         <div className="mx-auto flex max-w-lg items-center justify-around p-2">
           {visiblePrimaryTabs.map((tab) => (
             <NavLink
               key={tab.to}
               to={tab.to}
               className={({ isActive }) =>
-                `rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                `rounded-xl px-2 py-2 text-xs font-semibold transition sm:px-4 sm:text-sm ${
                   isActive ? "bg-birka-500 text-white shadow-soft" : "text-slate-600 hover:bg-slate-100"
                 }`
               }

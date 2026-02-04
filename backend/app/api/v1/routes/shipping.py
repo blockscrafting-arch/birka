@@ -26,7 +26,7 @@ async def create_shipment_request(
         select(Company).where(Company.id == payload.company_id, Company.user_id == current_user.id)
     )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
     try:
         request = ShipmentRequest(
             company_id=payload.company_id,
@@ -40,7 +40,7 @@ async def create_shipment_request(
     except Exception as exc:
         await db.rollback()
         logger.exception("shipment_request_failed", company_id=payload.company_id, error=str(exc))
-        raise HTTPException(status_code=500, detail="Shipment request failed")
+        raise HTTPException(status_code=500, detail="Не удалось создать заявку на отгрузку")
 
 
 @router.get("", response_model=ShipmentRequestList)
@@ -59,7 +59,7 @@ async def list_shipment_requests(
             select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
         )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
     base_query = select(ShipmentRequest).where(ShipmentRequest.company_id == company_id)
     total_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
     total = int(total_result.scalar_one())
@@ -80,13 +80,13 @@ async def update_shipment_status(
     result = await db.execute(select(ShipmentRequest).where(ShipmentRequest.id == request_id))
     request = result.scalar_one_or_none()
     if not request:
-        raise HTTPException(status_code=404, detail="Shipment request not found")
+        raise HTTPException(status_code=404, detail="Заявка на отгрузку не найдена")
     if current_user.role not in {"warehouse", "admin"}:
         company_result = await db.execute(
             select(Company).where(Company.id == request.company_id, Company.user_id == current_user.id)
         )
         if not company_result.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail="Company not found")
+            raise HTTPException(status_code=404, detail="Компания не найдена")
     try:
         request.status = payload.status
         await db.commit()
@@ -95,4 +95,4 @@ async def update_shipment_status(
     except Exception as exc:
         await db.rollback()
         logger.exception("shipment_status_failed", request_id=request_id, error=str(exc))
-        raise HTTPException(status_code=500, detail="Shipment status update failed")
+        raise HTTPException(status_code=500, detail="Не удалось обновить статус отгрузки")

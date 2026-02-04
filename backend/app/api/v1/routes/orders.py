@@ -13,6 +13,8 @@ from app.api.v1.deps import get_current_user
 from app.db.models.company import Company
 from app.db.models.order import Order, OrderItem
 from app.db.models.order_counter import OrderCounter
+from app.db.models.order_service import OrderService
+from app.db.models.service import Service
 from app.db.models.order_photo import OrderPhoto
 from app.db.models.product import Product
 from app.db.session import get_db
@@ -20,6 +22,7 @@ from app.schemas.order import OrderCreate, OrderItemOut, OrderList, OrderOut, Or
 from app.services.excel import export_receiving
 from app.services.files import content_disposition
 from app.services.s3 import S3Service
+from app.services.telegram import send_notification
 from app.core.config import settings
 from app.core.logging import logger
 from app.db.models.user import User
@@ -38,12 +41,12 @@ async def create_order(
         select(Company).where(Company.id == payload.company_id, Company.user_id == current_user.id)
     )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
 
     if not payload.items:
         raise HTTPException(status_code=400, detail="Order must have at least one item")
     if any(item.planned_qty <= 0 for item in payload.items):
-        raise HTTPException(status_code=400, detail="Planned quantity must be greater than zero")
+        raise HTTPException(status_code=400, detail="Планируемое количество должно быть больше нуля")
 
     product_ids = [item.product_id for item in payload.items]
     if len(set(product_ids)) != len(product_ids):
@@ -54,7 +57,19 @@ async def create_order(
     )
     existing_product_ids = {row[0] for row in products_result.all()}
     if existing_product_ids != set(product_ids):
-        raise HTTPException(status_code=400, detail="One or more products not found")
+        raise HTTPException(status_code=400, detail="Один или несколько товаров не найдены")
+
+    services_by_id = {}
+    if payload.services:
+        if any(s.quantity <= 0 for s in payload.services):
+            raise HTTPException(status_code=400, detail="Количество услуги должно быть больше нуля")
+        svc_ids = [s.service_id for s in payload.services]
+        svc_result = await db.execute(
+            select(Service).where(Service.id.in_(svc_ids), Service.is_active.is_(True))
+        )
+        services_by_id = {s.id: s for s in svc_result.scalars().all()}
+        if len(services_by_id) != len(svc_ids):
+            raise HTTPException(status_code=400, detail="Одна или несколько услуг не найдены или неактивны")
 
     try:
         today = date.today()
@@ -92,6 +107,17 @@ async def create_order(
                     )
                 )
 
+            for svc in payload.services or []:
+                service = services_by_id[svc.service_id]
+                db.add(
+                    OrderService(
+                        order_id=order.id,
+                        service_id=svc.service_id,
+                        quantity=svc.quantity,
+                        price_at_order=service.price,
+                    )
+                )
+
         await db.commit()
         await db.refresh(order)
         return order
@@ -100,7 +126,7 @@ async def create_order(
     except Exception as exc:
         await db.rollback()
         logger.exception("order_create_failed", company_id=payload.company_id, error=str(exc))
-        raise HTTPException(status_code=500, detail="Order creation failed")
+        raise HTTPException(status_code=500, detail="Не удалось создать заявку")
 
 
 @router.get("", response_model=OrderList)
@@ -120,7 +146,7 @@ async def list_orders(
             select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
         )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
     base_query = select(Order).where(Order.company_id == company_id).order_by(Order.created_at.desc())
     if status:
         statuses = [value.strip() for value in status.split(",") if value.strip()]
@@ -163,7 +189,7 @@ async def list_order_items(
     order_result = await db.execute(select(Order).where(Order.id == order_id))
     order = order_result.scalar_one_or_none()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     if current_user.role in {"warehouse", "admin"}:
         company_result = await db.execute(select(Company).where(Company.id == order.company_id))
     else:
@@ -171,7 +197,7 @@ async def list_order_items(
             select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
         )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
 
     result = await db.execute(
         select(OrderItem, Product)
@@ -215,18 +241,31 @@ async def update_order_status(
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     if current_user.role in {"warehouse", "admin"}:
-        company_result = await db.execute(select(Company).where(Company.id == order.company_id))
+        company_result = await db.execute(
+            select(Company).where(Company.id == order.company_id).options(joinedload(Company.user))
+        )
     else:
         company_result = await db.execute(
-            select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
+            select(Company)
+            .where(Company.id == order.company_id, Company.user_id == current_user.id)
+            .options(joinedload(Company.user))
         )
-    if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
-    order.status = payload.status
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    telegram_id = company.user.telegram_id if company.user else None
+    order_number = order.order_number
+    new_status = payload.status
+    order.status = new_status
     await db.commit()
     await db.refresh(order)
+    if telegram_id and new_status in ("Принято", "Готово к отгрузке", "Завершено"):
+        await send_notification(
+            telegram_id,
+            f"Заявка {order_number}: статус изменен на {new_status}.",
+        )
     return order
 
 
@@ -242,10 +281,10 @@ async def upload_order_photo(
     """Upload order photo."""
     s3 = S3Service()
     if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Unsupported file type")
+        raise HTTPException(status_code=400, detail="Неподдерживаемый тип файла")
     data = await file.read()
     if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
-        raise HTTPException(status_code=400, detail="File too large")
+        raise HTTPException(status_code=400, detail="Файл слишком большой")
     image = Image.open(BytesIO(data))
     image.thumbnail((1200, 1200))
     output = BytesIO()
@@ -255,12 +294,12 @@ async def upload_order_photo(
     data = output.getvalue()
     photo_count = await db.execute(select(func.count()).select_from(OrderPhoto).where(OrderPhoto.order_id == order_id))
     if int(photo_count.scalar_one()) >= 20:
-        raise HTTPException(status_code=400, detail="Photo limit reached")
+        raise HTTPException(status_code=400, detail="Достигнут лимит фотографий")
 
     order_result = await db.execute(select(Order).where(Order.id == order_id))
     order = order_result.scalar_one_or_none()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     if current_user.role in {"warehouse", "admin"}:
         company_result = await db.execute(select(Company).where(Company.id == order.company_id))
     else:
@@ -268,13 +307,13 @@ async def upload_order_photo(
             select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
         )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
     if product_id:
         product_result = await db.execute(
             select(OrderItem).where(OrderItem.order_id == order_id, OrderItem.product_id == product_id)
         )
         if not product_result.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="Product is not part of this order")
+            raise HTTPException(status_code=400, detail="Товар не входит в эту заявку")
 
     key = f"orders/{order_id}/{datetime.utcnow().timestamp()}_{file.filename}"
     s3.upload_bytes(key, data, file.content_type or "image/jpeg")
@@ -298,7 +337,7 @@ async def list_order_photos(
     order_result = await db.execute(select(Order).where(Order.id == order_id))
     order = order_result.scalar_one_or_none()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     if current_user.role in {"warehouse", "admin"}:
         company_result = await db.execute(select(Company).where(Company.id == order.company_id))
     else:
@@ -306,7 +345,7 @@ async def list_order_photos(
             select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
         )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
     result = await db.execute(select(OrderPhoto).where(OrderPhoto.order_id == order_id))
     photos = list(result.scalars().all())
     s3 = S3Service()
@@ -335,7 +374,7 @@ async def export_receiving_excel(
     order_result = await db.execute(select(Order).where(Order.id == order_id))
     order = order_result.scalar_one_or_none()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     if current_user.role in {"warehouse", "admin"}:
         company_result = await db.execute(select(Company).where(Company.id == order.company_id))
     else:
@@ -343,7 +382,7 @@ async def export_receiving_excel(
             select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
         )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
     result = await db.execute(
         select(OrderItem)
         .options(joinedload(OrderItem.product), joinedload(OrderItem.order))
@@ -351,7 +390,7 @@ async def export_receiving_excel(
     )
     items = list(result.unique().scalars().all())
     if not items:
-        raise HTTPException(status_code=400, detail="No items to export")
+        raise HTTPException(status_code=400, detail="Нет позиций для выгрузки")
     buffer = export_receiving(items)
     filename = f"Приемка_заявка_{order.order_number}.xlsx"
     return StreamingResponse(

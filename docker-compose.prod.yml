@@ -9,6 +9,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.backend
     env_file: .env
+    volumes:
+      - ./docs:/docs:ro
     expose:
       - "8000"
     restart: unless-stopped

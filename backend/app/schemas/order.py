@@ -11,12 +11,20 @@ class OrderItemCreate(BaseModel):
     planned_qty: int
 
 
+class OrderServiceCreate(BaseModel):
+    """Create order service (from calculator)."""
+
+    service_id: int
+    quantity: float
+
+
 class OrderCreate(BaseModel):
     """Create order request."""
 
     company_id: int
     destination: str | None = None
     items: list[OrderItemCreate]
+    services: list[OrderServiceCreate] | None = None
 
 
 class OrderStatusUpdate(BaseModel):

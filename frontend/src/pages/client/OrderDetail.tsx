@@ -11,7 +11,7 @@ import { useCompanies } from "../../hooks/useCompanies";
 import { useOrders } from "../../hooks/useOrders";
 import { useOrderItems } from "../../hooks/useOrderItems";
 import { useOrderPhotos } from "../../hooks/useOrderPhotos";
-import { apiClient } from "../../services/api";
+import { downloadFile } from "../../services/api";
 
 export function OrderDetail() {
   const { orderId } = useParams();
@@ -33,13 +33,7 @@ export function OrderDetail() {
   const handleExportReceiving = async () => {
     if (!order) return;
     try {
-      const { blob, filename } = await apiClient.apiFile(`/orders/${order.id}/export-receiving`);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename ?? `Приемка_${order.order_number}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadFile(`/orders/${order.id}/export-receiving`, `Приемка_${order.order_number}.xlsx`);
       setToast({ message: "Файл скачан" });
     } catch (err) {
       setToast({ message: err instanceof Error ? err.message : "Ошибка выгрузки", variant: "error" });

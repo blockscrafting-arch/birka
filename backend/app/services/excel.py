@@ -7,6 +7,7 @@ from app.core.logging import logger
 from app.db.models.order import OrderItem
 from app.db.models.packing_record import PackingRecord
 from app.db.models.product import Product
+from app.db.models.service import Service
 
 
 EXPORT_COLUMNS = [
@@ -32,6 +33,8 @@ RECEIVING_COLUMNS = [
     "Расхождения",
     "Комментарии",
 ]
+
+SERVICES_COLUMNS = ["Категория", "Название", "Цена", "Ед.", "Комментарий", "Активна"]
 
 FBO_COLUMNS = [
     "ID сотрудника",
@@ -169,4 +172,66 @@ def parse_products_excel(file_bytes: bytes) -> list[dict]:
         return products
     except Exception as exc:
         logger.exception("excel_parse_failed", error=str(exc))
+        raise
+
+
+def export_services(services: list[Service]) -> BytesIO:
+    """Export services (pricing) to Excel in-memory file."""
+    try:
+        rows = []
+        for s in services:
+            rows.append(
+                {
+                    "Категория": s.category,
+                    "Название": s.name,
+                    "Цена": float(s.price),
+                    "Ед.": s.unit,
+                    "Комментарий": s.comment or "",
+                    "Активна": "Да" if s.is_active else "Нет",
+                }
+            )
+        df = pd.DataFrame(rows, columns=SERVICES_COLUMNS)
+        buffer = BytesIO()
+        df.to_excel(buffer, index=False)
+        buffer.seek(0)
+        return buffer
+    except Exception as exc:
+        logger.exception("excel_export_services_failed", error=str(exc))
+        raise
+
+
+def parse_services_excel(file_bytes: bytes) -> list[dict]:
+    """Parse services from Excel bytes. Columns: Категория, Название, Цена, Ед., Комментарий."""
+    try:
+        df = pd.read_excel(BytesIO(file_bytes))
+        required = {"Категория", "Название", "Цена"}
+        missing = required.difference(set(df.columns))
+        if missing:
+            raise ValueError(f"Missing columns: {', '.join(sorted(missing))}")
+        df = df.fillna("")
+        services = []
+        for _, row in df.iterrows():
+            cat = str(row.get("Категория", "")).strip()
+            name = str(row.get("Название", "")).strip()
+            if not cat or not name:
+                continue
+            price_val = row.get("Цена", 0)
+            try:
+                price = float(price_val) if price_val != "" else 0.0
+            except (TypeError, ValueError):
+                price = 0.0
+            unit = str(row.get("Ед.", "шт")).strip() or "шт"
+            comment = str(row.get("Комментарий", "")).strip() or None
+            services.append(
+                {
+                    "category": cat,
+                    "name": name,
+                    "price": price,
+                    "unit": unit,
+                    "comment": comment,
+                }
+            )
+        return services
+    except Exception as exc:
+        logger.exception("excel_parse_services_failed", error=str(exc))
         raise

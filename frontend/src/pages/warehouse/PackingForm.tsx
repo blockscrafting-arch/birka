@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Select } from "../../components/ui/Select";
+import { useDestinations } from "../../hooks/useDestinations";
 import { OrderItem } from "../../types";
 
 type PackingFormProps = {
@@ -21,6 +22,7 @@ type PackingFormProps = {
 };
 
 export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps) {
+  const { items: destinations } = useDestinations();
   const [employeeId, setEmployeeId] = useState("");
   const [productId, setProductId] = useState("");
   const [pallet, setPallet] = useState("");
@@ -106,7 +108,18 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
       <Input label="Номер паллеты" value={pallet} onChange={(e) => setPallet(e.target.value)} />
       <Input label="Номер короба" value={box} onChange={(e) => setBox(e.target.value)} />
       <Input label="Количество в коробе" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-      <Input label="Склад назначения" value={warehouse} onChange={(e) => setWarehouse(e.target.value)} />
+      <Select
+          label="Склад назначения"
+          value={warehouse}
+          onChange={(e) => setWarehouse(e.target.value)}
+        >
+          <option value="">Выберите склад</option>
+          {destinations.map((d) => (
+            <option key={d.id} value={d.name}>
+              {d.name}
+            </option>
+          ))}
+        </Select>
       <Input label="Использованные материалы" value={materials} onChange={(e) => setMaterials(e.target.value)} />
       <Input label="Время упаковки (мин)" value={time} onChange={(e) => setTime(e.target.value)} />
       {error ? <div className="text-sm text-rose-500">{error}</div> : null}

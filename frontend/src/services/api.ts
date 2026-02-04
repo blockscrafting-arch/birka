@@ -20,7 +20,18 @@ function buildAuthHeaders(): Record<string, string> {
   };
 }
 
+function handleUnauthorized(): void {
+  localStorage.removeItem("birka_session_token");
+  const message = "Сессия истекла. Откройте приложение заново.";
+  if (typeof window !== "undefined" && window.Telegram?.WebApp?.showAlert) {
+    window.Telegram.WebApp.showAlert(message);
+  }
+}
+
 async function handleJsonResponse<T>(response: Response): Promise<T> {
+  if (response.status === 401) {
+    handleUnauthorized();
+  }
   if (!response.ok) {
     let message = `API error: ${response.status}`;
     try {
@@ -70,7 +81,17 @@ async function apiFile(path: string, options?: RequestInit): Promise<{ blob: Blo
     ...options,
   });
   if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
+    if (response.status === 401) {
+      handleUnauthorized();
+    }
+    let message = `API error: ${response.status}`;
+    try {
+      const data = await response.json();
+      if (typeof data?.detail === "string") message = data.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message);
   }
   const contentDisposition = response.headers.get("content-disposition");
   let filename: string | null = null;
@@ -84,6 +105,37 @@ async function apiFile(path: string, options?: RequestInit): Promise<{ blob: Blo
     }
   }
   return { blob: await response.blob(), filename };
+}
+
+/** Download file (PDF/Excel) with fallbacks for mobile and Telegram WebApp. */
+export async function downloadFile(path: string, fallbackFilename: string): Promise<void> {
+  const { blob, filename } = await apiFile(path);
+  const url = URL.createObjectURL(blob);
+
+  if (typeof window !== "undefined" && window.Telegram?.WebApp?.openLink && blob.size < 5 * 1024 * 1024) {
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+      window.Telegram.WebApp.openLink(dataUrl);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+      return;
+    } catch {
+      /* openLink may not support data URLs; fall through to window.open */
+    }
+  }
+
+  const opened = window.open(url, "_blank");
+  if (!opened) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename ?? fallbackFilename;
+    link.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 export const apiClient = { api, apiForm, apiFile };

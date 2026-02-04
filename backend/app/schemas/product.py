@@ -59,3 +59,19 @@ class ProductList(BaseModel):
     total: int
     page: int
     limit: int
+
+
+class ImportSkipped(BaseModel):
+    """Skipped row in product import (e.g. barcode belongs to another company)."""
+
+    barcode: str
+    name: str
+    reason: str
+
+
+class ImportResult(BaseModel):
+    """Product import result with duplicate report."""
+
+    imported: int
+    updated: int
+    skipped: list[ImportSkipped] = []

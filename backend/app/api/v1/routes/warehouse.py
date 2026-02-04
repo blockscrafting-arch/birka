@@ -36,18 +36,18 @@ async def complete_receiving(
         result = await db.execute(select(Order).where(Order.id == payload.order_id))
         order = result.scalar_one_or_none()
         if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
+            raise HTTPException(status_code=404, detail="Заявка не найдена")
         company_result = await db.execute(select(Company).where(Company.id == order.company_id))
         if not company_result.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail="Company not found")
+            raise HTTPException(status_code=404, detail="Компания не найдена")
 
         total_received = 0
         total_defect = 0
         for item in payload.items:
             if item.received_qty < 0 or item.defect_qty < 0 or item.adjustment_qty < 0:
-                raise HTTPException(status_code=400, detail="Invalid quantities")
+                raise HTTPException(status_code=400, detail="Некорректные количества")
             if item.received_qty < item.defect_qty + item.adjustment_qty:
-                raise HTTPException(status_code=400, detail="Received quantity is меньше списаний/брака")
+                raise HTTPException(status_code=400, detail="Полученное количество меньше суммы списаний и брака")
             item_result = await db.execute(select(OrderItem).where(OrderItem.id == item.order_item_id))
             order_item = item_result.scalar_one_or_none()
             if not order_item:
@@ -87,11 +87,13 @@ async def complete_receiving(
             select(Company).where(Company.id == order.company_id).options(joinedload(Company.user))
         )
         company = company_result.scalar_one_or_none()
+        telegram_id = company.user.telegram_id if company and company.user else None
+        order_number = order.order_number
         await db.commit()
-        if company and company.user and company.user.telegram_id:
+        if telegram_id:
             await send_notification(
-                company.user.telegram_id,
-                f"Заявка {order.order_number} принята на склад.",
+                telegram_id,
+                f"Заявка {order_number} принята на склад.",
             )
         return {"received": total_received, "defects": total_defect}
     except HTTPException:
@@ -99,7 +101,7 @@ async def complete_receiving(
     except Exception as exc:
         await db.rollback()
         logger.exception("receiving_complete_failed", order_id=payload.order_id, error=str(exc))
-        raise HTTPException(status_code=500, detail="Receiving completion failed")
+        raise HTTPException(status_code=500, detail="Не удалось завершить приёмку")
 
 
 @router.post("/packing/record")
@@ -110,20 +112,39 @@ async def create_packing_record(
 ) -> dict:
     """Create packing record."""
     try:
+        employee_code = payload.employee_code.strip()
+        if not employee_code:
+            raise HTTPException(status_code=400, detail="Укажите код сотрудника")
         employee_result = await db.execute(
-            select(WarehouseEmployee).where(WarehouseEmployee.employee_code == payload.employee_code)
+            select(WarehouseEmployee).where(WarehouseEmployee.employee_code == employee_code)
         )
         employee = employee_result.scalar_one_or_none()
         if not employee:
-            raise HTTPException(status_code=404, detail="Employee not found")
+            user_employee_result = await db.execute(
+                select(WarehouseEmployee).where(WarehouseEmployee.user_id == current_user.id)
+            )
+            user_employee = user_employee_result.scalar_one_or_none()
+            if user_employee:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Неверный ID сотрудника. Ваш ID: {user_employee.employee_code}",
+                )
+            employee = WarehouseEmployee(user_id=current_user.id, employee_code=employee_code)
+            db.add(employee)
+            await db.flush()
+            logger.info(
+                "warehouse_employee_auto_created",
+                user_id=current_user.id,
+                employee_code=employee_code,
+            )
 
         order_result = await db.execute(select(Order).where(Order.id == payload.order_id))
         order = order_result.scalar_one_or_none()
         if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
+            raise HTTPException(status_code=404, detail="Заявка не найдена")
         company_result = await db.execute(select(Company).where(Company.id == order.company_id))
         if not company_result.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail="Company not found")
+            raise HTTPException(status_code=404, detail="Компания не найдена")
 
         record = PackingRecord(
             order_id=payload.order_id,
@@ -161,11 +182,13 @@ async def create_packing_record(
             select(Company).where(Company.id == order.company_id).options(joinedload(Company.user))
         )
         company = company_result.scalar_one_or_none()
+        telegram_id = company.user.telegram_id if company and company.user else None
+        order_number = order.order_number
         await db.commit()
-        if company and company.user and company.user.telegram_id:
+        if telegram_id:
             await send_notification(
-                company.user.telegram_id,
-                f"Заявка {order.order_number}: {status_msg}.",
+                telegram_id,
+                f"Заявка {order_number}: {status_msg}.",
             )
         return {"status": "ok"}
     except HTTPException:
@@ -173,7 +196,7 @@ async def create_packing_record(
     except Exception as exc:
         await db.rollback()
         logger.exception("packing_record_failed", order_id=payload.order_id, error=str(exc))
-        raise HTTPException(status_code=500, detail="Packing record failed")
+        raise HTTPException(status_code=500, detail="Не удалось сохранить запись упаковки")
 
 
 @router.post("/barcode/validate")
@@ -206,7 +229,7 @@ async def validate_barcode(
         }
     except Exception as exc:
         logger.exception("barcode_validate_failed", error=str(exc))
-        raise HTTPException(status_code=500, detail="Barcode validation failed")
+        raise HTTPException(status_code=500, detail="Ошибка проверки штрихкода")
 
 
 @router.post("/order/{order_id}/complete")
@@ -219,13 +242,20 @@ async def complete_order(
     order_result = await db.execute(select(Order).where(Order.id == order_id))
     order = order_result.scalar_one_or_none()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    company_result = await db.execute(select(Company).where(Company.id == order.company_id))
-    if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    company_result = await db.execute(
+        select(Company).where(Company.id == order.company_id).options(joinedload(Company.user))
+    )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    telegram_id = company.user.telegram_id if company.user else None
+    order_number = order.order_number
     order.status = "Завершено"
     order.completed_at = dt.utcnow()
     await db.commit()
+    if telegram_id:
+        await send_notification(telegram_id, f"Заявка {order_number} завершена.")
     return {"status": "ok"}
 
 
@@ -239,10 +269,10 @@ async def export_fbo_excel(
     order_result = await db.execute(select(Order).where(Order.id == order_id))
     order = order_result.scalar_one_or_none()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     company_result = await db.execute(select(Company).where(Company.id == order.company_id))
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
     result = await db.execute(
         select(PackingRecord)
         .options(
@@ -253,7 +283,7 @@ async def export_fbo_excel(
     )
     records = list(result.unique().scalars().all())
     if not records:
-        raise HTTPException(status_code=400, detail="No packing records to export")
+        raise HTTPException(status_code=400, detail="Нет записей упаковки для выгрузки")
     buffer = export_fbo_shipping(records)
     filename = f"Отгрузка_FBO_заявка_{order.order_number}.xlsx"
     return StreamingResponse(

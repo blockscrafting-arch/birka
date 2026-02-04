@@ -8,6 +8,7 @@ from app.api.v1.routes.companies import router as companies_router
 from app.api.v1.routes.destinations import router as destinations_router
 from app.api.v1.routes.orders import router as orders_router
 from app.api.v1.routes.products import router as products_router
+from app.api.v1.routes.services import router as services_router
 from app.api.v1.routes.shipping import router as shipping_router
 from app.api.v1.routes.warehouse import router as warehouse_router
 
@@ -18,6 +19,7 @@ api_router.include_router(companies_router, prefix="/companies", tags=["companie
 api_router.include_router(destinations_router, prefix="/destinations", tags=["destinations"])
 api_router.include_router(products_router, prefix="/products", tags=["products"])
 api_router.include_router(orders_router, prefix="/orders", tags=["orders"])
+api_router.include_router(services_router, prefix="/services", tags=["services"])
 api_router.include_router(shipping_router, prefix="/shipping", tags=["shipping"])
 api_router.include_router(warehouse_router, prefix="/warehouse", tags=["warehouse"])
 api_router.include_router(ai_router, prefix="/ai", tags=["ai"])

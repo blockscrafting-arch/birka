@@ -10,9 +10,9 @@ import { Skeleton } from "../../components/ui/Skeleton";
 import { Toast } from "../../components/ui/Toast";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
-import { useProducts } from "../../hooks/useProducts";
+import { useProducts, type ImportResult } from "../../hooks/useProducts";
 import { useProductDefectPhotos } from "../../hooks/useProductDefectPhotos";
-import { apiClient } from "../../services/api";
+import { downloadFile } from "../../services/api";
 import { Product } from "../../types";
 import { ProductForm } from "./ProductForm";
 
@@ -36,6 +36,7 @@ export function ProductsPage() {
   const [exporting, setExporting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
   const { data: defectPhotos = [], isLoading: defectLoading } = useProductDefectPhotos(defectProduct?.id);
 
@@ -126,7 +127,8 @@ export function ProductsPage() {
     setPageError(null);
     try {
       const result = await importExcel.mutateAsync({ companyId: activeCompanyId, file });
-      setToast({ message: `Импорт завершён: ${result.imported}` });
+      setImportResult(result);
+      setToast({ message: "Импорт завершён" });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Ошибка импорта");
     }
@@ -141,13 +143,7 @@ export function ProductsPage() {
     }
     setExporting(true);
     try {
-      const { blob, filename } = await apiClient.apiFile(`/products/export?company_id=${activeCompanyId}`);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename ?? "products.xlsx";
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      await downloadFile(`/products/export?company_id=${activeCompanyId}`, "products.xlsx");
       setToast({ message: "Файл экспорта скачан" });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Ошибка экспорта");
@@ -171,13 +167,7 @@ export function ProductsPage() {
           onClick={async () => {
             setPageError(null);
             try {
-              const { blob, filename } = await apiClient.apiFile("/products/template");
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement("a");
-              link.href = url;
-              link.download = filename ?? "products_template.xlsx";
-              link.click();
-              setTimeout(() => URL.revokeObjectURL(url), 1000);
+              await downloadFile("/products/template", "products_template.xlsx");
             } catch (err) {
               setPageError(err instanceof Error ? err.message : "Ошибка скачивания шаблона");
             }
@@ -219,8 +209,9 @@ export function ProductsPage() {
       ) : null}
       {error ? <div className="text-sm text-rose-500">Не удалось загрузить товары</div> : null}
       {!isLoading && items.length === 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
-          Нет товаров для выбранной компании.
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-soft">
+          <p className="mb-4 text-sm text-slate-600">Нет товаров для выбранной компании. Добавьте первый товар.</p>
+          <Button onClick={() => setOpen(true)}>Добавить товар</Button>
         </div>
       ) : null}
 
@@ -250,6 +241,32 @@ export function ProductsPage() {
           onSubmit={handleUpdate}
           submitLabel="Сохранить"
         />
+      </Modal>
+
+      <Modal
+        title="Результат импорта"
+        open={importResult !== null}
+        onClose={() => setImportResult(null)}
+      >
+        <div className="space-y-3 text-sm">
+          <p className="text-slate-700">
+            Создано: <strong>{importResult?.imported ?? 0}</strong>
+            {", "}
+            обновлено: <strong>{importResult?.updated ?? 0}</strong>
+          </p>
+          {(importResult?.skipped?.length ?? 0) > 0 ? (
+            <div>
+              <p className="mb-2 font-medium text-slate-800">Пропущено (ШК у другой компании):</p>
+              <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 text-slate-600">
+                {importResult?.skipped.map((s, i) => (
+                  <li key={i}>
+                    {s.name} — {s.barcode}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
       </Modal>
 
       <Modal title="Фото брака" open={Boolean(defectProduct)} onClose={() => setDefectProduct(null)}>

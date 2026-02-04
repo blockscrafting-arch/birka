@@ -7,6 +7,7 @@ Create Date: 2026-02-02
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.exc import NotSupportedError, OperationalError
 
 
 revision = "0008_document_chunks"
@@ -16,19 +17,30 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    """Create pgvector extension and document_chunks table. Requires pgvector extension."""
+    conn = op.get_bind()
+    try:
+        op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
+    except (NotSupportedError, OperationalError) as e:
+        conn.rollback()
+        raise RuntimeError(
+            "pgvector extension is required for document_chunks. "
+            "Install it (e.g. apt install postgresql-15-pgvector) or use a DB that has it."
+        ) from e
     op.execute(
-        """
-        CREATE TABLE document_chunks (
-            id SERIAL PRIMARY KEY,
-            content TEXT NOT NULL,
-            source_file VARCHAR(256),
-            chunk_index INTEGER DEFAULT 0,
-            embedding vector(1536)
+        sa.text(
+            """
+            CREATE TABLE document_chunks (
+                id SERIAL PRIMARY KEY,
+                content TEXT NOT NULL,
+                source_file VARCHAR(256),
+                chunk_index INTEGER DEFAULT 0,
+                embedding vector(1536)
+            )
+            """
         )
-        """
     )
 
 
 def downgrade() -> None:
-    op.drop_table("document_chunks")
+    op.execute(sa.text("DROP TABLE IF EXISTS document_chunks"))

@@ -1,5 +1,7 @@
 """Document chunk model for RAG."""
-from sqlalchemy import Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from pgvector.sqlalchemy import Vector
 
@@ -18,3 +20,6 @@ class DocumentChunk(Base):
     source_file: Mapped[str | None] = mapped_column(String(256))
     chunk_index: Mapped[int] = mapped_column(Integer, default=0)
     embedding: Mapped[list | None] = mapped_column(Vector(VECTOR_DIM), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=None, nullable=True)
+    document_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    version: Mapped[int | None] = mapped_column(Integer, nullable=True)

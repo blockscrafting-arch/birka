@@ -9,6 +9,7 @@ type AIChatResponse = {
 type AIChatPayload = {
   message: string;
   company_id?: number | null;
+  history?: { role: string; text: string }[];
 };
 
 export function useAIChat() {

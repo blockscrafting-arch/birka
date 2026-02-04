@@ -13,7 +13,7 @@ import { useOrderItems } from "../../hooks/useOrderItems";
 import { useOrders } from "../../hooks/useOrders";
 import { useWarehouse } from "../../hooks/useWarehouse";
 import { useOrderPhotos } from "../../hooks/useOrderPhotos";
-import { apiClient } from "../../services/api";
+import { downloadFile } from "../../services/api";
 import { PackingForm } from "./PackingForm";
 
 export function PackingPage() {
@@ -28,20 +28,19 @@ export function PackingPage() {
   );
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
   const { data: items = [], isLoading: itemsLoading } = useOrderItems(activeOrderId ?? undefined);
-  const { createPacking } = useWarehouse();
+  const { createPacking, completeOrder } = useWarehouse();
   const { data: photos = [], upload } = useOrderPhotos(activeOrderId ?? undefined);
+  const activeOrder = activeOrderId ? orders.find((o) => o.id === activeOrderId) : null;
+  const effectivePlan = activeOrder && items.length > 0
+    ? Math.max(0, activeOrder.received_qty - items.reduce((s, i) => s + i.defect_qty, 0))
+    : activeOrder?.received_qty ?? 0;
+  const isFullyPacked = Boolean(activeOrder && effectivePlan > 0 && activeOrder.packed_qty >= effectivePlan);
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
 
   const handleExportFBO = async (orderId: number, orderNumber: string) => {
     try {
-      const { blob, filename } = await apiClient.apiFile(`/warehouse/export-fbo?order_id=${orderId}`);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename ?? `Отгрузка_FBO_${orderNumber}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadFile(`/warehouse/export-fbo?order_id=${orderId}`, `Отгрузка_FBO_${orderNumber}.xlsx`);
       setToast({ message: "Файл скачан" });
     } catch (err) {
       setToast({ message: err instanceof Error ? err.message : "Ошибка выгрузки", variant: "error" });

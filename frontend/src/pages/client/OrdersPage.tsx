@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { CompanySelect } from "../../components/shared/CompanySelect";
 import { OrderCard } from "../../components/shared/OrderCard";
@@ -16,19 +16,39 @@ import { useOrders } from "../../hooks/useOrders";
 import { useProducts } from "../../hooks/useProducts";
 import { OrderForm } from "./OrderForm";
 
+type OrderFormPayload = {
+  destination?: string;
+  items: { product_id: number; planned_qty: number }[];
+  services?: { service_id: number; quantity: number }[];
+};
+
 export function OrdersPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { items: companies = [] } = useCompanies();
   const { companyId, setCompanyId } = useActiveCompany();
   const activeCompanyId = companyId ?? companies[0]?.id ?? null;
   const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const limit = 20;
-  const { items, total, isLoading, error, create } = useOrders(activeCompanyId ?? undefined, page, limit);
+  const { items, total, isLoading, error, create } = useOrders(activeCompanyId ?? undefined, page, limit, statusFilter);
   const { items: products = [] } = useProducts(activeCompanyId ?? undefined, 1, 100);
   const { items: destinations = [] } = useDestinations(true);
   const [open, setOpen] = useState(false);
+  const [initialServicesFromCalculator, setInitialServicesFromCalculator] = useState<
+    { service_id: number; quantity: number }[] | null
+  >(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    const stateServices = (location.state as { services?: { service_id: number; quantity: number }[] } | null)?.services;
+    if (stateServices?.length) {
+      setInitialServicesFromCalculator(stateServices);
+      setOpen(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate]);
 
   useEffect(() => {
     if (!companyId && companies.length > 0) {
@@ -80,6 +100,7 @@ export function OrdersPage() {
             <option value="">Все статусы</option>
             <option value="На приемке">На приемке</option>
             <option value="Принято">Принято</option>
+            <option value="Упаковка">Упаковка</option>
             <option value="Готово к отгрузке">Готово к отгрузке</option>
             <option value="Завершено">Завершено</option>
           </Select>
@@ -96,8 +117,9 @@ export function OrdersPage() {
       ) : null}
       {error ? <div className="text-sm text-rose-500">Не удалось загрузить заявки</div> : null}
       {!isLoading && orders.length === 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
-          Пока нет заявок.
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-soft">
+          <p className="mb-4 text-sm text-slate-600">Пока нет заявок. Создайте первую заявку.</p>
+          <Button onClick={() => setOpen(true)}>Создать заявку</Button>
         </div>
       ) : null}
 
@@ -114,10 +136,18 @@ export function OrdersPage() {
       </div>
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
-      <Modal title="Новая заявка" open={open} onClose={() => setOpen(false)}>
+      <Modal
+        title="Новая заявка"
+        open={open}
+        onClose={() => {
+          setOpen(false);
+          setInitialServicesFromCalculator(null);
+        }}
+      >
         <OrderForm
           products={products}
           destinations={destinations}
+          initialServices={initialServicesFromCalculator ?? undefined}
           isSubmitting={create.isPending}
           onSubmit={handleCreate}
         />

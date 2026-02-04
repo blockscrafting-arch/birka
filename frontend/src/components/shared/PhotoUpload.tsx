@@ -18,6 +18,7 @@ export function PhotoUpload({ label = "Добавить фото", onFileChange 
         ref={inputRef}
         type="file"
         accept="image/*"
+        capture="environment"
         className="hidden"
         aria-label={label}
         onChange={(event) => {

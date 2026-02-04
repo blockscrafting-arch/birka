@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { CompanySelect } from "../../components/shared/CompanySelect";
 import { PhotoGallery } from "../../components/shared/PhotoGallery";
@@ -25,6 +25,16 @@ export function ReceivingPage() {
   const { data: photos = [], upload } = useOrderPhotos(activeOrderId ?? undefined);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
+  const defectPhotosByProduct = useMemo(() => {
+    const counts: Record<number, number> = {};
+    for (const photo of photos) {
+      if (photo.photo_type !== "defect") continue;
+      const productId = photo.product_id;
+      if (!productId) continue;
+      counts[productId] = (counts[productId] ?? 0) + 1;
+    }
+    return counts;
+  }, [photos]);
 
   useEffect(() => {
     if (!companyId && companies.length > 0) {

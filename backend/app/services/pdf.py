@@ -128,18 +128,14 @@ def _apply_contract_template(template_html: str, context: dict[str, str]) -> str
 
 
 def _render_barcode_base64(barcode_value: str) -> str:
-    """Generate EAN13 barcode as base64 PNG for embedding in HTML (avoids WeasyPrint SVG issues)."""
+    """Generate Code128 barcode as base64 PNG for embedding in HTML."""
     if not barcode_value or not barcode_value.strip():
         return ""
     code = barcode_value.strip()
-    if len(code) == 13:
-        code = code[:12]
-    elif len(code) != 12:
-        return ""
     try:
-        ean = barcode.get("ean13", code, writer=ImageWriter())
+        code128 = barcode.get("code128", code, writer=ImageWriter())
         buf = BytesIO()
-        ean.write(buf)
+        code128.write(buf)
         return base64.b64encode(buf.getvalue()).decode("ascii")
     except Exception as exc:
         logger.warning("barcode_png_failed", code=code, error=str(exc))
@@ -147,7 +143,7 @@ def _render_barcode_base64(barcode_value: str) -> str:
 
 
 def render_label_pdf(label: LabelData) -> bytes:
-    """Render label PDF for thermal printer with graphical barcode."""
+    """Render label PDF for thermal printer (58x40 mm), matching client example layout."""
     try:
         title = html.escape(label.title or "")
         article = html.escape(label.article or "")
@@ -156,25 +152,67 @@ def render_label_pdf(label: LabelData) -> bytes:
         barcode_b64 = _render_barcode_base64(label.barcode_value or "")
         barcode_img = ""
         if barcode_b64:
-            barcode_img = f'<img src="data:image/png;base64,{barcode_b64}" alt="" style="max-width:100%;height:auto;" />'
+            barcode_img = (
+                f'<img src="data:image/png;base64,{barcode_b64}" alt="" '
+                'style="display:block;margin:0 auto;max-width:100%;height:auto;min-height:12mm;" />'
+            )
         html_content = f"""
         <html>
-          <body style="width:58mm;height:40mm;margin:0;padding:3mm;font-family:Arial;">
-            <div style="font-size:9pt;font-weight:bold;line-height:1.2;">{title}</div>
-            <table style="font-size:7pt;margin-top:2mm;border-collapse:collapse;">
-              <tr><td>Артикул</td><td style="padding-left:4mm;">{article}</td></tr>
-              <tr><td>Поставщик</td><td style="padding-left:4mm;">{supplier}</td></tr>
-            </table>
-            <div style="margin-top:3mm;text-align:center;">
-              {barcode_img}
-            </div>
-            <div style="font-size:8pt;text-align:center;">{barcode_value}</div>
+          <body style="width:58mm;height:40mm;margin:0;padding:3mm;font-family:Arial,sans-serif;box-sizing:border-box;">
+            <div style="font-size:10pt;font-weight:bold;line-height:1.25;margin-bottom:2mm;">{title}</div>
+            <div style="font-size:7pt;margin-bottom:1mm;">Артикул {article}</div>
+            <div style="font-size:7pt;">Поставщик {supplier}</div>
+            <div style="margin-top:3mm;text-align:center;">{barcode_img}</div>
+            <div style="font-size:8pt;text-align:center;margin-top:1mm;">{barcode_value}</div>
           </body>
         </html>
         """
         return HTML(string=html_content).write_pdf()
     except Exception as exc:
         logger.exception("label_pdf_generation_failed", error=str(exc))
+        raise
+
+
+def generate_price_list_pdf(services: list) -> bytes:
+    """Generate PDF with price list (categories and services table)."""
+    try:
+        rows_html = []
+        for s in services:
+            cat = html.escape(str(getattr(s, "category", "")))
+            name = html.escape(str(getattr(s, "name", "")))
+            price = html.escape(str(getattr(s, "price", "")))
+            unit = html.escape(str(getattr(s, "unit", "шт")))
+            rows_html.append(f"<tr><td>{cat}</td><td>{name}</td><td>{price}</td><td>{unit}</td></tr>")
+        table_body = "\n".join(rows_html)
+        html_content = f"""
+        <!doctype html>
+        <html lang="ru">
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              body {{ font-family: DejaVu Sans, Arial, sans-serif; font-size: 11pt; margin: 16px; }}
+              h1 {{ text-align: center; font-size: 16pt; margin-bottom: 16px; }}
+              table {{ width: 100%; border-collapse: collapse; }}
+              th, td {{ padding: 6px 8px; border: 1px solid #ddd; text-align: left; }}
+              th {{ background: #f5f5f5; font-weight: bold; }}
+            </style>
+          </head>
+          <body>
+            <h1>Прайс-лист Бирка</h1>
+            <table>
+              <thead>
+                <tr><th>Категория</th><th>Услуга</th><th>Цена (₽)</th><th>Ед.</th></tr>
+              </thead>
+              <tbody>
+                {table_body}
+              </tbody>
+            </table>
+          </body>
+        </html>
+        """
+        return HTML(string=html_content).write_pdf()
+    except Exception as exc:
+        logger.exception("price_list_pdf_failed", error=str(exc))
         raise
 
 

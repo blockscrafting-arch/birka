@@ -23,19 +23,19 @@ async def get_current_user(
         )
         session = result.scalar_one_or_none()
         if not session:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Сессия истекла")
         user_result = await db.execute(select(User).where(User.id == session.user_id))
         user = user_result.scalar_one_or_none()
         if not user:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Не авторизован")
         return user
 
     if not x_telegram_init_data or not validate_telegram_init_data(x_telegram_init_data):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Не авторизован")
 
     user_data = parse_init_data_user(x_telegram_init_data)
     if not user_data:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Не авторизован")
 
     telegram_id = int(user_data["id"])
     result = await db.execute(select(User).where(User.telegram_id == telegram_id))
@@ -60,7 +60,7 @@ def require_roles(*roles: str):
 
     async def checker(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role not in roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ запрещён")
         return current_user
 
     return checker

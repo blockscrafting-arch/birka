@@ -6,7 +6,7 @@ import { Input } from "../../components/ui/Input";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
 import { useProducts } from "../../hooks/useProducts";
-import { apiClient } from "../../services/api";
+import { downloadFile } from "../../services/api";
 
 export function PrintPage() {
   const { items: companies = [] } = useCompanies();
@@ -46,13 +46,7 @@ export function PrintPage() {
   const handlePrint = async (productId: number) => {
     setPageError(null);
     try {
-      const { blob, filename } = await apiClient.apiFile(`/products/${productId}/label`);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename ?? `label_${productId}.pdf`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      await downloadFile(`/products/${productId}/label`, `label_${productId}.pdf`);
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Не удалось скачать этикетку");
     }

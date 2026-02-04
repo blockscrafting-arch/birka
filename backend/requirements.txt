@@ -14,8 +14,8 @@ orjson==3.10.7
 boto3==1.35.25
 Pillow==10.4.0
 python-barcode==0.15.1
-weasyprint==61.2
-pydyf==0.10.0
+weasyprint==60.2
+pydyf==0.8.0
 openai==1.50.2
 pgvector==0.3.2
 tenacity==9.0.0
@@ -28,3 +28,5 @@ pytest==8.3.3
 pytest-asyncio==0.24.0
 respx==0.21.1
 aiosqlite==0.20.0
+pymupdf==1.24.0
+python-docx==1.1.0

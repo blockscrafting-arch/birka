@@ -25,6 +25,12 @@ type ProductCreate = {
 
 type ProductUpdate = Partial<Omit<ProductCreate, "company_id">> & { id: number };
 
+export type ImportResult = {
+  imported: number;
+  updated: number;
+  skipped: { barcode: string; name: string; reason: string }[];
+};
+
 export function useProducts(companyId?: number, page = 1, limit = 20, search?: string) {
   const queryClient = useQueryClient();
 
@@ -73,7 +79,10 @@ export function useProducts(companyId?: number, page = 1, limit = 20, search?: s
     mutationFn: (payload: { companyId: number; file: File }) => {
       const formData = new FormData();
       formData.append("file", payload.file);
-      return apiClient.apiForm<{ imported: number }>(`/products/import?company_id=${payload.companyId}`, formData);
+      return apiClient.apiForm<ImportResult>(
+        `/products/import?company_id=${payload.companyId}`,
+        formData
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products"] });

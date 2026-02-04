@@ -53,6 +53,8 @@ def create_app() -> FastAPI:
             logger.exception("db_health_failed", error=str(exc))
             return {"status": "degraded", "db": "disconnected"}
 
+    if not settings.admin_telegram_ids:
+        logger.warning("ADMIN_TELEGRAM_IDS_empty", detail="Задайте ADMIN_TELEGRAM_IDS в .env для доступа в админку")
     logger.info("app_initialized")
     return app
 

@@ -5,11 +5,20 @@ import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Select } from "../../components/ui/Select";
 
+type ServiceItem = { service_id: number; quantity: number };
+
+type OrderFormPayload = {
+  destination?: string;
+  items: { product_id: number; planned_qty: number }[];
+  services?: ServiceItem[];
+};
+
 type OrderFormProps = {
   products: Product[];
   destinations?: Destination[];
+  initialServices?: ServiceItem[];
   isSubmitting?: boolean;
-  onSubmit: (payload: { destination?: string; items: { product_id: number; planned_qty: number }[] }) => void;
+  onSubmit: (payload: OrderFormPayload) => void;
 };
 
 type ItemRow = {
@@ -17,11 +26,18 @@ type ItemRow = {
   qty: string;
 };
 
-export function OrderForm({ products, destinations = [], isSubmitting, onSubmit }: OrderFormProps) {
+export function OrderForm({
+  products,
+  destinations = [],
+  initialServices,
+  isSubmitting,
+  onSubmit,
+}: OrderFormProps) {
   const [destinationId, setDestinationId] = useState("");
   const [destinationCustom, setDestinationCustom] = useState("");
   const [items, setItems] = useState<ItemRow[]>([{ productId: "", qty: "1" }]);
   const [error, setError] = useState<string | null>(null);
+  const services = initialServices ?? [];
 
   const destination =
     destinationId === "__custom__"
@@ -62,6 +78,7 @@ export function OrderForm({ products, destinations = [], isSubmitting, onSubmit 
         onSubmit({
           destination: destination || undefined,
           items: prepared,
+          ...(services.length > 0 ? { services } : {}),
         });
       }}
     >
@@ -89,6 +106,20 @@ export function OrderForm({ products, destinations = [], isSubmitting, onSubmit 
           value={destinationCustom}
           onChange={(e) => setDestinationCustom(e.target.value)}
         />
+      ) : null}
+
+      {services.length > 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 shadow-soft">
+          <div className="mb-1 font-medium text-slate-800">Услуги из калькулятора</div>
+          <ul className="list-inside list-disc space-y-0.5">
+            {services.map((s, i) => (
+              <li key={i}>
+                Услуга #{s.service_id}, кол-во: {s.quantity}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs text-slate-500">Будут привязаны к заявке с текущими ценами.</p>
+        </div>
       ) : null}
 
       {products.length === 0 ? (
