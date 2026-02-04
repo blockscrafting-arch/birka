@@ -21,6 +21,7 @@ export function AIPage() {
 
   const serverLoadedOnce = historyQuery.isSuccess || historyQuery.isError;
   const messages = serverLoadedOnce ? getMessages(companyId ?? null) : [];
+  const hasLocalMessages = messages.length > 0;
 
   // Hydrate store from server history when loaded
   useEffect(() => {

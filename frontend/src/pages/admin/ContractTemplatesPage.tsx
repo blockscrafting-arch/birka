@@ -5,6 +5,7 @@ import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import {
+  type ContractTemplate,
   downloadContractTemplate,
   useContractTemplates,
   useDeleteContractTemplate,
@@ -19,6 +20,7 @@ export function ContractTemplatesPage() {
   const [name, setName] = useState("");
   const [isDefault, setIsDefault] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [previewTemplate, setPreviewTemplate] = useState<ContractTemplate | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const jobs = useUploadStore((s) => s.jobs);
