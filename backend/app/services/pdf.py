@@ -157,8 +157,16 @@ def render_label_pdf(label: LabelData) -> bytes:
                 'style="display:block;margin:0 auto;max-width:100%;height:auto;min-height:12mm;" />'
             )
         html_content = f"""
+        <!DOCTYPE html>
         <html>
-          <body style="width:58mm;height:40mm;margin:0;padding:3mm;font-family:Arial,sans-serif;box-sizing:border-box;">
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              @page {{ size: 58mm 40mm; margin: 0; }}
+              body {{ margin: 0; padding: 3mm; width: 58mm; height: 40mm; font-family: Arial, sans-serif; box-sizing: border-box; }}
+            </style>
+          </head>
+          <body>
             <div style="font-size:10pt;font-weight:bold;line-height:1.25;margin-bottom:2mm;">{title}</div>
             <div style="font-size:7pt;margin-bottom:1mm;">Артикул {article}</div>
             <div style="font-size:7pt;">Поставщик {supplier}</div>

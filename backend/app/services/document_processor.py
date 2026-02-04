@@ -1,4 +1,4 @@
-"""Document processing for RAG: PDF/DOCX parsing, chunking, indexing."""
+"""Document processing for RAG: DOCX/TXT parsing, chunking, indexing."""
 from datetime import datetime, timezone
 from io import BytesIO
 
@@ -15,20 +15,13 @@ MAX_DOCUMENT_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB
 MAX_CHUNKS_PER_DOCUMENT = 80
 
 
-def parse_pdf(content: bytes) -> str:
-    """Extract text from PDF via PyMuPDF. Returns concatenated page text."""
+def parse_txt(content: bytes) -> str:
+    """Decode plain text (UTF-8)."""
     try:
-        import fitz  # pymupdf
-
-        doc = fitz.open(stream=content, filetype="pdf")
-        parts = []
-        for page in doc:
-            parts.append(page.get_text())
-        doc.close()
-        return "\n\n".join(parts).strip()
-    except Exception as exc:
-        logger.exception("pdf_parse_failed", error=str(exc))
-        raise
+        return content.decode("utf-8").strip()
+    except UnicodeDecodeError as exc:
+        logger.warning("txt_decode_failed", error=str(exc))
+        raise ValueError("Файл должен быть в кодировке UTF-8") from exc
 
 
 def parse_docx(content: bytes) -> str:
@@ -42,6 +35,37 @@ def parse_docx(content: bytes) -> str:
     except Exception as exc:
         logger.exception("docx_parse_failed", error=str(exc))
         raise
+
+
+def parse_rtf(content: bytes) -> str:
+    """Extract plain text from RTF. Tries UTF-8, UTF-16 (BOM), then cp1252."""
+    try:
+        from striprtf.striprtf import rtf_to_text
+    except ImportError:
+        raise ValueError("Обработка RTF недоступна (установите striprtf)") from None
+    rtf_str: str
+    try:
+        rtf_str = content.decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            if content.startswith((b"\xff\xfe", b"\xfe\xff")):
+                rtf_str = content.decode("utf-16")
+            else:
+                raise
+        except Exception:
+            try:
+                rtf_str = content.decode("cp1252")
+            except Exception as exc:
+                logger.warning("rtf_decode_failed", error=str(exc))
+                raise ValueError(
+                    "Файл RTF должен быть в кодировке UTF-8, UTF-16 или Windows-1252"
+                ) from exc
+    try:
+        text = rtf_to_text(rtf_str)
+        return (text or "").strip()
+    except Exception as exc:
+        logger.exception("rtf_parse_failed", error=str(exc))
+        raise ValueError("Не удалось извлечь текст из RTF") from exc
 
 
 def split_into_chunks(
@@ -89,15 +113,17 @@ async def index_document(
     Returns number of chunks added.
     """
     source_file = (file_name or "document").strip() or "document"
-    if document_type not in ("pdf", "docx"):
-        raise ValueError("document_type must be 'pdf' or 'docx'")
+    if document_type not in ("docx", "txt", "rtf"):
+        raise ValueError("document_type must be 'docx', 'txt' or 'rtf'")
     if len(content) > MAX_DOCUMENT_SIZE_BYTES:
         raise ValueError(
             f"Файл слишком большой (макс. {MAX_DOCUMENT_SIZE_BYTES // (1024*1024)} MB)"
         )
 
-    if document_type == "pdf":
-        text = parse_pdf(content)
+    if document_type == "txt":
+        text = parse_txt(content)
+    elif document_type == "rtf":
+        text = parse_rtf(content)
     else:
         text = parse_docx(content)
 

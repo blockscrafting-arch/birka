@@ -1,5 +1,12 @@
 const API_URL = import.meta.env.VITE_API_URL ?? "/api/v1";
 
+const RETRYABLE_STATUSES = [502, 503, 504];
+const RETRY_DELAYS_MS = [1000, 2000];
+
+async function delay(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 export const LOGO_URL =
   "https://s3.ru1.storage.beget.cloud/00bd59427133-s3bot/photo_2025-01-16_19-20-18.jpg";
 
@@ -47,7 +54,7 @@ async function handleJsonResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function api<T>(path: string, options?: RequestInit): Promise<T> {
+async function api<T>(path: string, options?: RequestInit, retriesLeft = RETRY_DELAYS_MS.length): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
@@ -56,9 +63,17 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
     },
     ...options,
   });
+  if (
+    RETRYABLE_STATUSES.includes(response.status) &&
+    retriesLeft > 0
+  ) {
+    await delay(RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - retriesLeft]);
+    return api(path, options, retriesLeft - 1);
+  }
   return handleJsonResponse<T>(response);
 }
 
+/** POST FormData. Retry не используется: body потребляется после первого fetch. */
 async function apiForm<T>(path: string, formData: FormData, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     headers: {
@@ -70,6 +85,77 @@ async function apiForm<T>(path: string, formData: FormData, options?: RequestIni
     ...options,
   });
   return handleJsonResponse<T>(response);
+}
+
+/**
+ * Отправка FormData с отслеживанием прогресса загрузки (через XHR).
+ * onProgress вызывается с 0–100 (приближённо по загруженным байтам).
+ * При 502/503/504 выполняется повтор запроса с задержкой.
+ */
+function apiFormWithProgress<T>(
+  path: string,
+  formData: FormData,
+  onProgress?: (percent: number) => void,
+  retriesLeft = RETRY_DELAYS_MS.length
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const url = `${API_URL}${path}`;
+    const auth = buildAuthHeaders();
+
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status === 401) {
+        handleUnauthorized();
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const retryable = RETRYABLE_STATUSES.includes(xhr.status) && retriesLeft > 0;
+        if (retryable) {
+          delay(RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - retriesLeft])
+            .then(() =>
+              apiFormWithProgress(path, formData, onProgress, retriesLeft - 1)
+            )
+            .then(resolve, reject);
+          return;
+        }
+        let message = `API error: ${xhr.status}`;
+        try {
+          const data = JSON.parse(xhr.responseText);
+          if (typeof data?.detail === "string") message = data.detail;
+        } catch {
+          // ignore
+        }
+        reject(new Error(message));
+        return;
+      }
+      try {
+        const data = xhr.responseText ? (JSON.parse(xhr.responseText) as T) : ({} as T);
+        resolve(data);
+      } catch {
+        reject(new Error("Invalid JSON response"));
+      }
+    });
+
+    xhr.addEventListener("error", () => {
+      if (retriesLeft > 0) {
+        delay(RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - retriesLeft])
+          .then(() => apiFormWithProgress(path, formData, onProgress, retriesLeft - 1))
+          .then(resolve, reject);
+      } else {
+        reject(new Error("Network error"));
+      }
+    });
+    xhr.addEventListener("abort", () => reject(new Error("Request aborted")));
+
+    xhr.open("POST", url);
+    Object.entries(auth).forEach(([key, value]) => xhr.setRequestHeader(key, value));
+    xhr.send(formData);
+  });
 }
 
 async function apiFile(path: string, options?: RequestInit): Promise<{ blob: Blob; filename: string | null }> {
@@ -138,4 +224,4 @@ export async function downloadFile(path: string, fallbackFilename: string): Prom
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
-export const apiClient = { api, apiForm, apiFile };
+export const apiClient = { api, apiForm, apiFormWithProgress, apiFile };

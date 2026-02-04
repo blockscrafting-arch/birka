@@ -22,3 +22,4 @@ class User(Base):
 
     companies = relationship("Company", back_populates="user")
     warehouse_profile = relationship("WarehouseEmployee", back_populates="user", uselist=False)
+    chat_messages = relationship("ChatMessage", back_populates="user")

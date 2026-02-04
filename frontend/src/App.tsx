@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { useTelegram } from "./hooks/useTelegram";
+import { queryClient } from "./queryClient";
 import { apiClient } from "./services/api";
 import { Header } from "./components/layout/Header";
 import { Page } from "./components/layout/Page";
 import { TabBar } from "./components/layout/TabBar";
 import { Loader } from "./components/ui/Loader";
+import { UploadManager } from "./components/shared/UploadManager";
 import { UserProvider, useUser } from "./contexts/UserContext";
 import { CompanyPage } from "./pages/client/CompanyPage";
 import { OrdersPage } from "./pages/client/OrdersPage";
@@ -113,6 +115,7 @@ export default function App() {
       .then((data) => {
         if (data.session_token) {
           localStorage.setItem("birka_session_token", data.session_token);
+          queryClient.invalidateQueries({ queryKey: ["current-user"] });
         }
       })
       .finally(() => setReady(true));
@@ -133,6 +136,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <UserProvider>
+        <UploadManager />
         <Page>
           <Header title="Бирка — фулфилмент" />
           <TabBar />

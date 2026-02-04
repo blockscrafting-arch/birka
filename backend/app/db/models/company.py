@@ -35,3 +35,4 @@ class Company(Base):
     products = relationship("Product", back_populates="company")
     orders = relationship("Order", back_populates="company")
     shipment_requests = relationship("ShipmentRequest", back_populates="company")
+    chat_messages = relationship("ChatMessage", back_populates="company")

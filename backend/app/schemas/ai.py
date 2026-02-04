@@ -28,3 +28,16 @@ class AIChatResponse(BaseModel):
     """AI chat response."""
 
     answer: str
+
+
+class ChatMessageOut(BaseModel):
+    """Single message for history API."""
+
+    role: str
+    text: str
+
+
+class AIChatHistoryOut(BaseModel):
+    """AI chat history (last N messages)."""
+
+    messages: list[ChatMessageOut]

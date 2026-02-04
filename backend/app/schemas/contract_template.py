@@ -9,16 +9,18 @@ class ContractTemplateOut(BaseModel):
 
     id: int
     name: str
-    html_content: str
+    html_content: str | None
     is_default: bool
     created_at: datetime
     updated_at: datetime
+    file_name: str | None = None
+    file_type: str | None = None
 
     model_config = {"from_attributes": True}
 
 
 class ContractTemplateCreate(BaseModel):
-    """Create contract template request."""
+    """Create contract template request (legacy HTML)."""
 
     name: str
     html_content: str
@@ -26,7 +28,7 @@ class ContractTemplateCreate(BaseModel):
 
 
 class ContractTemplateUpdate(BaseModel):
-    """Update contract template request."""
+    """Update contract template request (metadata only for file templates)."""
 
     name: str | None = None
     html_content: str | None = None

@@ -1,4 +1,5 @@
 """Company endpoints."""
+import asyncio
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,9 +15,11 @@ from app.api.v1.deps import get_current_user
 from app.db.models.user import User
 from app.schemas.company import CompanyCreate, CompanyList, CompanyOut, CompanyUpdate
 from app.core.logging import logger
+from app.services.contract_template_service import render_contract_pdf_from_docx_template
 from app.services.dadata import fetch_bank_by_bik, fetch_company_by_inn
 from app.services.pdf import ContractData, render_contract_pdf
 from app.services.files import content_disposition
+from app.services.s3 import S3Service
 
 router = APIRouter()
 
@@ -163,13 +166,31 @@ async def generate_contract(
             select(ContractTemplate).where(ContractTemplate.is_default.is_(True))
         )
         template = template_result.scalar_one_or_none()
-        pdf_bytes = render_contract_pdf(contract, template.html_content if template else None)
+        if template and template.file_key:
+            s3 = S3Service()
+            pdf_bytes = await asyncio.to_thread(
+                render_contract_pdf_from_docx_template,
+                s3, template.file_key, template.file_type, template.docx_key, contract,
+            )
+        else:
+            pdf_bytes = await asyncio.to_thread(
+                render_contract_pdf,
+                contract, template.html_content if template else None,
+            )
         filename = f"Договор_{company.name}_{contract_date}.pdf"
         return StreamingResponse(
             iter([pdf_bytes]),
             media_type="application/pdf",
             headers={"Content-Disposition": content_disposition(filename)},
         )
+    except RuntimeError as exc:
+        if "Старый шаблон" in str(exc) or "PDF" in str(exc):
+            logger.warning("contract_pdf_legacy_pdf", company_id=company_id, error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Шаблон договора устарел. Администратор должен загрузить шаблон заново (DOCX или RTF).",
+            ) from exc
+        raise
     except Exception as exc:
         logger.exception("contract_pdf_failed", company_id=company_id, error=str(exc))
         raise HTTPException(status_code=500, detail="Не удалось сформировать PDF договора")

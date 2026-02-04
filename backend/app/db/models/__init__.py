@@ -16,6 +16,7 @@ from app.db.models.service import Service
 from app.db.models.warehouse_employee import WarehouseEmployee
 
 __all__ = [
+    "ChatMessage",
     "Company",
     "ContractTemplate",
     "Destination",

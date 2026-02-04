@@ -49,6 +49,12 @@ async def telegram_auth(
         db.add(user)
         await db.commit()
         await db.refresh(user)
+    else:
+        # Синхронизация роли из ADMIN_TELEGRAM_IDS при каждой авторизации
+        if telegram_id in settings.admin_telegram_ids and user.role != "admin":
+            user.role = "admin"
+            await db.commit()
+            await db.refresh(user)
 
     await db.execute(delete(Session).where(Session.expires_at <= datetime.utcnow()))
 

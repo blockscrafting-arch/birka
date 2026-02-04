@@ -4,11 +4,17 @@ from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.security import validate_telegram_init_data
 from app.db.models.session import Session
 from app.db.models.user import User
 from app.db.session import get_db
 from app.services.telegram import parse_init_data_user
+
+
+def _role_for_telegram_id(telegram_id: int) -> str:
+    """Return role for telegram_id: admin if in ADMIN_TELEGRAM_IDS else client."""
+    return "admin" if telegram_id in settings.admin_telegram_ids else "client"
 
 
 async def get_current_user(
@@ -46,7 +52,7 @@ async def get_current_user(
             telegram_username=user_data.get("username"),
             first_name=user_data.get("first_name"),
             last_name=user_data.get("last_name"),
-            role="client",
+            role=_role_for_telegram_id(telegram_id),
         )
         db.add(user)
         await db.commit()

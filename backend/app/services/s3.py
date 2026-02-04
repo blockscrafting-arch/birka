@@ -37,6 +37,25 @@ class S3Service:
         )
         return key
 
+    def get_bytes(self, key: str) -> bytes:
+        """Download object from S3 and return bytes."""
+        response = self._get_client().get_object(Bucket=settings.S3_BUCKET_NAME, Key=key)
+        return response["Body"].read()
+
+    def stream_chunks(self, key: str, chunk_size: int = 65536):
+        """
+        Download object from S3 as a generator of chunks (for streaming response).
+        Yields bytes chunks; the S3 response body is read in the same thread that calls next().
+        """
+        response = self._get_client().get_object(Bucket=settings.S3_BUCKET_NAME, Key=key)
+        body = response["Body"]
+        for chunk in iter(lambda: body.read(chunk_size), b""):
+            yield chunk
+
+    def delete_object(self, key: str) -> None:
+        """Delete object from S3 by key."""
+        self._get_client().delete_object(Bucket=settings.S3_BUCKET_NAME, Key=key)
+
     def build_public_url(self, key: str) -> str:
         """Build public URL from key."""
         base = settings.FILE_PUBLIC_BASE_URL.rstrip("/")

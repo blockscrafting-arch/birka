@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
 
 import { useUser } from "../../contexts/UserContext";
+import { useUploadStore } from "../../stores/uploadStore";
 
 const primaryTabs = [
   { to: "/client/company", label: "Клиент" },
@@ -36,6 +37,8 @@ const adminTabs = [
 export function TabBar() {
   const location = useLocation();
   const { user } = useUser();
+  const jobs = useUploadStore((s) => s.jobs);
+  const uploadingCount = jobs.filter((j) => j.status === "uploading").length;
   const canWarehouse = user?.role === "warehouse" || user?.role === "admin";
   const canAdmin = user?.role === "admin";
   const isAdmin = location.pathname.startsWith("/admin");
@@ -69,6 +72,11 @@ export function TabBar() {
         ))}
       </div>
 
+      {uploadingCount > 0 && (
+        <div className="rounded-lg border border-birka-200 bg-birka-50 px-3 py-1.5 text-xs text-birka-800">
+          Загрузка в фоне: {uploadingCount} {uploadingCount === 1 ? "файл" : "файлов"}
+        </div>
+      )}
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
         <div className="mx-auto flex max-w-lg items-center justify-around p-2">
           {visiblePrimaryTabs.map((tab) => (

@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 /** Single message in AI chat history. */
 export type ChatMessage = { role: "user" | "assistant"; text: string };
@@ -11,36 +10,35 @@ function companyKey(companyId: number | null): string {
 }
 
 type AIChatStore = {
-  /** History per company (key = companyId or "global"). */
   histories: Record<string, ChatMessage[]>;
   addMessage: (companyId: number | null, msg: ChatMessage) => void;
   getMessages: (companyId: number | null) => ChatMessage[];
+  setMessages: (companyId: number | null, messages: ChatMessage[]) => void;
   clearMessages: (companyId: number | null) => void;
 };
 
-/** Store for AI chat messages per company; persists in localStorage with size limit. */
-export const useAIChatStore = create<AIChatStore>()(
-  persist(
-    (set, get) => ({
-      histories: {},
-      addMessage: (companyId, msg) => {
-        const key = companyKey(companyId);
-        set((s) => {
-          const hist = s.histories ?? {};
-          const list = [...(hist[key] ?? []), msg];
-          const trimmed = list.length > MAX_MESSAGES_PER_COMPANY ? list.slice(-MAX_MESSAGES_PER_COMPANY) : list;
-          return { histories: { ...hist, [key]: trimmed } };
-        });
-      },
-      getMessages: (companyId) => {
-        const key = companyKey(companyId);
-        return get().histories?.[key] ?? [];
-      },
-      clearMessages: (companyId) => {
-        const key = companyKey(companyId);
-        set((s) => ({ histories: { ...(s.histories ?? {}), [key]: [] } }));
-      },
-    }),
-    { name: "birka-ai-chat", partialize: (s) => ({ histories: s.histories }) }
-  )
-);
+/** Store for AI chat messages per company. Server is source of truth; no localStorage to avoid stale data across devices. */
+export const useAIChatStore = create<AIChatStore>()((set, get) => ({
+  histories: {},
+  addMessage: (companyId, msg) => {
+    const key = companyKey(companyId);
+    set((s) => {
+      const hist = s.histories ?? {};
+      const list = [...(hist[key] ?? []), msg];
+      const trimmed = list.length > MAX_MESSAGES_PER_COMPANY ? list.slice(-MAX_MESSAGES_PER_COMPANY) : list;
+      return { histories: { ...hist, [key]: trimmed } };
+    });
+  },
+  getMessages: (companyId) => {
+    const key = companyKey(companyId);
+    return get().histories?.[key] ?? [];
+  },
+  setMessages: (companyId, messages) => {
+    const key = companyKey(companyId);
+    set((s) => ({ histories: { ...(s.histories ?? {}), [key]: messages } }));
+  },
+  clearMessages: (companyId) => {
+    const key = companyKey(companyId);
+    set((s) => ({ histories: { ...(s.histories ?? {}), [key]: [] } }));
+  },
+}));
