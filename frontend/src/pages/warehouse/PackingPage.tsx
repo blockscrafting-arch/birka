@@ -28,6 +28,7 @@ export function PackingPage() {
     "Принято,Упаковка,Готово к отгрузке"
   );
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
+  const [formResetKey, setFormResetKey] = useState(0);
   const { data: items = [], isLoading: itemsLoading } = useOrderItems(activeOrderId ?? undefined);
   const { createPacking, completeOrder } = useWarehouse();
   const { data: photos = [], upload } = useOrderPhotos(activeOrderId ?? undefined);
