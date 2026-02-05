@@ -1,5 +1,5 @@
 """Shipment request schemas."""
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -8,8 +8,11 @@ class ShipmentRequestCreate(BaseModel):
     """Create shipment request."""
 
     company_id: int
+    order_id: int | None = None
     destination_type: str
     destination_comment: str | None = None
+    warehouse_name: str | None = None
+    delivery_date: date | None = None
 
 
 class ShipmentRequestOut(BaseModel):
@@ -17,8 +20,15 @@ class ShipmentRequestOut(BaseModel):
 
     id: int
     company_id: int
+    order_id: int | None
+    order_number: str | None
+    fbo_supply_id: int | None = None
     destination_type: str
     destination_comment: str | None
+    warehouse_name: str | None
+    delivery_date: date | None
+    supply_barcode_url: str | None
+    box_barcodes_url: str | None
     status: str
     created_at: datetime
 

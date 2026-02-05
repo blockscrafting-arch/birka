@@ -13,7 +13,7 @@ class FBOSupply(Base):
     __tablename__ = "fbo_supplies"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     marketplace: Mapped[str] = mapped_column(String(32))  # wb | ozon
     external_supply_id: Mapped[str | None] = mapped_column(String(128))
@@ -22,6 +22,7 @@ class FBOSupply(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     order = relationship("Order", back_populates="fbo_supplies")
+    shipment_requests = relationship("ShipmentRequest", back_populates="fbo_supply")
     boxes = relationship("FBOSupplyBox", back_populates="supply", cascade="all, delete-orphan")
 
 

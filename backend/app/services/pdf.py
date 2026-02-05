@@ -127,15 +127,19 @@ def _apply_contract_template(template_html: str, context: dict[str, str]) -> str
     return html_content
 
 
-def _render_barcode_base64(barcode_value: str) -> str:
-    """Generate Code128 barcode as base64 PNG for embedding in HTML."""
+def _render_barcode_base64(barcode_value: str, module_width: float = 0.35, module_height: float = 12) -> str:
+    """Generate Code128 barcode as base64 PNG for embedding in HTML (58x40 label)."""
     if not barcode_value or not barcode_value.strip():
         return ""
     code = barcode_value.strip()
     try:
         code128 = barcode.get("code128", code, writer=ImageWriter())
         buf = BytesIO()
-        code128.write(buf)
+        opts = {"module_width": module_width, "module_height": module_height}
+        try:
+            code128.write(buf, options=opts)
+        except TypeError:
+            code128.write(buf)
         return base64.b64encode(buf.getvalue()).decode("ascii")
     except Exception as exc:
         logger.warning("barcode_png_failed", code=code, error=str(exc))
@@ -143,7 +147,10 @@ def _render_barcode_base64(barcode_value: str) -> str:
 
 
 def render_label_pdf(label: LabelData) -> bytes:
-    """Render label PDF for thermal printer (58x40 mm), matching client example layout."""
+    """
+    Render label PDF for TSC thermal printer 58x40 mm.
+    Layout: title (name + size), Артикул, Поставщик, large barcode, number below (full sheet).
+    """
     try:
         title = html.escape(label.title or "")
         article = html.escape(label.article or "")
@@ -154,7 +161,7 @@ def render_label_pdf(label: LabelData) -> bytes:
         if barcode_b64:
             barcode_img = (
                 f'<img src="data:image/png;base64,{barcode_b64}" alt="" '
-                'style="display:block;margin:0 auto;max-width:100%;height:auto;min-height:12mm;" />'
+                'style="display:block;margin:0 auto;max-width:54mm;height:auto;min-height:14mm;" />'
             )
         html_content = f"""
         <!DOCTYPE html>
@@ -162,37 +169,24 @@ def render_label_pdf(label: LabelData) -> bytes:
           <head>
             <meta charset="utf-8" />
             <style>
-              @page {{
-                size: 58mm 40mm;
-                margin: 0;
-              }}
-              @media print {{
-                html, body {{
-                  width: 58mm;
-                  height: 40mm;
-                  margin: 0;
-                  padding: 0;
-                }}
-              }}
-              body {{
-                margin: 0;
-                padding: 2mm;
-                width: 58mm;
-                height: 40mm;
-                max-width: 58mm;
-                max-height: 40mm;
-                font-family: Arial, sans-serif;
-                box-sizing: border-box;
-                overflow: hidden;
-              }}
+              @page {{ size: 58mm 40mm; margin: 0; }}
+              html, body {{ margin: 0; padding: 0; width: 58mm; height: 40mm; font-family: Arial, sans-serif; overflow: hidden; box-sizing: border-box; }}
+              .label {{ padding: 2mm; width: 56mm; min-height: 38mm; box-sizing: border-box; }}
+              .label-title {{ font-weight: bold; font-size: 10pt; line-height: 1.2; margin-bottom: 1.5mm; word-break: break-word; }}
+              .label-meta {{ font-size: 8pt; line-height: 1.35; margin-bottom: 1mm; }}
+              .label-barcode {{ text-align: center; margin: 2mm 0; min-height: 14mm; display: flex; align-items: center; justify-content: center; }}
+              .label-barcode img {{ max-width: 54mm; height: auto; }}
+              .label-footer {{ font-size: 9pt; text-align: center; margin-top: 1mm; letter-spacing: 0.5px; }}
             </style>
           </head>
           <body>
-            <div style="font-size:10pt;font-weight:bold;line-height:1.25;margin-bottom:2mm;">{title}</div>
-            <div style="font-size:7pt;margin-bottom:1mm;">Артикул {article}</div>
-            <div style="font-size:7pt;">Поставщик {supplier}</div>
-            <div style="margin-top:3mm;text-align:center;">{barcode_img}</div>
-            <div style="font-size:8pt;text-align:center;margin-top:1mm;">{barcode_value}</div>
+            <div class="label">
+              <div class="label-title">{title}</div>
+              <div class="label-meta">Артикул {article}</div>
+              <div class="label-meta">Поставщик {supplier}</div>
+              <div class="label-barcode">{barcode_img}</div>
+              <div class="label-footer">{barcode_value}</div>
+            </div>
           </body>
         </html>
         """

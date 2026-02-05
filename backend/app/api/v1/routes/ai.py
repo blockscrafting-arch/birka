@@ -4,6 +4,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
+from app.core.config import settings
+from app.db.models.ai_settings import AISettings
 from app.db.models.chat_message import ChatMessage
 from app.db.models.user import User
 from app.db.session import get_db

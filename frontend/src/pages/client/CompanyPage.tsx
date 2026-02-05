@@ -1,9 +1,11 @@
 import { useState } from "react";
 
 import { useCompanies } from "../../hooks/useCompanies";
+import { useCompanyAPIKeys } from "../../hooks/useCompanyAPIKeys";
 import { apiClient } from "../../services/api";
 import { Company } from "../../types";
 import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { Pagination } from "../../components/ui/Pagination";
 import { Skeleton } from "../../components/ui/Skeleton";
@@ -19,6 +21,14 @@ export function CompanyPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
+  const [apiKeysCompanyId, setApiKeysCompanyId] = useState<number | null>(null);
+  const [apiKeysForm, setApiKeysForm] = useState({
+    wb_api_key: "",
+    ozon_client_id: "",
+    ozon_api_key: "",
+  });
+  const [apiKeysError, setApiKeysError] = useState<string | null>(null);
+  const { data: apiKeysData, isLoading: apiKeysLoading, update: updateApiKeys } = useCompanyAPIKeys(apiKeysCompanyId);
 
   const companies = items;
   const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -58,6 +68,28 @@ export function CompanyPage() {
       setToast({ message: "Изменения сохранены" });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Не удалось обновить компанию");
+    }
+  };
+
+  const handleOpenApiKeys = (companyId: number) => {
+    setApiKeysCompanyId(companyId);
+    setApiKeysForm({ wb_api_key: "", ozon_client_id: "", ozon_api_key: "" });
+  };
+
+  const handleSaveApiKeys = async () => {
+    if (apiKeysCompanyId == null) return;
+    setPageError(null);
+    try {
+      const payload: { wb_api_key?: string; ozon_client_id?: string; ozon_api_key?: string } = {};
+      if (apiKeysForm.wb_api_key.trim()) payload.wb_api_key = apiKeysForm.wb_api_key.trim();
+      if (apiKeysForm.ozon_client_id.trim()) payload.ozon_client_id = apiKeysForm.ozon_client_id.trim();
+      if (apiKeysForm.ozon_api_key.trim()) payload.ozon_api_key = apiKeysForm.ozon_api_key.trim();
+      await updateApiKeys.mutateAsync(payload);
+      setToast({ message: "Ключи сохранены" });
+      setApiKeysCompanyId(null);
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : "Не удалось сохранить ключи");
+      setToast({ message: err instanceof Error ? err.message : "Ошибка", variant: "error" });
     }
   };
 
@@ -122,6 +154,9 @@ export function CompanyPage() {
               <Button variant="secondary" onClick={() => setEditing(company)}>
                 Редактировать
               </Button>
+              <Button variant="secondary" onClick={() => handleOpenApiKeys(company.id)}>
+                API-ключи (WB / Ozon)
+              </Button>
               <Button
                 variant="ghost"
                 disabled={busyId === company.id}
@@ -162,6 +197,56 @@ export function CompanyPage() {
           onSubmit={handleUpdate}
           submitLabel="Сохранить"
         />
+      </Modal>
+
+      <Modal
+        title="API-ключи WB / Ozon"
+        open={apiKeysCompanyId != null}
+        onClose={() => { setApiKeysCompanyId(null); setApiKeysError(null); }}
+      >
+        <div className="space-y-3">
+          {apiKeysError ? (
+            <div className="rounded bg-rose-50 p-2 text-sm text-rose-700">{apiKeysError}</div>
+          ) : null}
+          {apiKeysLoading ? (
+            <div className="text-sm text-slate-500">Загрузка...</div>
+          ) : (
+            <>
+              <Input
+                label="Ключ Wildberries"
+                type="password"
+                placeholder={apiKeysData?.wb_api_key ?? "Не задан"}
+                value={apiKeysForm.wb_api_key}
+                onChange={(e) => setApiKeysForm((p) => ({ ...p, wb_api_key: e.target.value }))}
+              />
+              <Input
+                label="Client ID Ozon"
+                type="password"
+                placeholder={apiKeysData?.ozon_client_id ?? "Не задан"}
+                value={apiKeysForm.ozon_client_id}
+                onChange={(e) => setApiKeysForm((p) => ({ ...p, ozon_client_id: e.target.value }))}
+              />
+              <Input
+                label="API Key Ozon"
+                type="password"
+                placeholder={apiKeysData?.ozon_api_key ?? "Не задан"}
+                value={apiKeysForm.ozon_api_key}
+                onChange={(e) => setApiKeysForm((p) => ({ ...p, ozon_api_key: e.target.value }))}
+              />
+              <p className="text-xs text-slate-500">
+                Оставьте поле пустым, чтобы не менять. Чтобы очистить ключ, отправьте пустое значение и сохраните.
+                Ключи хранятся на сервере и используются для отгрузок WB/Ozon.
+              </p>
+              <Button
+                variant="primary"
+                disabled={updateApiKeys.isPending}
+                onClick={handleSaveApiKeys}
+              >
+                {updateApiKeys.isPending ? "Сохранение..." : "Сохранить"}
+              </Button>
+            </>
+          )}
+        </div>
       </Modal>
     </div>
   );

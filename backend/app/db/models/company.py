@@ -36,3 +36,6 @@ class Company(Base):
     orders = relationship("Order", back_populates="company")
     shipment_requests = relationship("ShipmentRequest", back_populates="company")
     chat_messages = relationship("ChatMessage", back_populates="company")
+    api_keys = relationship(
+        "CompanyAPIKeys", back_populates="company", uselist=False, cascade="all, delete-orphan"
+    )

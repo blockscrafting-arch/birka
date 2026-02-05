@@ -109,8 +109,34 @@ export type ServiceCalculateResponse = {
 export type ShippingRequest = {
   id: number;
   company_id: number;
+  order_id: number | null;
+  order_number: string | null;
+  fbo_supply_id: number | null;
   destination_type: string;
   destination_comment: string | null;
+  warehouse_name: string | null;
+  delivery_date: string | null;
+  supply_barcode_url: string | null;
+  box_barcodes_url: string | null;
   status: string;
   created_at: string;
+};
+
+export type FBOSupplyBox = {
+  id: number;
+  supply_id: number;
+  box_number: number;
+  external_barcode: string | null;
+};
+
+export type FBOSupply = {
+  id: number;
+  order_id: number | null;
+  company_id: number;
+  marketplace: string;
+  external_supply_id: string | null;
+  status: string;
+  warehouse_name: string | null;
+  created_at: string;
+  boxes: FBOSupplyBox[];
 };

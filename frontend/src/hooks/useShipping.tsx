@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../services/api";
-import { ShippingRequest } from "../types";
+import { Order, ShippingRequest } from "../types";
 
 type Paginated<T> = {
   items: T[];
@@ -10,11 +10,23 @@ type Paginated<T> = {
   limit: number;
 };
 
-type ShippingCreate = {
+export type ShippingCreate = {
   company_id: number;
+  order_id?: number;
   destination_type: string;
   destination_comment?: string;
+  warehouse_name?: string;
+  delivery_date?: string;
 };
+
+export function useOrdersReadyForShipping(companyId?: number) {
+  return useQuery({
+    queryKey: ["shipping", "orders-ready", companyId],
+    queryFn: () =>
+      apiClient.api<Order[]>(`/shipping/orders-ready?company_id=${companyId}`),
+    enabled: Boolean(companyId),
+  });
+}
 
 export function useShipping(companyId?: number, page = 1, limit = 20) {
   const queryClient = useQueryClient();
@@ -47,6 +59,34 @@ export function useShipping(companyId?: number, page = 1, limit = 20) {
     },
   });
 
+  const uploadSupplyBarcode = useMutation({
+    mutationFn: (payload: { requestId: number; file: File }) => {
+      const form = new FormData();
+      form.append("file", payload.file);
+      return apiClient.apiForm<{ key: string }>(
+        `/shipping/${payload.requestId}/supply-barcode`,
+        form
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["shipping"] });
+    },
+  });
+
+  const uploadBoxBarcodes = useMutation({
+    mutationFn: (payload: { requestId: number; file: File }) => {
+      const form = new FormData();
+      form.append("file", payload.file);
+      return apiClient.apiForm<{ key: string }>(
+        `/shipping/${payload.requestId}/box-barcodes`,
+        form
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["shipping"] });
+    },
+  });
+
   return {
     ...query,
     items: query.data?.items ?? [],
@@ -55,5 +95,7 @@ export function useShipping(companyId?: number, page = 1, limit = 20) {
     limit: query.data?.limit ?? limit,
     create,
     updateStatus,
+    uploadSupplyBarcode,
+    uploadBoxBarcodes,
   };
 }

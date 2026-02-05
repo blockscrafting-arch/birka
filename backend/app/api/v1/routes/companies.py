@@ -13,8 +13,17 @@ from app.db.session import get_db
 from fastapi.responses import StreamingResponse
 
 from app.api.v1.deps import get_current_user
+from app.db.models.company_api_keys import CompanyAPIKeys
 from app.db.models.user import User
-from app.schemas.company import CompanyCreate, CompanyList, CompanyOut, CompanyUpdate
+from app.schemas.company import (
+    CompanyAPIKeysOut,
+    CompanyAPIKeysUpdate,
+    CompanyCreate,
+    CompanyList,
+    CompanyOut,
+    CompanyUpdate,
+)
+from app.schemas.company import _mask_key
 from app.core.logging import logger
 from app.services.contract_template_service import render_contract_pdf_from_docx_template
 from app.services.dadata import fetch_bank_by_bik, fetch_company_by_inn
@@ -252,3 +261,91 @@ async def send_contract_to_telegram(
             detail="Не удалось отправить файл в Telegram. Попробуйте позже.",
         )
     return {"sent": True}
+
+
+def _company_access(company: Company, current_user: User) -> bool:
+    """True if current_user can manage this company (owner or admin)."""
+    return company.user_id == current_user.id or current_user.role == "admin"
+
+
+@router.get("/{company_id}/api-keys", response_model=CompanyAPIKeysOut)
+async def get_company_api_keys(
+    company_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CompanyAPIKeysOut:
+    """Get API keys for company (masked). Only owner or admin."""
+    result = await db.execute(select(Company).where(Company.id == company_id))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
+    if not _company_access(company, current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к компании")
+
+    result = await db.execute(
+        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == company_id)
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        return CompanyAPIKeysOut(
+            company_id=company_id,
+            wb_api_key=None,
+            ozon_client_id=None,
+            ozon_api_key=None,
+        )
+    secret = settings.ENCRYPTION_KEY or ""
+    return CompanyAPIKeysOut(
+        company_id=company_id,
+        wb_api_key=_mask_key(decrypt_value(row.wb_api_key, secret)),
+        ozon_client_id=_mask_key(decrypt_value(row.ozon_client_id, secret)),
+        ozon_api_key=_mask_key(decrypt_value(row.ozon_api_key, secret)),
+    )
+
+
+@router.put("/{company_id}/api-keys", response_model=CompanyAPIKeysOut)
+async def update_company_api_keys(
+    company_id: int,
+    payload: CompanyAPIKeysUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CompanyAPIKeysOut:
+    """Create or update API keys for company. Only owner or admin."""
+    result = await db.execute(select(Company).where(Company.id == company_id))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
+    if not _company_access(company, current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к компании")
+
+    result = await db.execute(
+        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == company_id)
+    )
+    row = result.scalar_one_or_none()
+    data = payload.model_dump(exclude_unset=True)
+    data = {k: (v if v else None) for k, v in data.items()}
+    secret = settings.ENCRYPTION_KEY or ""
+
+    if not row:
+        row = CompanyAPIKeys(
+            company_id=company_id,
+            wb_api_key=encrypt_value(data.get("wb_api_key"), secret),
+            ozon_client_id=encrypt_value(data.get("ozon_client_id"), secret),
+            ozon_api_key=encrypt_value(data.get("ozon_api_key"), secret),
+        )
+        db.add(row)
+    else:
+        if "wb_api_key" in data:
+            row.wb_api_key = encrypt_value(data["wb_api_key"], secret)
+        if "ozon_client_id" in data:
+            row.ozon_client_id = encrypt_value(data["ozon_client_id"], secret)
+        if "ozon_api_key" in data:
+            row.ozon_api_key = encrypt_value(data["ozon_api_key"], secret)
+    await db.commit()
+    await db.refresh(row)
+
+    return CompanyAPIKeysOut(
+        company_id=company_id,
+        wb_api_key=_mask_key(decrypt_value(row.wb_api_key, secret)),
+        ozon_client_id=_mask_key(decrypt_value(row.ozon_client_id, secret)),
+        ozon_api_key=_mask_key(decrypt_value(row.ozon_api_key, secret)),
+    )

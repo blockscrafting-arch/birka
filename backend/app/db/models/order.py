@@ -30,6 +30,7 @@ class Order(Base):
     photos = relationship("OrderPhoto", back_populates="order")
     packing_records = relationship("PackingRecord", back_populates="order")
     fbo_supplies = relationship("FBOSupply", back_populates="order")
+    shipment_requests = relationship("ShipmentRequest", back_populates="order")
 
 
 class OrderItem(Base):

@@ -18,8 +18,8 @@ class WildberriesAPI:
         self.api_key = api_key
         self._headers = {"Authorization": api_key}
 
-    async def get_supplies(self, limit: int = 1000) -> list:
-        """List supplies. POST /api/v1/supplies."""
+    async def get_supplies(self, limit: int = 1000) -> list | None:
+        """List supplies. POST /api/v1/supplies. Returns None on auth/connection error."""
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 r = await client.post(
@@ -27,11 +27,14 @@ class WildberriesAPI:
                     headers=self._headers,
                     json={},
                 )
+                if r.status_code in (401, 403):
+                    logger.warning("wb_api_supplies_unauthorized", status=r.status_code)
+                    return None
                 r.raise_for_status()
                 return r.json() or []
         except Exception as e:
             logger.warning("wb_api_supplies_failed", error=str(e))
-            return []
+            return None
 
     async def get_supply_package(self, supply_id: str) -> list:
         """Get package (box) barcodes for a supply. GET /api/v1/supplies/{id}/package."""
@@ -46,3 +49,10 @@ class WildberriesAPI:
         except Exception as e:
             logger.warning("wb_api_supply_package_failed", supply_id=supply_id, error=str(e))
             return []
+
+    async def get_barcodes(self, supply_id: str) -> list[str]:
+        """Get package (box) barcodes for a supply. Alias for get_supply_package, returns list of barcode strings."""
+        raw = await self.get_supply_package(supply_id)
+        if isinstance(raw, list):
+            return [str(x) for x in raw if x]
+        return []

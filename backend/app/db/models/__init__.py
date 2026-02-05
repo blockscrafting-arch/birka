@@ -1,6 +1,7 @@
 """ORM models."""
 from app.db.models.ai_settings import AISettings
 from app.db.models.company import Company
+from app.db.models.company_api_keys import CompanyAPIKeys
 from app.db.models.contract_template import ContractTemplate
 from app.db.models.fbo_supply import FBOSupply, FBOSupplyBox, FBOSupplyItem
 from app.db.models.destination import Destination
@@ -21,6 +22,7 @@ __all__ = [
     "AISettings",
     "ChatMessage",
     "Company",
+    "CompanyAPIKeys",
     "FBOSupply",
     "FBOSupplyBox",
     "FBOSupplyItem",

@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # Upload limits (bytes)
     MAX_UPLOAD_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
 
+    # Encryption for API keys (Fernet key, base64 url-safe; generate with Fernet.generate_key())
+    ENCRYPTION_KEY: str = ""
+
     # Dadata
     DADATA_TOKEN: str = ""
 

@@ -21,5 +21,6 @@ api_router.include_router(products_router, prefix="/products", tags=["products"]
 api_router.include_router(orders_router, prefix="/orders", tags=["orders"])
 api_router.include_router(services_router, prefix="/services", tags=["services"])
 api_router.include_router(shipping_router, prefix="/shipping", tags=["shipping"])
+api_router.include_router(fbo_router, prefix="/fbo", tags=["fbo"])
 api_router.include_router(warehouse_router, prefix="/warehouse", tags=["warehouse"])
 api_router.include_router(ai_router, prefix="/ai", tags=["ai"])
