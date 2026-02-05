@@ -12,6 +12,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
+import { Toast } from "../../components/ui/Toast";
 import {
   useServices,
   useCreateService,
@@ -129,6 +130,7 @@ function SortableServiceRow({
 export function ServicesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
     return () => clearTimeout(timer);
@@ -248,6 +250,7 @@ export function ServicesPage() {
 
   return (
     <div className="space-y-4">
+      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-lg font-semibold text-slate-900">Прайс услуг</div>
         <Input
@@ -277,7 +280,16 @@ export function ServicesPage() {
           className="hidden"
           onChange={handleImport}
         />
-        <Button variant="secondary" onClick={() => exportMut.mutate()} disabled={exportMut.isPending}>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            exportMut.mutate(undefined, {
+              onSuccess: () => setToast({ message: "Файл отправлен в чат с ботом" }),
+              onError: (err) => setToast({ message: err?.message ?? "Ошибка", variant: "error" }),
+            })
+          }
+          disabled={exportMut.isPending}
+        >
           Экспорт Excel
         </Button>
       </div>

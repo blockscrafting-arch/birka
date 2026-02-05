@@ -32,6 +32,7 @@ const adminTabs = [
   { to: "/admin/templates", label: "Шаблоны" },
   { to: "/admin/services", label: "Прайс" },
   { to: "/admin/documents", label: "Документы" },
+  { to: "/admin/ai-settings", label: "AI" },
 ];
 
 export function TabBar() {

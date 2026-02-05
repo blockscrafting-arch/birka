@@ -10,13 +10,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import require_roles
+from app.core.config import settings
 from app.core.logging import logger
+from app.db.models.ai_settings import AISettings
 from app.db.models.contract_template import ContractTemplate
 from app.db.models.document_chunk import DocumentChunk
 from app.db.models.service import Service
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.admin import AdminUserOut, RoleUpdate
+from app.schemas.admin import AdminUserOut, AISettingsOut, AISettingsUpdate, RoleUpdate
 from app.schemas.contract_template import (
     ContractTemplateCreate,
     ContractTemplateOut,
@@ -35,6 +37,7 @@ from app.services.document_processor import (
 from app.services.rag import upload_document_to_rag
 from app.services.files import content_disposition
 from app.services.s3 import S3Service
+from app.services.telegram import send_document
 
 router = APIRouter()
 
@@ -234,6 +237,38 @@ async def download_contract_template(
         media_type=media_type,
         headers={"Content-Disposition": content_disposition(filename)},
     )
+
+
+@router.post("/contract-templates/{template_id}/send")
+async def send_contract_template_to_telegram(
+    template_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> dict:
+    """Send template file to the admin in the chat with the bot."""
+    result = await db.execute(select(ContractTemplate).where(ContractTemplate.id == template_id))
+    template = result.scalar_one_or_none()
+    if not template or not template.file_key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template or file not found")
+
+    telegram_id = current_user.telegram_id
+    s3 = S3Service()
+    try:
+        file_bytes = await asyncio.to_thread(s3.get_bytes, template.file_key)
+    except Exception as e:
+        logger.exception("contract_template_send_failed", template_id=template_id, error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Не удалось прочитать файл"
+        ) from e
+
+    filename = template.file_name or "template"
+    sent = await send_document(telegram_id, file_bytes, filename, caption="Шаблон договора")
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Не удалось отправить файл в Telegram. Попробуйте позже.",
+        )
+    return {"sent": True}
 
 
 @router.patch("/contract-templates/{template_id}", response_model=ContractTemplateOut)
@@ -449,3 +484,69 @@ async def rag_sync_services(
     chunks_added = await upload_document_to_rag(db, content, SERVICES_RAG_SOURCE)
     logger.info("rag_sync_services_done", services_count=len(services), chunks_added=chunks_added)
     return {"status": "ok", "chunks_added": chunks_added}
+
+
+@router.get("/ai-settings", response_model=AISettingsOut)
+async def get_ai_settings(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+) -> AISettingsOut:
+    """Get current AI provider and model settings."""
+    row = await db.get(AISettings, 1)
+    if not row:
+        return AISettingsOut(
+            provider=settings.AI_PROVIDER,
+            model=settings.AI_MODEL,
+            temperature=0.7,
+        )
+    return AISettingsOut(provider=row.provider, model=row.model, temperature=float(row.temperature))
+
+
+@router.patch("/ai-settings", response_model=AISettingsOut)
+async def update_ai_settings(
+    payload: AISettingsUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+) -> AISettingsOut:
+    """Update AI provider and model settings."""
+    row = await db.get(AISettings, 1)
+    if not row:
+        row = AISettings(id=1, provider=settings.AI_PROVIDER, model=settings.AI_MODEL, temperature=0.7)
+        db.add(row)
+        await db.flush()
+    if payload.provider is not None:
+        row.provider = payload.provider
+    if payload.model is not None:
+        row.model = payload.model
+    if payload.temperature is not None:
+        row.temperature = max(0.0, min(1.0, payload.temperature))
+    await db.commit()
+    await db.refresh(row)
+    return AISettingsOut(provider=row.provider, model=row.model, temperature=float(row.temperature))
+
+
+@router.post("/ai-settings/test")
+async def test_ai_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> dict:
+    """Send a test message to the configured AI and return the reply."""
+    from app.services.openai_service import OpenAIService
+
+    row = await db.get(AISettings, 1)
+    if row:
+        service = OpenAIService(
+            provider=row.provider,
+            model=row.model,
+            temperature=float(row.temperature),
+        )
+    else:
+        service = OpenAIService(provider=settings.AI_PROVIDER, model=settings.AI_MODEL)
+    try:
+        reply = await service.chat(
+            [{"role": "user", "content": "Ответь одним словом: работаю."}],
+        )
+        return {"ok": True, "reply": (reply or "").strip()[:200]}
+    except Exception as e:
+        logger.warning("ai_settings_test_failed", error=str(e))
+        raise HTTPException(status_code=502, detail=f"Ошибка запроса к AI: {e!s}")

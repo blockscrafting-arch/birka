@@ -21,6 +21,7 @@ export function PrintPage() {
     search
   );
   const [pageError, setPageError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
 
   useEffect(() => {
     if (!companyId && companies.length > 0) {
@@ -45,15 +46,19 @@ export function PrintPage() {
 
   const handlePrint = async (productId: number) => {
     setPageError(null);
+    setToast(null);
     try {
-      await downloadFile(`/products/${productId}/label`, `label_${productId}.pdf`);
+      await apiClient.api(`/products/${productId}/label/send`, { method: "POST" });
+      setToast({ message: "Файл отправлен в чат с ботом" });
     } catch (err) {
-      setPageError(err instanceof Error ? err.message : "Не удалось скачать этикетку");
+      setPageError(err instanceof Error ? err.message : "Не удалось отправить этикетку");
+      setToast({ message: err instanceof Error ? err.message : "Ошибка", variant: "error" });
     }
   };
 
   return (
     <div className="space-y-4">
+      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
       <CompanySelect companies={companies} value={activeCompanyId} onChange={setCompanyId} />
       <Input
         label="Поиск по артикулу/баркоду"
@@ -75,7 +80,7 @@ export function PrintPage() {
             <div className="text-xs text-slate-500">ШК: {product.barcode ?? "—"}</div>
             <div className="text-xs text-slate-500">Артикул WB: {product.wb_article ?? "—"}</div>
             <Button className="mt-2" variant="secondary" onClick={() => handlePrint(product.id)}>
-              Печать ШК
+              Отправить этикетку в Telegram
             </Button>
           </div>
         ))}

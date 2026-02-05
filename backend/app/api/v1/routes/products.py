@@ -19,6 +19,7 @@ from app.services.excel import export_products, export_products_template, parse_
 from app.services.files import content_disposition
 from app.services.pdf import LabelData, render_label_pdf
 from app.services.s3 import S3Service
+from app.services.telegram import send_document
 from app.core.config import settings
 from app.core.logging import logger
 from app.db.models.user import User
@@ -212,6 +213,38 @@ async def export_products_excel(
         raise HTTPException(status_code=500, detail="Не удалось экспортировать товары")
 
 
+@router.post("/export/send")
+async def send_export_products_to_telegram(
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Export products and send to current user in Telegram."""
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
+        )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    result = await db.execute(
+        select(Product).options(joinedload(Product.company)).where(Product.company_id == company_id)
+    )
+    products = list(result.unique().scalars().all())
+    if not products:
+        raise HTTPException(status_code=400, detail="Нет товаров для экспорта")
+    buffer = export_products(products)
+    file_bytes = buffer.getvalue()
+    filename = f"Товары_{company.name}_{date.today().strftime('%d.%m.%Y')}.xlsx"
+    telegram_id = current_user.telegram_id
+    sent = await send_document(telegram_id, file_bytes, filename, caption="Экспорт товаров")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}
+
+
 @router.get("/template")
 async def export_products_template_excel(
     current_user: User = Depends(get_current_user),
@@ -229,6 +262,21 @@ async def export_products_template_excel(
     except Exception as exc:
         logger.exception("product_template_failed", error=str(exc))
         raise HTTPException(status_code=500, detail="Не удалось выгрузить шаблон")
+
+
+@router.post("/template/send")
+async def send_products_template_to_telegram(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Send products import template to current user in Telegram."""
+    buffer = export_products_template()
+    file_bytes = buffer.getvalue()
+    filename = "Шаблон_импорта_товаров.xlsx"
+    telegram_id = current_user.telegram_id
+    sent = await send_document(telegram_id, file_bytes, filename, caption="Шаблон импорта товаров")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}
 
 
 @router.post("/{product_id}/photo")
@@ -317,6 +365,49 @@ async def generate_label(
         media_type="application/pdf",
         headers={"Content-Disposition": content_disposition(filename)},
     )
+
+
+@router.post("/{product_id}/label/send")
+async def send_label_to_telegram(
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Generate label PDF and send to current user in Telegram."""
+    result = await db.execute(select(Product).where(Product.id == product_id))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == product.company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
+        )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if not product.name or not product.barcode or not product.wb_article:
+        raise HTTPException(status_code=400, detail="Не заполнены обязательные поля для этикетки")
+    supplier_name = product.supplier_name or company.name
+    if not supplier_name:
+        raise HTTPException(status_code=400, detail="Укажите поставщика для этикетки")
+    title = product.name.strip()
+    if product.size and product.size.strip():
+        title = f"{title}, размер {product.size.strip()}"
+    label = LabelData(
+        title=title,
+        article=product.wb_article or "-",
+        supplier=supplier_name,
+        barcode_value=product.barcode or "-",
+    )
+    pdf_bytes = render_label_pdf(label)
+    filename = f"Этикетка_{product.name}_{product.barcode}.pdf"
+    telegram_id = current_user.telegram_id
+    sent = await send_document(telegram_id, pdf_bytes, filename, caption="Этикетка товара")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}
 
 
 @router.get("/{product_id}/defect-photos", response_model=list[str])

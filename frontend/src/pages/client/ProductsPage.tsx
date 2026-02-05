@@ -12,7 +12,7 @@ import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
 import { useProducts, type ImportResult } from "../../hooks/useProducts";
 import { useProductDefectPhotos } from "../../hooks/useProductDefectPhotos";
-import { downloadFile } from "../../services/api";
+import { apiClient } from "../../services/api";
 import { Product } from "../../types";
 import { ProductForm } from "./ProductForm";
 
@@ -143,8 +143,8 @@ export function ProductsPage() {
     }
     setExporting(true);
     try {
-      await downloadFile(`/products/export?company_id=${activeCompanyId}`, "products.xlsx");
-      setToast({ message: "Файл экспорта скачан" });
+      await apiClient.api(`/products/export/send?company_id=${activeCompanyId}`, { method: "POST" });
+      setToast({ message: "Файл отправлен в чат с ботом" });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Ошибка экспорта");
     } finally {
@@ -167,13 +167,14 @@ export function ProductsPage() {
           onClick={async () => {
             setPageError(null);
             try {
-              await downloadFile("/products/template", "products_template.xlsx");
+              await apiClient.api("/products/template/send", { method: "POST" });
+              setToast({ message: "Файл отправлен в чат с ботом" });
             } catch (err) {
-              setPageError(err instanceof Error ? err.message : "Ошибка скачивания шаблона");
+              setPageError(err instanceof Error ? err.message : "Ошибка отправки шаблона");
             }
           }}
         >
-          Скачать шаблон
+          Отправить шаблон в Telegram
         </Button>
         <Button variant="ghost" onClick={handleExport} disabled={exporting}>
           {exporting ? "Экспортирую..." : "Экспорт Excel"}

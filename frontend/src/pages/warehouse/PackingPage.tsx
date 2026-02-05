@@ -13,7 +13,7 @@ import { useOrderItems } from "../../hooks/useOrderItems";
 import { useOrders } from "../../hooks/useOrders";
 import { useWarehouse } from "../../hooks/useWarehouse";
 import { useOrderPhotos } from "../../hooks/useOrderPhotos";
-import { downloadFile } from "../../services/api";
+import { apiClient } from "../../services/api";
 import { PackingForm } from "./PackingForm";
 
 export function PackingPage() {
@@ -38,10 +38,10 @@ export function PackingPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
 
-  const handleExportFBO = async (orderId: number, orderNumber: string) => {
+  const handleExportFBO = async (orderId: number) => {
     try {
-      await downloadFile(`/warehouse/export-fbo?order_id=${orderId}`, `Отгрузка_FBO_${orderNumber}.xlsx`);
-      setToast({ message: "Файл скачан" });
+      await apiClient.api(`/warehouse/export-fbo/send?order_id=${orderId}`, { method: "POST" });
+      setToast({ message: "Файл отправлен в чат с ботом клиенту" });
     } catch (err) {
       setToast({ message: err instanceof Error ? err.message : "Ошибка выгрузки", variant: "error" });
     }
@@ -61,20 +61,24 @@ export function PackingPage() {
     );
   }
 
-  const handleSubmit = async (payload: {
-    product_id: number;
-    employee_code: string;
-    quantity: number;
-    pallet_number?: string;
-    box_number?: string;
-    warehouse?: string;
-    materials_used?: string;
-    time_spent_minutes?: number;
-  }) => {
+  const handleSubmit = async (
+    payloads: {
+      product_id: number;
+      employee_code: string;
+      quantity: number;
+      pallet_number?: string;
+      box_number?: string;
+      warehouse?: string;
+      materials_used?: string;
+      time_spent_minutes?: number;
+    }[]
+  ) => {
     if (!activeOrderId) return;
     setPageError(null);
     try {
-      await createPacking.mutateAsync({ order_id: activeOrderId, ...payload });
+      for (const p of payloads) {
+        await createPacking.mutateAsync({ order_id: activeOrderId, ...p });
+      }
       setActiveOrderId(null);
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Не удалось завершить упаковку");
@@ -116,7 +120,7 @@ export function PackingPage() {
               </Button>
               <Button
                 variant="secondary"
-                onClick={() => handleExportFBO(order.id, order.order_number)}
+                onClick={() => handleExportFBO(order.id)}
               >
                 Скачать FBO (Excel)
               </Button>

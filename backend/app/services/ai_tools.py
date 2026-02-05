@@ -104,7 +104,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_stock_summary",
-            "description": "Общая сводка по остаткам на складе и браку по всем товарам.",
+            "description": (
+                "Общая сводка по остаткам на складе, браку и заявкам. Возвращает: total_stock_quantity (остаток на складе), "
+                "total_defect_quantity (брак), orders_total_planned / orders_total_received / orders_total_packed (по заявкам: плановое, принято, упаковано). "
+                "Всегда вызывай при вопросах «сколько у меня», «мой остаток», «что на складе», «остатки»."
+            ),
             "parameters": {"type": "object", "properties": {}},
         },
     },
@@ -293,6 +297,7 @@ async def _execute_tool_impl(
                 "received_qty": i.received_qty,
                 "packed_qty": i.packed_qty,
                 "defect_qty": i.defect_qty,
+                "destination": i.destination,
             }
             for i, p in items_result.all()
         ]

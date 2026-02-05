@@ -103,8 +103,20 @@ async def upload_document_to_rag(db: AsyncSession, content: str, name: str) -> i
     return count
 
 
+def _marketplace_filter_from_message(message: str) -> str | None:
+    """Infer marketplace filter from user message. Returns source_file pattern or None for no filter."""
+    msg = (message or "").lower()
+    if "wb" in msg or "wildberries" in msg or "вб" in msg or "вайлдберриз" in msg:
+        return "wb"
+    if "ozon" in msg or "озон" in msg:
+        return "ozon"
+    return None
+
+
 async def build_rag_context_async(db: AsyncSession, message: str) -> str:
-    """Build RAG context: use document chunks if available, else static."""
+    """Build RAG context: use document chunks if available, else static.
+    When message mentions a marketplace (WB/Ozon), prefer chunks from that marketplace's docs (source_file).
+    """
     if not settings.OPENAI_API_KEY:
         return build_rag_context(message)
     try:
@@ -117,12 +129,19 @@ async def build_rag_context_async(db: AsyncSession, message: str) -> str:
     if not embedding:
         return build_rag_context(message)
     try:
-        result = await db.execute(
-            select(DocumentChunk)
-            .order_by(DocumentChunk.embedding.cosine_distance(embedding))
-            .limit(3)
-        )
+        base_q = select(DocumentChunk).order_by(DocumentChunk.embedding.cosine_distance(embedding))
+        mf = _marketplace_filter_from_message(message)
+        if mf == "wb":
+            base_q = base_q.where(DocumentChunk.source_file.ilike("%wb%"))
+        elif mf == "ozon":
+            base_q = base_q.where(DocumentChunk.source_file.ilike("%ozon%"))
+        result = await db.execute(base_q.limit(3))
         chunks = list(result.scalars().all())
+        if not chunks and mf:
+            result = await db.execute(
+                select(DocumentChunk).order_by(DocumentChunk.embedding.cosine_distance(embedding)).limit(3)
+            )
+            chunks = list(result.scalars().all())
         if not chunks:
             return build_rag_context(message)
         context = "\n\n".join(c.content for c in chunks)

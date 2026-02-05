@@ -61,7 +61,18 @@ async def chat(
     current_user: User = Depends(get_current_user),
 ) -> AIChatResponse:
     """Chat with AI assistant. History loaded from and saved to DB; RAG when document_chunks populated."""
-    service = OpenAIService()
+    ai_row = await db.get(AISettings, 1)
+    if ai_row:
+        service = OpenAIService(
+            provider=ai_row.provider,
+            model=ai_row.model,
+            temperature=float(ai_row.temperature),
+        )
+    else:
+        service = OpenAIService(
+            provider=settings.AI_PROVIDER,
+            model=settings.AI_MODEL,
+        )
 
     # Load history from DB (same user + company_id), last HISTORY_LIMIT in chronological order
     q = (
@@ -83,7 +94,14 @@ async def chat(
     AI_SYSTEM_INSTRUCTION = (
         "Ты помощник фулфилмента Бирка. На вопросы о заявках, товарах, остатках, браке, отгрузках, "
         "прайсе или реквизитах компании всегда вызывай соответствующие функции (tools) и отвечай "
-        "только на основе полученных данных. Не придумывай номера заявок и не используй заглушки вроде [номер заявки]."
+        "только на основе полученных данных. Не придумывай номера заявок и не используй заглушки вроде [номер заявки].\n\n"
+        "При вопросах об остатках («какой у меня остаток», «сколько у меня», «что на складе») ВСЕГДА вызывай get_stock_summary и показывай полную картину: "
+        "остаток на складе (total_stock_quantity), в заявках — плановое (orders_total_planned), принято (orders_total_received), упаковано (orders_total_packed), брак (total_defect_quantity). "
+        "Если пользователь не уточнил — показывай ВСЮ эту информацию, не угадывай.\n\n"
+        "При вопросах о заявках показывай все три количества по заявкам: плановое, фактическое (принято), упаковано.\n\n"
+        "При вопросах об упаковке (как упаковывать, требования к упаковке): если маркетплейс не указан — либо уточни "
+        "для какого МП нужна информация (WB или Ozon), либо дай ответ для ОБОИХ маркетплейсов отдельно (для WB — так, для Ozon — так), "
+        "так как требования у них разные."
     )
     openai_messages = [{"role": "system", "content": AI_SYSTEM_INSTRUCTION}]
     openai_messages.extend([{"role": m.role, "content": m.text} for m in history_rows])

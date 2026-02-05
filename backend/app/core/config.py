@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     OPENAI_API_KEY: str = ""
 
+    # AI (defaults; can be overridden by admin ai_settings in DB)
+    OPENROUTER_API_KEY: str = ""
+    AI_PROVIDER: str = "openai"  # openai | openrouter
+    AI_MODEL: str = "gpt-4o-mini"  # or e.g. openai/gpt-4o, anthropic/claude-3-sonnet for OpenRouter
+
     # Database
     POSTGRES_DSN: str = "postgresql+asyncpg://user:pass@localhost:5432/birka"
 

@@ -1,4 +1,6 @@
 """Warehouse schemas."""
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -32,6 +34,25 @@ class PackingRecordCreate(BaseModel):
     box_barcode: str | None = None
     materials_used: str | None = None
     time_spent_minutes: int | None = None
+
+
+class PackingRecordOut(BaseModel):
+    """Packing record for client (order detail)."""
+
+    id: int
+    product_id: int
+    product_name: str
+    pallet_number: int | None
+    box_number: int | None
+    quantity: int
+    warehouse: str | None
+    box_barcode: str | None
+    materials_used: str | None
+    time_spent_minutes: int | None
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
 
 
 class BarcodeValidateRequest(BaseModel):

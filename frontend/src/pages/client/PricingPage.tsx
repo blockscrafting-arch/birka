@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { Toast } from "../../components/ui/Toast";
 import { useServices, useServiceCategories, useExportServicesPdf } from "../../hooks/useServices";
 import { Service } from "../../types";
 
@@ -29,6 +30,7 @@ export function PricingPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<number, number>>({});
+  const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
 
   // Debounce search input
   useEffect(() => {
@@ -84,14 +86,20 @@ export function PricingPage() {
 
   return (
     <div className="space-y-4">
+      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-lg font-semibold text-slate-900">Прайс и калькулятор</div>
         <Button
           variant="secondary"
-          onClick={() => exportPdf.mutate()}
+          onClick={() =>
+            exportPdf.mutate(undefined, {
+              onSuccess: () => setToast({ message: "Файл отправлен в чат с ботом" }),
+              onError: (err) => setToast({ message: err?.message ?? "Ошибка", variant: "error" }),
+            })
+          }
           disabled={exportPdf.isPending || isLoading}
         >
-          Скачать PDF
+          Отправить прайс в Telegram
         </Button>
       </div>
 

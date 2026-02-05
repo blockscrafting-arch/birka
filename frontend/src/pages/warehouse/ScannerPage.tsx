@@ -45,31 +45,32 @@ export function ScannerPage() {
         />
       ) : null}
       {result ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-soft">
-          Результат: {result}
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Отсканировано</div>
+          <div className="mt-1 break-all text-lg font-mono font-semibold text-slate-900">{result}</div>
         </div>
       ) : null}
-      {message ? <div className="text-xs text-slate-500">{message}</div> : null}
+      {message ? <div className="text-sm text-slate-600">{message}</div> : null}
       {status ? (
         <div
-          className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+          className={`rounded-lg border-2 px-4 py-3 text-sm font-semibold ${
             status === "ok"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-              : "border-rose-200 bg-rose-50 text-rose-700"
+              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+              : "border-rose-300 bg-rose-50 text-rose-800"
           }`}
+          role="status"
         >
-          {status === "ok" ? "Штрихкод корректен" : "Штрихкод не найден"}
+          {status === "ok" ? "✓ Штрихкод найден в базе" : "✗ Штрихкод не найден"}
         </div>
       ) : null}
       {product ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-soft">
-          <div className="font-semibold text-slate-900">{product.name}</div>
-          <div>ШК: {product.barcode ?? "—"}</div>
-          <div>Артикул WB: {product.wb_article ?? "—"}</div>
-          <div>
-            {product.brand ? `Бренд: ${product.brand}` : null}
-            {product.size ? ` | Размер: ${product.size}` : null}
-            {product.color ? ` | Цвет: ${product.color}` : null}
+        <div className="rounded-xl border-2 border-slate-200 bg-white p-4 shadow-soft">
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Товар в базе</div>
+          <div className="mt-2 font-semibold text-slate-900">{product.name}</div>
+          <div className="mt-1 text-sm text-slate-700">ШК: {product.barcode ?? "—"}</div>
+          <div className="mt-0.5 text-sm text-slate-700">Артикул WB: {product.wb_article ?? "—"}</div>
+          <div className="mt-1 text-sm text-slate-600">
+            {[product.brand, product.size, product.color].filter(Boolean).join(" · ") || "—"}
           </div>
         </div>
       ) : null}

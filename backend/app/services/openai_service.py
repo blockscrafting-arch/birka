@@ -1,18 +1,26 @@
-"""OpenAI integration with optional function calling."""
+"""OpenAI/OpenRouter integration with optional function calling."""
 import json
 from typing import Any
 
-from openai import AsyncOpenAI
-
 from app.core.config import settings
 from app.services import ai_tools
+from app.services.llm_provider import get_default_model, get_llm_client
 
 
 class OpenAIService:
-    """OpenAI chat wrapper. Supports tools for DB data access."""
+    """LLM chat wrapper (OpenAI or OpenRouter). Supports tools for DB data access."""
 
-    def __init__(self) -> None:
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    def __init__(
+        self,
+        provider: str | None = None,
+        model: str | None = None,
+        temperature: float = 0.7,
+    ) -> None:
+        self.provider = provider or settings.AI_PROVIDER
+        self.model = model or get_default_model(self.provider)
+        self.temperature = temperature
+        api_key = settings.OPENROUTER_API_KEY if self.provider == "openrouter" else settings.OPENAI_API_KEY
+        self.client = get_llm_client(self.provider, api_key)
 
     async def chat(
         self,
@@ -22,7 +30,7 @@ class OpenAIService:
         company_id: int | None = None,
     ) -> str:
         """
-        Send chat messages to OpenAI and return assistant reply.
+        Send chat messages to LLM and return assistant reply.
         If db, user, company_id are provided, tools are enabled and tool_calls are executed.
         messages: list of {"role": "user"|"assistant"|"tool", "content": "...", ...} in order.
         """
@@ -32,8 +40,9 @@ class OpenAIService:
         if use_tools:
             return await self._chat_with_tools(messages, db, user, company_id)
         response = await self.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=self.model,
             messages=messages,
+            temperature=self.temperature,
         )
         return response.choices[0].message.content or ""
 
@@ -44,14 +53,15 @@ class OpenAIService:
         user,
         company_id: int | None,
     ) -> str:
-        """Call OpenAI with tools; execute tool_calls and loop until final answer."""
+        """Call LLM with tools; execute tool_calls and loop until final answer."""
         max_rounds = 10
         for _ in range(max_rounds):
             response = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.model,
                 messages=messages,
                 tools=ai_tools.TOOLS,
                 tool_choice="auto",
+                temperature=self.temperature,
             )
             msg = response.choices[0].message
             if not msg.tool_calls:

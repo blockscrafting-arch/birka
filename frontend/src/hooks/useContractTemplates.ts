@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiClient, downloadFile } from "../services/api";
+import { apiClient } from "../services/api";
 
 export type ContractTemplate = {
   id: number;
@@ -80,6 +80,7 @@ export function useDeleteContractTemplate() {
   });
 }
 
-export function downloadContractTemplate(templateId: number, fallbackFilename: string): Promise<void> {
-  return downloadFile(`/admin/contract-templates/${templateId}/download`, fallbackFilename);
+/** Send template file to current user in Telegram chat with the bot. */
+export async function sendContractTemplateToTelegram(templateId: number): Promise<void> {
+  await apiClient.api(`/admin/contract-templates/${templateId}/send`, { method: "POST" });
 }

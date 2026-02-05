@@ -24,6 +24,7 @@ from app.schemas.service import (
 )
 from app.services.excel import export_services, parse_services_excel
 from app.services.pdf import generate_price_list_pdf
+from app.services.telegram import send_document
 
 router = APIRouter()
 
@@ -288,6 +289,24 @@ async def export_services_excel(
     )
 
 
+@router.post("/export/send")
+async def send_export_services_to_telegram(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+) -> dict:
+    """Export services to Excel and send to current user in Telegram."""
+    result = await db.execute(
+        select(Service).order_by(Service.category.asc(), Service.sort_order.asc(), Service.name.asc())
+    )
+    services = list(result.scalars().all())
+    buffer = export_services(services)
+    file_bytes = buffer.getvalue()
+    sent = await send_document(current_user.telegram_id, file_bytes, "services.xlsx", caption="Экспорт услуг")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}
+
+
 @router.get("/pdf")
 async def export_services_pdf(
     db: AsyncSession = Depends(get_db),
@@ -306,3 +325,22 @@ async def export_services_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=prajs-birka.pdf"},
     )
+
+
+@router.post("/pdf/send")
+async def send_services_pdf_to_telegram(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Export active services as PDF and send to current user in Telegram."""
+    result = await db.execute(
+        select(Service)
+        .where(Service.is_active.is_(True))
+        .order_by(Service.category.asc(), Service.sort_order.asc(), Service.name.asc())
+    )
+    services = list(result.scalars().all())
+    pdf_bytes = generate_price_list_pdf(services)
+    sent = await send_document(current_user.telegram_id, pdf_bytes, "prajs-birka.pdf", caption="Прайс-лист Бирка")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}

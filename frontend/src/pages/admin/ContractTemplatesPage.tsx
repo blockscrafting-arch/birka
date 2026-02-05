@@ -6,11 +6,12 @@ import { Modal } from "../../components/ui/Modal";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import {
   type ContractTemplate,
-  downloadContractTemplate,
+  sendContractTemplateToTelegram,
   useContractTemplates,
   useDeleteContractTemplate,
   useUpdateContractTemplate,
 } from "../../hooks/useContractTemplates";
+import { Toast } from "../../components/ui/Toast";
 import { useUploadStore } from "../../stores/uploadStore";
 
 export function ContractTemplatesPage() {
@@ -21,6 +22,8 @@ export function ContractTemplatesPage() {
   const [isDefault, setIsDefault] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [previewTemplate, setPreviewTemplate] = useState<ContractTemplate | null>(null);
+  const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
+  const [sendingId, setSendingId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const jobs = useUploadStore((s) => s.jobs);
@@ -65,6 +68,7 @@ export function ContractTemplatesPage() {
 
   return (
     <div className="space-y-4">
+      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
       <div className="text-lg font-semibold text-slate-900">Шаблоны договоров</div>
       <p className="text-sm text-slate-600">
         Загрузите DOCX или RTF. В тексте шаблона укажите плейсхолдеры в двойных фигурных скобках — при генерации подставятся данные компании и будет выдан PDF.
@@ -117,9 +121,10 @@ export function ContractTemplatesPage() {
                 {template.file_type ? (
                   <Button
                     variant="secondary"
-                    onClick={() => handleDownload(template.id, template.file_name)}
+                    onClick={() => handleSendToTelegram(template.id)}
+                    disabled={sendingId === template.id}
                   >
-                    Скачать
+                    {sendingId === template.id ? "Отправка..." : "Отправить в Telegram"}
                   </Button>
                 ) : (
                   <Button

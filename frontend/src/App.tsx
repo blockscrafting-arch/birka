@@ -23,6 +23,7 @@ import { DestinationsPage } from "./pages/admin/DestinationsPage";
 import { ContractTemplatesPage } from "./pages/admin/ContractTemplatesPage";
 import { DocumentsPage } from "./pages/admin/DocumentsPage";
 import { ServicesPage } from "./pages/admin/ServicesPage";
+import { AISettingsPage } from "./pages/admin/AISettingsPage";
 import { PrintPage } from "./pages/warehouse/PrintPage";
 import { ReceivingPage } from "./pages/warehouse/ReceivingPage";
 import { PackingPage } from "./pages/warehouse/PackingPage";
@@ -92,6 +93,10 @@ function AppRoutes() {
       <Route
         path="/admin/documents"
         element={canAdmin ? <DocumentsPage /> : <Navigate to="/client/company" replace />}
+      />
+      <Route
+        path="/admin/ai-settings"
+        element={canAdmin ? <AISettingsPage /> : <Navigate to="/client/company" replace />}
       />
     </Routes>
   );

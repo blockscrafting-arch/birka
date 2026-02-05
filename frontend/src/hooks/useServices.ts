@@ -146,8 +146,8 @@ export function useReorderServices() {
 export function useExportServices() {
   return useMutation({
     mutationFn: async () => {
-      const { downloadFile } = await import("../services/api");
-      await downloadFile("/services/export", "services.xlsx");
+      const { apiClient } = await import("../services/api");
+      await apiClient.api("/services/export/send", { method: "POST" });
     },
   });
 }
@@ -155,8 +155,8 @@ export function useExportServices() {
 export function useExportServicesPdf() {
   return useMutation({
     mutationFn: async () => {
-      const { downloadFile } = await import("../services/api");
-      await downloadFile("/services/pdf", "prajs-birka.pdf");
+      const { apiClient } = await import("../services/api");
+      await apiClient.api("/services/pdf/send", { method: "POST" });
     },
   });
 }

@@ -18,7 +18,7 @@ from app.db.session import get_db
 from app.schemas.warehouse import BarcodeValidateRequest, PackingRecordCreate, ReceivingComplete
 from app.services.excel import export_fbo_shipping
 from app.services.files import content_disposition
-from app.services.telegram import send_notification
+from app.services.telegram import send_document, send_notification
 from app.core.logging import logger
 from app.db.models.user import User
 
@@ -186,10 +186,14 @@ async def create_packing_record(
         order_number = order.order_number
         await db.commit()
         if telegram_id:
-            await send_notification(
-                telegram_id,
-                f"Заявка {order_number}: {status_msg}.",
-            )
+            parts = [f"Заявка {order_number}: {status_msg}. Упаковано +{payload.quantity} шт."]
+            if payload.pallet_number is not None:
+                parts.append(f" Паллета: {payload.pallet_number}.")
+            if payload.box_number is not None:
+                parts.append(f" Короб: {payload.box_number}.")
+            if payload.warehouse:
+                parts.append(f" Склад: {payload.warehouse}.")
+            await send_notification(telegram_id, "".join(parts))
         return {"status": "ok"}
     except HTTPException:
         raise
@@ -214,6 +218,7 @@ async def validate_barcode(
         company_result = await db.execute(select(Company).where(Company.id == product.company_id))
         if not company_result.scalar_one_or_none():
             return {"valid": False, "message": "ШК не найден"}
+        logger.info("barcode_validate_ok", product_id=product.id, barcode_len=len(payload.barcode or ""))
         return {
             "valid": True,
             "message": f"ШК найден: {product.name}",
@@ -291,3 +296,40 @@ async def export_fbo_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": content_disposition(filename)},
     )
+
+
+@router.post("/export-fbo/send")
+async def send_export_fbo_to_telegram(
+    order_id: int = Query(..., description="Order ID"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("warehouse", "admin")),
+) -> dict:
+    """Export FBO and send to company owner in Telegram."""
+    order_result = await db.execute(
+        select(Order).options(joinedload(Order.company).joinedload(Company.user)).where(Order.id == order_id)
+    )
+    order = order_result.unique().scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    company = order.company
+    if not company or not company.user:
+        raise HTTPException(status_code=404, detail="Компания или пользователь не найдены")
+    telegram_id = company.user.telegram_id
+    result = await db.execute(
+        select(PackingRecord)
+        .options(
+            joinedload(PackingRecord.product),
+            joinedload(PackingRecord.employee),
+        )
+        .where(PackingRecord.order_id == order_id)
+    )
+    records = list(result.unique().scalars().all())
+    if not records:
+        raise HTTPException(status_code=400, detail="Нет записей упаковки для выгрузки")
+    buffer = export_fbo_shipping(records)
+    file_bytes = buffer.getvalue()
+    filename = f"Отгрузка_FBO_заявка_{order.order_number}.xlsx"
+    sent = await send_document(telegram_id, file_bytes, filename, caption="Отгрузка FBO")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}

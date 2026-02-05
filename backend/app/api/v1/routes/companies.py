@@ -5,6 +5,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.db.models.company import Company
 from app.db.models.contract_template import ContractTemplate
@@ -20,6 +21,7 @@ from app.services.dadata import fetch_bank_by_bik, fetch_company_by_inn
 from app.services.pdf import ContractData, render_contract_pdf
 from app.services.files import content_disposition
 from app.services.s3 import S3Service
+from app.services.telegram import send_document
 
 router = APIRouter()
 
@@ -144,6 +146,30 @@ async def generate_contract(
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
 
+    try:
+        pdf_bytes, filename = await _generate_contract_pdf_bytes(db, company)
+        return StreamingResponse(
+            iter([pdf_bytes]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": content_disposition(filename)},
+        )
+    except RuntimeError as exc:
+        if "Старый шаблон" in str(exc) or "PDF" in str(exc):
+            logger.warning("contract_pdf_legacy_pdf", company_id=company_id, error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Шаблон договора устарел. Администратор должен загрузить шаблон заново (DOCX или RTF).",
+            ) from exc
+        raise
+    except Exception as exc:
+        logger.exception("contract_pdf_failed", company_id=company_id, error=str(exc))
+        raise HTTPException(status_code=500, detail="Не удалось сформировать PDF договора")
+
+
+async def _generate_contract_pdf_bytes(
+    db: AsyncSession, company: Company
+) -> tuple[bytes, str]:
+    """Generate contract PDF bytes and filename. Shared by GET contract and POST contract/send."""
     contract_date = date.today().strftime("%d.%m.%Y")
     contract_number = f"{company.id}-{date.today().strftime('%Y%m%d')}"
     contract = ContractData(
@@ -161,28 +187,52 @@ async def generate_contract(
         bank_name=company.bank_name,
         bank_corr_account=company.bank_corr_account,
     )
+    template_result = await db.execute(
+        select(ContractTemplate).where(ContractTemplate.is_default.is_(True))
+    )
+    template = template_result.scalar_one_or_none()
+    if template and template.file_key:
+        s3 = S3Service()
+        pdf_bytes = await asyncio.to_thread(
+            render_contract_pdf_from_docx_template,
+            s3, template.file_key, template.file_type, template.docx_key, contract,
+        )
+    else:
+        pdf_bytes = await asyncio.to_thread(
+            render_contract_pdf,
+            contract, template.html_content if template else None,
+        )
+    filename = f"Договор_{company.name}_{contract_date}.pdf"
+    return pdf_bytes, filename
+
+
+@router.post("/{company_id}/contract/send")
+async def send_contract_to_telegram(
+    company_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Generate contract PDF and send it to the user in the chat with the bot."""
+    result = await db.execute(
+        select(Company)
+        .options(joinedload(Company.user))
+        .where(Company.id == company_id)
+    )
+    company = result.unique().scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
+    if current_user.role not in ("warehouse", "admin") and company.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к компании")
+
+    telegram_id = company.user.telegram_id if company.user else None
+    if not telegram_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Не удалось отправить файл: пользователь не привязан к Telegram.",
+        )
+
     try:
-        template_result = await db.execute(
-            select(ContractTemplate).where(ContractTemplate.is_default.is_(True))
-        )
-        template = template_result.scalar_one_or_none()
-        if template and template.file_key:
-            s3 = S3Service()
-            pdf_bytes = await asyncio.to_thread(
-                render_contract_pdf_from_docx_template,
-                s3, template.file_key, template.file_type, template.docx_key, contract,
-            )
-        else:
-            pdf_bytes = await asyncio.to_thread(
-                render_contract_pdf,
-                contract, template.html_content if template else None,
-            )
-        filename = f"Договор_{company.name}_{contract_date}.pdf"
-        return StreamingResponse(
-            iter([pdf_bytes]),
-            media_type="application/pdf",
-            headers={"Content-Disposition": content_disposition(filename)},
-        )
+        pdf_bytes, filename = await _generate_contract_pdf_bytes(db, company)
     except RuntimeError as exc:
         if "Старый шаблон" in str(exc) or "PDF" in str(exc):
             logger.warning("contract_pdf_legacy_pdf", company_id=company_id, error=str(exc))
@@ -194,3 +244,11 @@ async def generate_contract(
     except Exception as exc:
         logger.exception("contract_pdf_failed", company_id=company_id, error=str(exc))
         raise HTTPException(status_code=500, detail="Не удалось сформировать PDF договора")
+
+    sent = await send_document(telegram_id, pdf_bytes, filename, caption="Договор")
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Не удалось отправить файл в Telegram. Попробуйте позже.",
+        )
+    return {"sent": True}

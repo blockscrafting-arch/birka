@@ -13,16 +13,18 @@ from app.api.v1.deps import get_current_user
 from app.db.models.company import Company
 from app.db.models.order import Order, OrderItem
 from app.db.models.order_counter import OrderCounter
+from app.db.models.packing_record import PackingRecord
 from app.db.models.order_service import OrderService
 from app.db.models.service import Service
 from app.db.models.order_photo import OrderPhoto
 from app.db.models.product import Product
 from app.db.session import get_db
 from app.schemas.order import OrderCreate, OrderItemOut, OrderList, OrderOut, OrderPhotoOut, OrderStatusUpdate
+from app.schemas.warehouse import PackingRecordOut
 from app.services.excel import export_receiving
 from app.services.files import content_disposition
 from app.services.s3 import S3Service
-from app.services.telegram import send_notification
+from app.services.telegram import send_document, send_notification
 from app.core.config import settings
 from app.core.logging import logger
 from app.db.models.user import User
@@ -49,9 +51,6 @@ async def create_order(
         raise HTTPException(status_code=400, detail="Планируемое количество должно быть больше нуля")
 
     product_ids = [item.product_id for item in payload.items]
-    if len(set(product_ids)) != len(product_ids):
-        raise HTTPException(status_code=400, detail="Duplicate products in order")
-
     products_result = await db.execute(
         select(Product.id).where(Product.company_id == payload.company_id, Product.id.in_(product_ids))
     )
@@ -99,11 +98,15 @@ async def create_order(
             await db.flush()
 
             for item in payload.items:
+                dest = (item.destination or "").strip() or None
+                if dest and len(dest) > 64:
+                    dest = dest[:64]
                 db.add(
                     OrderItem(
                         order_id=order.id,
                         product_id=item.product_id,
                         planned_qty=item.planned_qty,
+                        destination=dest,
                     )
                 )
 
@@ -225,6 +228,7 @@ async def list_order_items(
                 packed_qty=item.packed_qty,
                 adjustment_qty=item.adjustment_qty,
                 adjustment_note=item.adjustment_note,
+                destination=item.destination,
             )
         )
     return items
@@ -364,6 +368,48 @@ async def list_order_photos(
     return response
 
 
+@router.get("/{order_id}/packing-records", response_model=list[PackingRecordOut])
+async def list_packing_records(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[PackingRecordOut]:
+    """List packing records for an order (client sees own company's data)."""
+    order_result = await db.execute(select(Order).where(Order.id == order_id))
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    if current_user.role not in ("warehouse", "admin"):
+        company_result = await db.execute(
+            select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
+        )
+        if not company_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Заявка не найдена")
+    result = await db.execute(
+        select(PackingRecord)
+        .options(joinedload(PackingRecord.product))
+        .where(PackingRecord.order_id == order_id)
+        .order_by(PackingRecord.created_at.asc())
+    )
+    records = list(result.unique().scalars().all())
+    return [
+        PackingRecordOut(
+            id=r.id,
+            product_id=r.product_id,
+            product_name=r.product.name if r.product else "",
+            pallet_number=r.pallet_number,
+            box_number=r.box_number,
+            quantity=r.quantity,
+            warehouse=r.warehouse,
+            box_barcode=r.box_barcode,
+            materials_used=r.materials_used,
+            time_spent_minutes=r.time_spent_minutes,
+            created_at=r.created_at,
+        )
+        for r in records
+    ]
+
+
 @router.get("/{order_id}/export-receiving")
 async def export_receiving_excel(
     order_id: int,
@@ -398,3 +444,44 @@ async def export_receiving_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": content_disposition(filename)},
     )
+
+
+@router.post("/{order_id}/export-receiving/send")
+async def send_export_receiving_to_telegram(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Export receiving data and send to company owner in Telegram."""
+    order_result = await db.execute(
+        select(Order).options(joinedload(Order.company).joinedload(Company.user)).where(Order.id == order_id)
+    )
+    order = order_result.unique().scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    company = order.company
+    if not company:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if current_user.role not in ("warehouse", "admin") and company.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Нет доступа")
+    telegram_id = company.user.telegram_id if company.user else None
+    if not telegram_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Не удалось отправить файл: пользователь не привязан к Telegram.",
+        )
+    result = await db.execute(
+        select(OrderItem)
+        .options(joinedload(OrderItem.product), joinedload(OrderItem.order))
+        .where(OrderItem.order_id == order_id)
+    )
+    items = list(result.unique().scalars().all())
+    if not items:
+        raise HTTPException(status_code=400, detail="Нет позиций для выгрузки")
+    buffer = export_receiving(items)
+    file_bytes = buffer.getvalue()
+    filename = f"Приемка_заявка_{order.order_number}.xlsx"
+    sent = await send_document(telegram_id, file_bytes, filename, caption="Экспорт приемки")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}

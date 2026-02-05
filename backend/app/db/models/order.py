@@ -29,6 +29,7 @@ class Order(Base):
     order_services = relationship("OrderService", back_populates="order")
     photos = relationship("OrderPhoto", back_populates="order")
     packing_records = relationship("PackingRecord", back_populates="order")
+    fbo_supplies = relationship("FBOSupply", back_populates="order")
 
 
 class OrderItem(Base):
@@ -45,6 +46,7 @@ class OrderItem(Base):
     defect_qty: Mapped[int] = mapped_column(Integer, default=0)
     adjustment_qty: Mapped[int] = mapped_column(Integer, default=0)
     adjustment_note: Mapped[str | None] = mapped_column(String(256))
+    destination: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     order = relationship("Order", back_populates="items")
     product = relationship("Product", back_populates="order_items")

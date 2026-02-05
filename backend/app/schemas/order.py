@@ -1,7 +1,7 @@
 """Order schemas."""
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class OrderItemCreate(BaseModel):
@@ -9,6 +9,7 @@ class OrderItemCreate(BaseModel):
 
     product_id: int
     planned_qty: int
+    destination: str | None = Field(None, max_length=64)
 
 
 class OrderServiceCreate(BaseModel):
@@ -79,6 +80,7 @@ class OrderItemOut(BaseModel):
     packed_qty: int
     adjustment_qty: int
     adjustment_note: str | None
+    destination: str | None = None
 
 
 class OrderPhotoOut(BaseModel):

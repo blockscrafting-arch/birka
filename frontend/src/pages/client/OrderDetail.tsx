@@ -11,7 +11,8 @@ import { useCompanies } from "../../hooks/useCompanies";
 import { useOrders } from "../../hooks/useOrders";
 import { useOrderItems } from "../../hooks/useOrderItems";
 import { useOrderPhotos } from "../../hooks/useOrderPhotos";
-import { downloadFile } from "../../services/api";
+import { useOrderPackingRecords } from "../../hooks/useOrders";
+import { apiClient } from "../../services/api";
 
 export function OrderDetail() {
   const { orderId } = useParams();
@@ -21,6 +22,7 @@ export function OrderDetail() {
   const { items: orders } = useOrders(activeCompanyId ?? undefined, 1, 100);
   const order = useMemo(() => orders.find((item) => item.id === Number(orderId)), [orders, orderId]);
   const { data: items = [] } = useOrderItems(order?.id);
+  const { data: packingRecords = [] } = useOrderPackingRecords(order?.id);
   const { data: photos = [], upload } = useOrderPhotos(order?.id);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
 
@@ -33,8 +35,8 @@ export function OrderDetail() {
   const handleExportReceiving = async () => {
     if (!order) return;
     try {
-      await downloadFile(`/orders/${order.id}/export-receiving`, `Приемка_${order.order_number}.xlsx`);
-      setToast({ message: "Файл скачан" });
+      await apiClient.api(`/orders/${order.id}/export-receiving/send`, { method: "POST" });
+      setToast({ message: "Файл отправлен в чат с ботом" });
     } catch (err) {
       setToast({ message: err instanceof Error ? err.message : "Ошибка выгрузки", variant: "error" });
     }
@@ -57,8 +59,8 @@ export function OrderDetail() {
             <div className="text-sm font-semibold text-slate-900">{order.order_number}</div>
             <StatusBadge status={order.status} />
           </div>
-          <Button variant="secondary" onClick={handleExportReceiving}>
-            Скачать приёмку (Excel)
+          <Button variant="secondary" onClick={handleExportReceiving} aria-label="Отправить приёмку в Telegram">
+            Отправить приёмку в Telegram
           </Button>
         </div>
         <div className="mt-2 text-xs text-slate-500">
@@ -80,12 +82,33 @@ export function OrderDetail() {
                 <span>{item.product_name}</span>
                 <span className="text-xs text-slate-500">
                   План: {item.planned_qty} · Принято: {item.received_qty} · Брак: {item.defect_qty}
+                  {item.destination ? ` · Склад: ${item.destination}` : ""}
                 </span>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {packingRecords.length > 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
+          <div className="text-sm font-semibold text-slate-900">Упаковка</div>
+          <div className="mt-2 space-y-2 text-sm text-slate-700">
+            {packingRecords.map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                <span>{r.product_name}</span>
+                <span className="text-xs text-slate-500">
+                  {r.quantity} шт.
+                  {r.pallet_number != null ? ` · Паллета ${r.pallet_number}` : ""}
+                  {r.box_number != null ? ` · Короб ${r.box_number}` : ""}
+                  {r.warehouse ? ` · ${r.warehouse}` : ""}
+                  {r.box_barcode ? ` · ШК короба ${r.box_barcode}` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
         <div className="text-sm font-semibold text-slate-900">Фото</div>

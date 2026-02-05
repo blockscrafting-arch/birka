@@ -162,8 +162,29 @@ def render_label_pdf(label: LabelData) -> bytes:
           <head>
             <meta charset="utf-8" />
             <style>
-              @page {{ size: 58mm 40mm; margin: 0; }}
-              body {{ margin: 0; padding: 3mm; width: 58mm; height: 40mm; font-family: Arial, sans-serif; box-sizing: border-box; }}
+              @page {{
+                size: 58mm 40mm;
+                margin: 0;
+              }}
+              @media print {{
+                html, body {{
+                  width: 58mm;
+                  height: 40mm;
+                  margin: 0;
+                  padding: 0;
+                }}
+              }}
+              body {{
+                margin: 0;
+                padding: 2mm;
+                width: 58mm;
+                height: 40mm;
+                max-width: 58mm;
+                max-height: 40mm;
+                font-family: Arial, sans-serif;
+                box-sizing: border-box;
+                overflow: hidden;
+              }}
             </style>
           </head>
           <body>

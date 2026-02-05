@@ -65,17 +65,11 @@ export function CompanyPage() {
     setPageError(null);
     setBusyId(companyId);
     try {
-      const { blob, filename } = await apiClient.apiFile(`/companies/${companyId}/contract`);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename ?? `contract_${companyId}.pdf`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setToast({ message: "Договор скачан" });
+      await apiClient.api(`/companies/${companyId}/contract/send`, { method: "POST" });
+      setToast({ message: "Файл отправлен в чат с ботом" });
     } catch (err) {
-      setPageError(err instanceof Error ? err.message : "Не удалось скачать договор");
-      setToast({ message: "Не удалось скачать договор", variant: "error" });
+      setPageError(err instanceof Error ? err.message : "Не удалось отправить договор");
+      setToast({ message: "Не удалось отправить договор", variant: "error" });
     } finally {
       setBusyId(null);
     }
@@ -133,7 +127,7 @@ export function CompanyPage() {
                 disabled={busyId === company.id}
                 onClick={() => handleContract(company.id)}
               >
-                {busyId === company.id ? "Скачивание..." : "Скачать договор"}
+                {busyId === company.id ? "Отправка..." : "Отправить договор в Telegram"}
               </Button>
             </div>
           </div>

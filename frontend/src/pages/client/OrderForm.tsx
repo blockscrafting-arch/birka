@@ -8,8 +8,7 @@ import { Select } from "../../components/ui/Select";
 type ServiceItem = { service_id: number; quantity: number };
 
 type OrderFormPayload = {
-  destination?: string;
-  items: { product_id: number; planned_qty: number }[];
+  items: { product_id: number; planned_qty: number; destination?: string }[];
   services?: ServiceItem[];
 };
 
@@ -24,6 +23,8 @@ type OrderFormProps = {
 type ItemRow = {
   productId: string;
   qty: string;
+  destinationId: string;
+  destinationCustom: string;
 };
 
 export function OrderForm({
@@ -33,16 +34,19 @@ export function OrderForm({
   isSubmitting,
   onSubmit,
 }: OrderFormProps) {
-  const [destinationId, setDestinationId] = useState("");
-  const [destinationCustom, setDestinationCustom] = useState("");
-  const [items, setItems] = useState<ItemRow[]>([{ productId: "", qty: "1" }]);
+  const [items, setItems] = useState<ItemRow[]>([
+    { productId: "", qty: "1", destinationId: "", destinationCustom: "" },
+  ]);
   const [error, setError] = useState<string | null>(null);
   const services = initialServices ?? [];
 
-  const destination =
-    destinationId === "__custom__"
-      ? destinationCustom.trim()
-      : destinations.find((d) => String(d.id) === destinationId)?.name ?? "";
+  const getDestinationForRow = (row: ItemRow): string | undefined => {
+    const value =
+      row.destinationId === "__custom__"
+        ? row.destinationCustom.trim()
+        : destinations.find((d) => String(d.id) === row.destinationId)?.name ?? "";
+    return value || undefined;
+  };
 
   const updateItem = (index: number, patch: Partial<ItemRow>) => {
     setItems((prev) => prev.map((item, idx) => (idx === index ? { ...item, ...patch } : item)));
@@ -53,7 +57,7 @@ export function OrderForm({
   };
 
   const addItem = () => {
-    setItems((prev) => [...prev, { productId: "", qty: "1" }]);
+    setItems((prev) => [...prev, { productId: "", qty: "1", destinationId: "", destinationCustom: "" }]);
   };
 
   return (
@@ -64,9 +68,10 @@ export function OrderForm({
         setError(null);
 
         const prepared = items
-          .map((item) => ({
-            product_id: Number(item.productId),
-            planned_qty: Number(item.qty),
+          .map((row) => ({
+            product_id: Number(row.productId),
+            planned_qty: Number(row.qty),
+            destination: getDestinationForRow(row),
           }))
           .filter((item) => item.product_id && item.planned_qty > 0);
 
@@ -76,38 +81,11 @@ export function OrderForm({
         }
 
         onSubmit({
-          destination: destination || undefined,
           items: prepared,
           ...(services.length > 0 ? { services } : {}),
         });
       }}
     >
-      {destinations.length > 0 ? (
-        <Select
-          label="Адрес/назначение"
-          value={destinationId}
-          onChange={(e) => {
-            setDestinationId(e.target.value);
-            if (e.target.value !== "__custom__") setDestinationCustom("");
-          }}
-        >
-          <option value="">Не выбрано</option>
-          {destinations.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-          <option value="__custom__">Свой вариант</option>
-        </Select>
-      ) : null}
-      {destinationId === "__custom__" ? (
-        <Input
-          label="Адрес/назначение (свой вариант)"
-          value={destinationCustom}
-          onChange={(e) => setDestinationCustom(e.target.value)}
-        />
-      ) : null}
-
       {services.length > 0 ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 shadow-soft">
           <div className="mb-1 font-medium text-slate-800">Услуги из калькулятора</div>
@@ -151,6 +129,31 @@ export function OrderForm({
               value={item.qty}
               onChange={(event) => updateItem(index, { qty: event.target.value })}
             />
+            {destinations.length > 0 ? (
+              <div className="mt-2">
+                <label className="mb-1 block text-xs font-medium text-slate-600">Склад / назначение (необязательно)</label>
+                <Select
+                  value={item.destinationId}
+                  onChange={(e) => updateItem(index, { destinationId: e.target.value })}
+                >
+                  <option value="">Не указано</option>
+                  {destinations.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                  <option value="__custom__">Свой вариант</option>
+                </Select>
+                {item.destinationId === "__custom__" ? (
+                  <Input
+                    className="mt-1"
+                    value={item.destinationCustom}
+                    onChange={(e) => updateItem(index, { destinationCustom: e.target.value })}
+                    placeholder="Введите название склада"
+                  />
+                ) : null}
+              </div>
+            ) : null}
             {items.length > 1 ? (
               <Button type="button" variant="ghost" className="mt-2" onClick={() => removeItem(index)}>
                 Удалить позицию

@@ -13,7 +13,7 @@ type Paginated<T> = {
 type OrderCreate = {
   company_id: number;
   destination?: string;
-  items: { product_id: number; planned_qty: number }[];
+  items: { product_id: number; planned_qty: number; destination?: string }[];
   services?: { service_id: number; quantity: number }[];
 };
 
@@ -60,4 +60,26 @@ export function useOrders(companyId?: number, page = 1, limit = 20, status?: str
     create,
     updateStatus,
   };
+}
+
+export type PackingRecord = {
+  id: number;
+  product_id: number;
+  product_name: string;
+  pallet_number: number | null;
+  box_number: number | null;
+  quantity: number;
+  warehouse: string | null;
+  box_barcode: string | null;
+  materials_used: string | null;
+  time_spent_minutes: number | null;
+  created_at: string | null;
+};
+
+export function useOrderPackingRecords(orderId: number | undefined) {
+  return useQuery({
+    queryKey: ["order-packing-records", orderId],
+    queryFn: () => apiClient.api<PackingRecord[]>(`/orders/${orderId}/packing-records`),
+    enabled: Boolean(orderId),
+  });
 }
