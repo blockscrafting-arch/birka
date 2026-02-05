@@ -28,11 +28,12 @@ export function useWarehouse() {
   const createPacking = useMutation({
     mutationFn: (payload: {
       order_id: number;
+      order_item_id: number;
       product_id: number;
       employee_code: string;
       quantity: number;
-      pallet_number?: string;
-      box_number?: string;
+      pallet_number?: number;
+      box_number?: number;
       warehouse?: string;
       materials_used?: string;
       time_spent_minutes?: number;

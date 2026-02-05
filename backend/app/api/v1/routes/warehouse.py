@@ -142,12 +142,38 @@ async def create_packing_record(
         order = order_result.scalar_one_or_none()
         if not order:
             raise HTTPException(status_code=404, detail="Заявка не найдена")
+        if order.status != "Принято" and order.received_qty <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Упаковка возможна только после завершения приёмки заявки.",
+            )
         company_result = await db.execute(select(Company).where(Company.id == order.company_id))
         if not company_result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Компания не найдена")
 
+        order_item_result = await db.execute(
+            select(OrderItem).where(
+                OrderItem.id == payload.order_item_id,
+                OrderItem.order_id == payload.order_id,
+                OrderItem.product_id == payload.product_id,
+            )
+        )
+        order_item = order_item_result.scalar_one_or_none()
+        if not order_item:
+            raise HTTPException(
+                status_code=400,
+                detail="Позиция заявки не найдена или не совпадает с заказом и товаром.",
+            )
+        remainder = order_item.received_qty - order_item.defect_qty - order_item.packed_qty
+        if payload.quantity > remainder:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Перепаковка: по позиции доступно к упаковке {remainder} шт., указано {payload.quantity}.",
+            )
+
         record = PackingRecord(
             order_id=payload.order_id,
+            order_item_id=payload.order_item_id,
             product_id=payload.product_id,
             employee_id=employee.id,
             pallet_number=payload.pallet_number,
@@ -161,39 +187,23 @@ async def create_packing_record(
         db.add(record)
 
         order.packed_qty += payload.quantity
+        order_item.packed_qty += payload.quantity
+
         items_result = await db.execute(select(OrderItem).where(OrderItem.order_id == payload.order_id))
         order_items = items_result.scalars().all()
         total_defect = sum(i.defect_qty for i in order_items)
         effective_plan = order.received_qty - total_defect
         if order.packed_qty >= effective_plan:
-            order.status = "Завершено"
-            order.completed_at = dt.utcnow()
-            status_msg = "Завершено"
-        else:
             order.status = "Готово к отгрузке"
-            status_msg = "Готово к отгрузке"
+        else:
+            order.status = "Упаковка"
 
         product_result = await db.execute(select(Product).where(Product.id == payload.product_id))
         product = product_result.scalar_one_or_none()
         if product:
             product.stock_quantity = max(product.stock_quantity - payload.quantity, 0)
 
-        company_result = await db.execute(
-            select(Company).where(Company.id == order.company_id).options(joinedload(Company.user))
-        )
-        company = company_result.scalar_one_or_none()
-        telegram_id = company.user.telegram_id if company and company.user else None
-        order_number = order.order_number
         await db.commit()
-        if telegram_id:
-            parts = [f"Заявка {order_number}: {status_msg}. Упаковано +{payload.quantity} шт."]
-            if payload.pallet_number is not None:
-                parts.append(f" Паллета: {payload.pallet_number}.")
-            if payload.box_number is not None:
-                parts.append(f" Короб: {payload.box_number}.")
-            if payload.warehouse:
-                parts.append(f" Склад: {payload.warehouse}.")
-            await send_notification(telegram_id, "".join(parts))
         return {"status": "ok"}
     except HTTPException:
         raise
@@ -260,7 +270,8 @@ async def complete_order(
     order.completed_at = dt.utcnow()
     await db.commit()
     if telegram_id:
-        await send_notification(telegram_id, f"Заявка {order_number} завершена.")
+        msg = f"Заявка {order_number}: Завершено. Упаковано всего {order.packed_qty} шт."
+        await send_notification(telegram_id, msg)
     return {"status": "ok"}
 
 

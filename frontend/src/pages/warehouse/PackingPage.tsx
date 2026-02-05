@@ -5,6 +5,7 @@ import { PhotoGallery } from "../../components/shared/PhotoGallery";
 import { PhotoUpload } from "../../components/shared/PhotoUpload";
 import { Button } from "../../components/ui/Button";
 import { Loader } from "../../components/ui/Loader";
+import { StatusBadge } from "../../components/ui/StatusBadge";
 import { Modal } from "../../components/ui/Modal";
 import { Toast } from "../../components/ui/Toast";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
@@ -24,7 +25,7 @@ export function PackingPage() {
     activeCompanyId ?? undefined,
     1,
     100,
-    "Принято,Упаковка"
+    "Принято,Упаковка,Готово к отгрузке"
   );
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
   const { data: items = [], isLoading: itemsLoading } = useOrderItems(activeOrderId ?? undefined);
@@ -63,11 +64,12 @@ export function PackingPage() {
 
   const handleSubmit = async (
     payloads: {
+      order_item_id: number;
       product_id: number;
       employee_code: string;
       quantity: number;
-      pallet_number?: string;
-      box_number?: string;
+      pallet_number?: number;
+      box_number?: number;
       warehouse?: string;
       materials_used?: string;
       time_spent_minutes?: number;
@@ -101,7 +103,10 @@ export function PackingPage() {
       <div className="space-y-3">
         {orders.map((order) => (
           <div key={order.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
-            <div className="text-sm font-semibold text-slate-900">{order.order_number}</div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm font-semibold text-slate-900">{order.order_number}</div>
+              <StatusBadge status={order.status} />
+            </div>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button
                 onClick={async () => {

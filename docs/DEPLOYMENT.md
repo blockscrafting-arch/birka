@@ -18,3 +18,32 @@
 ## База данных
 
 - Перед запуском приложения применить миграции Alembic к PostgreSQL.
+
+## Команды деплоя (из корня репозитория)
+
+Все команды выполнять из **корня проекта** (`/opt/birka` или ваш путь к репозиторию), не из `frontend/` или `backend/`.
+
+```bash
+# 1. Перейти в корень проекта
+cd /opt/birka
+
+# 2. Подтянуть код
+git pull origin main
+
+# 3. Сборка фронтенда (опционально, если не используете Docker для фронта)
+cd frontend && npm run build && cd ..
+
+# 4. Собрать и запустить контейнеры
+docker compose -f docker-compose.prod.yml build --no-cache
+docker compose -f docker-compose.prod.yml up -d
+
+# 5. Применить миграции БД
+docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
+```
+
+Если бэкенд **не в Docker** (запуск напрямую на VPS):
+
+```bash
+cd /opt/birka/backend
+alembic upgrade head
+```

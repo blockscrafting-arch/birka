@@ -7,31 +7,34 @@ import { useDestinations } from "../../hooks/useDestinations";
 import { OrderItem } from "../../types";
 
 export type PackingRow = {
-  product_id: number;
+  order_item_id: number;
   pallet_number?: string;
   box_number?: string;
   quantity: number;
 };
 
+type PackingFormPayload = {
+  order_item_id: number;
+  product_id: number;
+  employee_code: string;
+  quantity: number;
+  pallet_number?: number;
+  box_number?: number;
+  warehouse?: string;
+  materials_used?: string;
+  time_spent_minutes?: number;
+};
+
 type PackingFormProps = {
   items: OrderItem[];
   isSubmitting?: boolean;
-  onSubmit: (payload: {
-    product_id: number;
-    employee_code: string;
-    quantity: number;
-    pallet_number?: string;
-    box_number?: string;
-    warehouse?: string;
-    materials_used?: string;
-    time_spent_minutes?: number;
-  }) => void;
+  onSubmit: (payloads: PackingFormPayload[]) => void;
 };
 
 export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps) {
   const { items: destinations } = useDestinations();
   const [employeeId, setEmployeeId] = useState("");
-  const [rows, setRows] = useState<PackingRow[]>([{ product_id: 0, quantity: 1 }]);
+  const [rows, setRows] = useState<PackingRow[]>([{ order_item_id: 0, quantity: 1 }]);
   const [warehouse, setWarehouse] = useState("");
   const [materials, setMaterials] = useState("");
   const [time, setTime] = useState("");
@@ -43,7 +46,7 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
   };
 
   const addRow = () => {
-    setRows((prev) => [...prev, { product_id: 0, quantity: 1 }]);
+    setRows((prev) => [...prev, { order_item_id: 0, quantity: 1 }]);
   };
 
   const removeRow = (index: number) => {
@@ -60,7 +63,7 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
           setError("Введите ID сотрудника");
           return;
         }
-        const valid = rows.filter((r) => r.product_id && r.quantity > 0);
+        const valid = rows.filter((r) => r.order_item_id && r.quantity > 0);
         if (valid.length === 0) {
           setError("Добавьте хотя бы одну позицию с товаром и количеством");
           return;
@@ -71,9 +74,16 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
           const n = Number(t);
           return Number.isNaN(n) ? undefined : n;
         };
-        onSubmit(
-          valid.map((row) => ({
-            product_id: row.product_id,
+        const payloads: PackingFormPayload[] = [];
+        for (const row of valid) {
+          const item = items.find((i) => i.id === row.order_item_id);
+          if (!item) {
+            setError("Выберите позицию заявки");
+            return;
+          }
+          payloads.push({
+            order_item_id: row.order_item_id,
+            product_id: item.product_id,
             employee_code: employeeId.trim(),
             quantity: row.quantity,
             pallet_number: toOptionalInt(row.pallet_number),
@@ -81,8 +91,9 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
             warehouse: warehouse.trim() || undefined,
             materials_used: materials.trim() || undefined,
             time_spent_minutes: time ? Number(time) : undefined,
-          }))
-        );
+          });
+        }
+        onSubmit(payloads);
       }}
     >
       <Input label="ID сотрудника" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} />
@@ -95,7 +106,7 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
         <>
           <div className="text-sm font-medium text-slate-700">Позиции упаковки</div>
           {rows.map((row, index) => {
-            const selected = items.find((item) => item.product_id === row.product_id);
+            const selected = items.find((item) => item.id === row.order_item_id);
             return (
               <div
                 key={index}
@@ -103,16 +114,18 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <Select
-                    label="Товар"
-                    value={row.product_id ? String(row.product_id) : ""}
-                    onChange={(e) => updateRow(index, { product_id: Number(e.target.value) })}
+                    label="Позиция заявки"
+                    value={row.order_item_id ? String(row.order_item_id) : ""}
+                    onChange={(e) => updateRow(index, { order_item_id: Number(e.target.value) })}
                   >
                     <option value="" disabled>
-                      Выберите товар
+                      Выберите позицию
                     </option>
                     {items.map((item) => (
-                      <option key={item.id} value={item.product_id}>
+                      <option key={item.id} value={item.id}>
                         {item.product_name}
+                        {item.destination ? ` · ${item.destination}` : ""}
+                        {` · План: ${item.planned_qty}`}
                       </option>
                     ))}
                   </Select>
@@ -124,7 +137,7 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
                 </div>
                 {selected ? (
                   <div className="rounded border border-slate-100 bg-slate-50 p-2 text-xs text-slate-600">
-                    <span>ШК: {selected.barcode ?? "—"} · План: {selected.planned_qty} · Принято: {selected.received_qty}</span>
+                    <span>ШК: {selected.barcode ?? "—"} · План: {selected.planned_qty} · Принято: {selected.received_qty} · Упаковано: {selected.packed_qty}</span>
                     <Button
                       type="button"
                       variant="ghost"
@@ -162,7 +175,7 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
             );
           })}
           <Button type="button" variant="secondary" onClick={addRow} disabled={items.length === 0}>
-            + Добавить товар
+            + Добавить позицию
           </Button>
         </>
       )}

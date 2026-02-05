@@ -1,7 +1,7 @@
 """Warehouse schemas."""
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ReceivingItem(BaseModel):
@@ -25,11 +25,12 @@ class PackingRecordCreate(BaseModel):
     """Create packing record."""
 
     order_id: int
+    order_item_id: int
     product_id: int
     employee_code: str
     pallet_number: int | None = None
     box_number: int | None = None
-    quantity: int
+    quantity: int = Field(..., gt=0, description="Количество упакованных шт.")
     warehouse: str | None = None
     box_barcode: str | None = None
     materials_used: str | None = None

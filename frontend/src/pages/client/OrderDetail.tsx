@@ -59,9 +59,11 @@ export function OrderDetail() {
             <div className="text-sm font-semibold text-slate-900">{order.order_number}</div>
             <StatusBadge status={order.status} />
           </div>
-          <Button variant="secondary" onClick={handleExportReceiving} aria-label="Отправить приёмку в Telegram">
-            Отправить приёмку в Telegram
-          </Button>
+          {["Принято", "Готово к отгрузке", "Завершено"].includes(order.status) ? (
+            <Button variant="secondary" onClick={handleExportReceiving} aria-label="Отправить приёмку в Telegram">
+              Отправить приёмку в Telegram
+            </Button>
+          ) : null}
         </div>
         <div className="mt-2 text-xs text-slate-500">
           План: {order.planned_qty} · Принято: {order.received_qty} · Упаковано: {order.packed_qty}
@@ -81,7 +83,7 @@ export function OrderDetail() {
               <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
                 <span>{item.product_name}</span>
                 <span className="text-xs text-slate-500">
-                  План: {item.planned_qty} · Принято: {item.received_qty} · Брак: {item.defect_qty}
+                  План: {item.planned_qty} · Принято: {item.received_qty} · Упаковано: {item.packed_qty} · Брак: {item.defect_qty}
                   {item.destination ? ` · Склад: ${item.destination}` : ""}
                 </span>
               </div>

@@ -91,7 +91,7 @@ export function AISettingsPage() {
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
       <div className="text-lg font-semibold text-slate-900">Настройки AI</div>
       <p className="text-sm text-slate-600">
-        Выбор провайдера и модели для чата с клиентами. Для OpenRouter укажите OPENROUTER_API_KEY в .env.
+        Выбор провайдера и модели для чата с клиентами.
       </p>
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft space-y-4">
         <div>
