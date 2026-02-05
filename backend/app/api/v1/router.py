@@ -6,6 +6,7 @@ from app.api.v1.routes.admin import router as admin_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.companies import router as companies_router
 from app.api.v1.routes.destinations import router as destinations_router
+from app.api.v1.routes.fbo import router as fbo_router
 from app.api.v1.routes.orders import router as orders_router
 from app.api.v1.routes.products import router as products_router
 from app.api.v1.routes.services import router as services_router
