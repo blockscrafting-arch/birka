@@ -125,8 +125,10 @@ export function AIPage() {
             </button>
           )}
         </div>
-        <div className="prose prose-sm prose-slate max-w-none whitespace-pre-wrap break-words prose-p:my-0 prose-ul:my-1">
-          <ReactMarkdown remarkPlugins={[remarkBreaksModule.default]}>{message.text}</ReactMarkdown>
+        <div className="prose prose-sm prose-slate max-w-none whitespace-pre-wrap break-words prose-p:my-0 prose-ul:my-1 [&>p]:my-0 [&>:first-child]:mt-0 [&>:last-child]:mb-0">
+          <ReactMarkdown remarkPlugins={[remarkBreaksModule.default]}>
+            {(message.text ?? "").replace(/\n{3,}/g, "\n\n")}
+          </ReactMarkdown>
         </div>
       </div>
     );
