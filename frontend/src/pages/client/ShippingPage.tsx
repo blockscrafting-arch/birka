@@ -43,6 +43,7 @@ export function ShippingPage() {
 
   const [open, setOpen] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
   const [destinationType, setDestinationType] = useState("WB");
   const [orderId, setOrderId] = useState<string>("");
@@ -73,14 +74,23 @@ export function ShippingPage() {
   }
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
+  const orderIdsWithShipment = new Set(
+    items.map((s) => s.order_id).filter((id): id is number => id != null)
+  );
+  const ordersAvailable = ordersReady.filter((o) => !orderIdsWithShipment.has(o.id));
 
   const handleCreate = async () => {
     if (!activeCompanyId) return;
     setPageError(null);
+    setFormError(null);
+    if (!orderId || !orderId.trim()) {
+      setFormError("Выберите заявку на поставку");
+      return;
+    }
     try {
       await create.mutateAsync({
         company_id: activeCompanyId,
-        order_id: orderId ? Number(orderId) : undefined,
+        order_id: Number(orderId),
         destination_type: destinationType,
         destination_comment: comment.trim() || undefined,
         warehouse_name: warehouseName.trim() || undefined,
@@ -194,8 +204,9 @@ export function ShippingPage() {
 
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
 
-      <Modal title="Новая отгрузка" open={open} onClose={() => setOpen(false)}>
+      <Modal title="Новая отгрузка" open={open} onClose={() => { setOpen(false); setFormError(null); }}>
         <div className="space-y-3">
+          {formError ? <p className="text-sm text-rose-500">{formError}</p> : null}
           <Select
             label="Какую заявку отгружаем"
             value={orderId}
@@ -206,11 +217,15 @@ export function ShippingPage() {
               ? (
                 <option value="" disabled>Загрузка...</option>
                 )
-              : ordersReady.map((o) => (
-                <option key={o.id} value={String(o.id)}>
-                  Заявка {o.order_number}
-                </option>
-              ))}
+              : ordersAvailable.length === 0
+                ? (
+                  <option value="" disabled>Нет заявок «Готово к отгрузке» или все уже отгружены</option>
+                  )
+                : ordersAvailable.map((o) => (
+                  <option key={o.id} value={String(o.id)}>
+                    Заявка {o.order_number}
+                  </option>
+                ))}
           </Select>
 
           <Select
@@ -257,7 +272,10 @@ export function ShippingPage() {
             onChange={(e) => setComment(e.target.value)}
           />
 
-          <Button onClick={handleCreate} disabled={create.isPending}>
+          {!orderId ? (
+            <p className="text-xs text-slate-500">Сначала выберите заявку со статусом «Готово к отгрузке».</p>
+          ) : null}
+          <Button onClick={handleCreate} disabled={create.isPending || !orderId}>
             {create.isPending ? "Создаю..." : "Создать"}
           </Button>
         </div>

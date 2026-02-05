@@ -12,7 +12,7 @@ type Paginated<T> = {
 
 export type ShippingCreate = {
   company_id: number;
-  order_id?: number;
+  order_id: number;
   destination_type: string;
   destination_comment?: string;
   warehouse_name?: string;

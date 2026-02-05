@@ -8,7 +8,7 @@ class ShipmentRequestCreate(BaseModel):
     """Create shipment request."""
 
     company_id: int
-    order_id: int | None = None
+    order_id: int
     destination_type: str
     destination_comment: str | None = None
     warehouse_name: str | None = None

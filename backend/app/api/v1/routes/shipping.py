@@ -32,6 +32,10 @@ ALLOWED_BARCODE_CONTENT_TYPES = (
     "image/gif",
     "image/webp",
 )
+ALLOWED_BOX_BARCODES_EXTRA = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+)
 
 
 def _shipment_request_to_out(request: ShipmentRequest, s3: S3Service) -> ShipmentRequestOut:
@@ -67,13 +71,15 @@ async def _validate_marketplace_keys(
         select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == company_id)
     )
     keys = result.scalar_one_or_none()
+    secret = settings.ENCRYPTION_KEY or ""
     if dest == "WB":
         if not keys or not keys.wb_api_key:
             raise HTTPException(
                 status_code=400,
                 detail="Укажите API-ключ Wildberries в настройках компании (API-ключи WB / Ozon).",
             )
-        api = WildberriesAPI(api_key=keys.wb_api_key)
+        wb_key = decrypt_value(keys.wb_api_key, secret) or keys.wb_api_key
+        api = WildberriesAPI(api_key=wb_key)
         supplies = await api.get_supplies(limit=1)
         if supplies is None:
             raise HTTPException(
@@ -86,7 +92,9 @@ async def _validate_marketplace_keys(
                 status_code=400,
                 detail="Укажите Client ID и API Key Ozon в настройках компании (API-ключи WB / Ozon).",
             )
-        api = OzonAPI(client_id=keys.ozon_client_id, api_key=keys.ozon_api_key)
+        ozon_cid = decrypt_value(keys.ozon_client_id, secret) or keys.ozon_client_id
+        ozon_key = decrypt_value(keys.ozon_api_key, secret) or keys.ozon_api_key
+        api = OzonAPI(client_id=ozon_cid, api_key=ozon_key)
         orders = await api.list_supply_orders()
         if orders is None:
             raise HTTPException(
@@ -134,19 +142,30 @@ async def create_shipment_request(
     if not company_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Компания не найдена")
 
-    if payload.order_id:
-        order_result = await db.execute(
-            select(Order).where(
-                Order.id == payload.order_id,
-                Order.company_id == payload.company_id,
-                Order.status == "Готово к отгрузке",
-            )
+    order_result = await db.execute(
+        select(Order).where(
+            Order.id == payload.order_id,
+            Order.company_id == payload.company_id,
+            Order.status == "Готово к отгрузке",
         )
-        if not order_result.scalar_one_or_none():
-            raise HTTPException(
-                status_code=400,
-                detail="Заявка не найдена или не имеет статус «Готово к отгрузке».",
-            )
+    )
+    if not order_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail="Заявка не найдена или не имеет статус «Готово к отгрузке».",
+        )
+
+    existing = await db.execute(
+        select(ShipmentRequest.id).where(
+            ShipmentRequest.company_id == payload.company_id,
+            ShipmentRequest.order_id == payload.order_id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail="На эту заявку уже создана отгрузка. Выберите другую заявку.",
+        )
 
     await _validate_marketplace_keys(db, payload.company_id, payload.destination_type)
 
