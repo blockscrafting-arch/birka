@@ -10,6 +10,9 @@ export default defineConfig({
     port: 5173,
     allowedHosts: ["ffbirka.ru"],
   },
+  build: {
+    chunkSizeWarningLimit: 900,
+  },
   test: {
     environment: "jsdom",
     setupFiles: "./src/setupTests.ts",
