@@ -100,18 +100,19 @@ TOOLS = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_stock_summary",
-            "description": (
-                "Общая сводка по остаткам на складе, браку и заявкам. Возвращает: total_stock_quantity (остаток на складе), "
-                "total_defect_quantity (брак), orders_total_planned / orders_total_received / orders_total_packed (по заявкам: плановое, принято, упаковано). "
-                "Всегда вызывай при вопросах «сколько у меня», «мой остаток», «что на складе», «остатки»."
-            ),
-            "parameters": {"type": "object", "properties": {}},
+        {
+            "type": "function",
+            "function": {
+                "name": "get_stock_summary",
+                "description": (
+                    "Общая сводка по остаткам на складе, браку и заявкам. Возвращает: total_stock_quantity (остаток на складе), "
+                    "total_defect_quantity (брак), total_products, total_defect_items, products_with_defects; "
+                    "orders_total_planned, orders_total_received, orders_total_packed (по заявкам: плановое, принято, упаковано). "
+                    "Всегда вызывай при вопросах «сколько у меня», «мой остаток», «что на складе», «остатки»."
+                ),
+                "parameters": {"type": "object", "properties": {}},
+            },
         },
-    },
     {
         "type": "function",
         "function": {
@@ -397,6 +398,14 @@ async def _execute_tool_impl(
         total_stock = int(row[0])
         total_defect = int(row[1])
         count = int(row[2])
+        orders_result = await db.execute(
+            select(
+                func.coalesce(func.sum(Order.planned_qty), 0),
+                func.coalesce(func.sum(Order.received_qty), 0),
+                func.coalesce(func.sum(Order.packed_qty), 0),
+            ).where(Order.company_id == company.id)
+        )
+        orders_row = orders_result.one()
         defect_count_result = await db.execute(
             select(func.count()).select_from(Product).where(
                 Product.company_id == company.id, Product.defect_quantity > 0
@@ -415,6 +424,9 @@ async def _execute_tool_impl(
             "total_stock_quantity": total_stock,
             "total_defect_quantity": total_defect,
             "total_defect_items": total_defect_items,
+            "orders_total_planned": int(orders_row[0]),
+            "orders_total_received": int(orders_row[1]),
+            "orders_total_packed": int(orders_row[2]),
             "products_with_defects": defect_list,
         }
         return json.dumps(out, ensure_ascii=False)

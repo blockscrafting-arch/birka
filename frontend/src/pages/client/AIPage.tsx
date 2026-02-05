@@ -98,6 +98,9 @@ export function AIPage() {
     });
   };
 
+  /** Strip markdown list prefix from line start so we don't duplicate bullets or show raw asterisks. */
+  const stripListPrefix = (line: string) => line.replace(/^(\* {3}|\* |- )\s*/, "");
+
   const renderMessage = (message: { role: "user" | "assistant"; text: string }, index: number) => {
     const isUser = message.role === "user";
     const raw = message.text ?? "";
@@ -109,12 +112,12 @@ export function AIPage() {
             const first = raw.slice(0, match.index).trimEnd();
             const rest = raw.slice(match.index + match[0].length);
             const restLines = rest.split(/\n+/).filter(Boolean);
-            const restMarkdown = restLines.map((line) => `- ${line}`).join("\n");
+            const restMarkdown = restLines.map((line) => `- ${stripListPrefix(line)}`).join("\n");
             return first + "\n\n" + restMarkdown;
           }
           if (raw.includes("\n")) {
             const lines = raw.split(/\n+/).filter(Boolean);
-            return lines.map((line) => `- ${line}`).join("\n");
+            return lines.map((line) => `- ${stripListPrefix(line)}`).join("\n");
           }
           return raw;
         })();
