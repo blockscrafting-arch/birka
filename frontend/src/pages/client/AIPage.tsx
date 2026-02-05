@@ -101,17 +101,23 @@ export function AIPage() {
   const renderMessage = (message: { role: "user" | "assistant"; text: string }, index: number) => {
     const isUser = message.role === "user";
     const raw = message.text ?? "";
-    const normalized =
-      isUser
-        ? raw
-        : (() => {
-            const match = raw.match(/\n{2,}/);
-            return !match || match.index === undefined
-              ? raw.replace(/\n{2,}/g, "\n")
-              : raw.slice(0, match.index).trimEnd() +
-                  "\n\n" +
-                  raw.slice(match.index + match[0].length).replace(/\n{2,}/g, "\n");
-          })();
+    const normalized = isUser
+      ? raw
+      : (() => {
+          const match = raw.match(/\n{2,}/);
+          if (match && match.index !== undefined) {
+            const first = raw.slice(0, match.index).trimEnd();
+            const rest = raw.slice(match.index + match[0].length);
+            const restLines = rest.split(/\n+/).filter(Boolean);
+            const restMarkdown = restLines.map((line) => `- ${line}`).join("\n");
+            return first + "\n\n" + restMarkdown;
+          }
+          if (raw.includes("\n")) {
+            const lines = raw.split(/\n+/).filter(Boolean);
+            return lines.map((line) => `- ${line}`).join("\n");
+          }
+          return raw;
+        })();
     return (
       <div
         key={`${message.role}-${index}`}
@@ -137,7 +143,7 @@ export function AIPage() {
             </button>
           )}
         </div>
-        <div className="max-w-none break-words text-sm leading-snug [&_p]:my-0 [&_ul]:my-1">
+        <div className="max-w-none break-words text-sm leading-snug [&_p]:mt-0 [&_p]:mb-2 [&_ul]:list-none [&_ul]:pl-0 [&_ul]:my-0 [&_li]:my-1">
           <ReactMarkdown remarkPlugins={[remarkBreaksModule.default]}>
             {normalized}
           </ReactMarkdown>
