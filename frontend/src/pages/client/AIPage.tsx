@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import * as remarkBreaksModule from "remark-breaks";
 
 import { Button } from "../../components/ui/Button";
 import { Toast } from "../../components/ui/Toast";
@@ -125,7 +126,7 @@ export function AIPage() {
           )}
         </div>
         <div className="prose prose-sm prose-slate max-w-none whitespace-pre-wrap break-words prose-p:my-0 prose-ul:my-1">
-          <ReactMarkdown remarkPlugins={[remarkBreaks]}>{message.text}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkBreaksModule.default]}>{message.text}</ReactMarkdown>
         </div>
       </div>
     );
