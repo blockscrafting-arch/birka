@@ -54,6 +54,7 @@ export function useWarehouse() {
       apiClient.api<{
         valid: boolean;
         message: string;
+        type?: "product" | "box";
         product?: {
           id: number;
           name: string;
@@ -62,6 +63,13 @@ export function useWarehouse() {
           color?: string | null;
           wb_article?: string | null;
           barcode?: string | null;
+        };
+        box?: {
+          id: number;
+          box_number: number;
+          supply_id: number;
+          external_box_id?: string | null;
+          external_barcode?: string | null;
         };
       }>("/warehouse/barcode/validate", {
         method: "POST",
@@ -78,5 +86,11 @@ export function useWarehouse() {
     },
   });
 
-  return { completeReceiving, createPacking, validateBarcode, completeOrder };
+  return {
+    completeReceiving,
+    createPacking,
+    validateBarcode,
+    validateBarcodeInOrder,
+    completeOrder,
+  };
 }

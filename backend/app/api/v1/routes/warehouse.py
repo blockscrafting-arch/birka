@@ -9,13 +9,21 @@ from sqlalchemy.orm import joinedload
 
 from app.api.v1.deps import get_current_user, require_roles
 from app.db.models.company import Company
+from app.db.models.fbo_supply import FBOSupplyBox
 from app.db.models.order import Order, OrderItem
 from app.db.models.order_photo import OrderPhoto
 from app.db.models.packing_record import PackingRecord
 from app.db.models.product import Product
 from app.db.models.warehouse_employee import WarehouseEmployee
 from app.db.session import get_db
-from app.schemas.warehouse import BarcodeValidateRequest, PackingRecordCreate, ReceivingComplete
+from app.schemas.warehouse import (
+    BarcodeValidateInOrderRequest,
+    BarcodeValidateInOrderResponse,
+    BarcodeValidateRequest,
+    BarcodeValidateResponse,
+    PackingRecordCreate,
+    ReceivingComplete,
+)
 from app.services.excel import export_fbo_shipping
 from app.services.files import content_disposition
 from app.services.telegram import send_document, send_notification
@@ -213,38 +221,113 @@ async def create_packing_record(
         raise HTTPException(status_code=500, detail="Не удалось сохранить запись упаковки")
 
 
-@router.post("/barcode/validate")
+@router.post("/barcode/validate", response_model=BarcodeValidateResponse)
 async def validate_barcode(
     payload: BarcodeValidateRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles("warehouse", "admin")),
-) -> dict:
-    """Validate barcode against products."""
+) -> BarcodeValidateResponse:
+    """Validate barcode against products or FBO box barcodes."""
     try:
-        result = await db.execute(select(Product).where(Product.barcode == payload.barcode))
+        barcode = (payload.barcode or "").strip()
+        result = await db.execute(select(Product).where(Product.barcode == barcode))
         product = result.scalar_one_or_none()
-        if not product:
-            return {"valid": False, "message": "ШК не найден"}
-        company_result = await db.execute(select(Company).where(Company.id == product.company_id))
-        if not company_result.scalar_one_or_none():
-            return {"valid": False, "message": "ШК не найден"}
-        logger.info("barcode_validate_ok", product_id=product.id, barcode_len=len(payload.barcode or ""))
-        return {
-            "valid": True,
-            "message": f"ШК найден: {product.name}",
-            "product": {
-                "id": product.id,
-                "name": product.name,
-                "brand": product.brand,
-                "size": product.size,
-                "color": product.color,
-                "wb_article": product.wb_article,
-                "barcode": product.barcode,
-            },
-        }
+        if product:
+            company_result = await db.execute(select(Company).where(Company.id == product.company_id))
+            if not company_result.scalar_one_or_none():
+                return BarcodeValidateResponse(valid=False, message="ШК не найден")
+            logger.info("barcode_validate_ok", product_id=product.id, barcode_len=len(barcode))
+            return BarcodeValidateResponse(
+                valid=True,
+                message=f"ШК найден: {product.name}",
+                type="product",
+                product={
+                    "id": product.id,
+                    "name": product.name,
+                    "brand": product.brand,
+                    "size": product.size,
+                    "color": product.color,
+                    "wb_article": product.wb_article,
+                    "barcode": product.barcode,
+                },
+            )
+        box_result = await db.execute(
+            select(FBOSupplyBox).where(FBOSupplyBox.external_barcode == barcode)
+        )
+        box = box_result.scalar_one_or_none()
+        if box:
+            logger.info("barcode_validate_box_ok", box_id=box.id, supply_id=box.supply_id)
+            return BarcodeValidateResponse(
+                valid=True,
+                message=f"Короб №{box.box_number}",
+                type="box",
+                box={
+                    "id": box.id,
+                    "box_number": box.box_number,
+                    "supply_id": box.supply_id,
+                    "external_box_id": box.external_box_id,
+                    "external_barcode": box.external_barcode,
+                },
+            )
+        return BarcodeValidateResponse(valid=False, message="ШК не найден")
     except Exception as exc:
         logger.exception("barcode_validate_failed", error=str(exc))
         raise HTTPException(status_code=500, detail="Ошибка проверки штрихкода")
+
+
+@router.post("/barcode/validate-in-order", response_model=BarcodeValidateInOrderResponse)
+async def validate_barcode_in_order(
+    payload: BarcodeValidateInOrderRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("warehouse", "admin")),
+) -> BarcodeValidateInOrderResponse:
+    """Validate barcode in order context: find order item by barcode, return remaining qty."""
+    try:
+        barcode = (payload.barcode or "").strip()
+        order_result = await db.execute(select(Order).where(Order.id == payload.order_id))
+        order = order_result.scalar_one_or_none()
+        if not order:
+            return BarcodeValidateInOrderResponse(found=False, message="Заявка не найдена")
+        company_result = await db.execute(select(Company).where(Company.id == order.company_id))
+        if not company_result.scalar_one_or_none():
+            return BarcodeValidateInOrderResponse(found=False, message="Заявка не найдена")
+        result = await db.execute(
+            select(OrderItem, Product)
+            .join(Product, Product.id == OrderItem.product_id)
+            .where(OrderItem.order_id == payload.order_id, Product.barcode == barcode)
+        )
+        row = result.first()
+        if not row:
+            return BarcodeValidateInOrderResponse(
+                found=False,
+                message="ШК не относится к выбранной заявке",
+            )
+        item, product = row
+        remaining_to_receive = max(0, item.planned_qty - item.received_qty)
+        remaining_to_pack = max(0, item.received_qty - item.defect_qty - item.packed_qty)
+        logger.info(
+            "barcode_validate_in_order_ok",
+            order_id=payload.order_id,
+            order_item_id=item.id,
+        )
+        return BarcodeValidateInOrderResponse(
+            found=True,
+            message=f"Позиция в заявке: {product.name}, план {item.planned_qty}, принято {item.received_qty}",
+            order_item={
+                "id": item.id,
+                "product_id": item.product_id,
+                "product_name": product.name,
+                "planned_qty": item.planned_qty,
+                "received_qty": item.received_qty,
+                "packed_qty": item.packed_qty,
+                "defect_qty": item.defect_qty,
+            },
+            remaining_to_receive=remaining_to_receive,
+            remaining_to_pack=remaining_to_pack,
+        )
+    except Exception as exc:
+        logger.exception("barcode_validate_in_order_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail="Ошибка проверки штрихкода в заявке")
 
 
 @router.post("/order/{order_id}/complete")

@@ -1,5 +1,5 @@
 """Company schemas."""
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CompanyCreate(BaseModel):
@@ -90,6 +90,6 @@ class CompanyAPIKeysOut(BaseModel):
 class CompanyAPIKeysUpdate(BaseModel):
     """Update company API keys (WB/Ozon)."""
 
-    wb_api_key: str | None = None
-    ozon_client_id: str | None = None
-    ozon_api_key: str | None = None
+    wb_api_key: str | None = Field(None, max_length=512)
+    ozon_client_id: str | None = Field(None, max_length=512)
+    ozon_api_key: str | None = Field(None, max_length=512)

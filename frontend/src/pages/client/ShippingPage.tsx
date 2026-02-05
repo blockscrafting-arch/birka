@@ -401,6 +401,7 @@ function FBOSupplyDetailModal({
   const boxStickers = useFBOBoxStickers(supplyId);
   const [barcodeText, setBarcodeText] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [stickersDataUrl, setStickersDataUrl] = useState<string[] | null>(null);
 
   const handleGetStickers = () => {
@@ -426,9 +427,11 @@ function FBOSupplyDetailModal({
       .filter(Boolean);
     if (barcodes.length === 0) return;
     setActionError(null);
+    setActionSuccess(null);
     importBarcodes.mutate(barcodes, {
       onSuccess: () => {
         setBarcodeText("");
+        setActionSuccess("Штрихкоды импортированы");
       },
       onError: (err) => {
         setActionError(err instanceof Error ? err.message : "Ошибка импорта");
@@ -438,7 +441,11 @@ function FBOSupplyDetailModal({
 
   const handleSync = () => {
     setActionError(null);
+    setActionSuccess(null);
     sync.mutate(undefined, {
+      onSuccess: () => {
+        setActionSuccess("Короба синхронизированы из маркетплейса");
+      },
       onError: (err) => {
         setActionError(err instanceof Error ? err.message : "Ошибка синхронизации");
       },
@@ -458,7 +465,7 @@ function FBOSupplyDetailModal({
             </div>
             {!supply.external_supply_id && (
               <p className="text-xs text-amber-700 bg-amber-50 rounded p-2">
-                Создайте поставку в кабинете WB/Ozon или укажите число коробов при создании отгрузки для авто-создания.
+                Создайте поставку в кабинете WB/Ozon или дождитесь авто-создания при отгрузке.
               </p>
             )}
             <div className="text-xs font-medium text-slate-600">Короба ({supply.boxes.length})</div>
@@ -478,6 +485,9 @@ function FBOSupplyDetailModal({
             </ul>
             {actionError ? (
               <p className="text-xs text-red-600 bg-red-50 rounded p-2">{actionError}</p>
+            ) : null}
+            {actionSuccess ? (
+              <p className="text-xs text-emerald-700 bg-emerald-50 rounded p-2">{actionSuccess}</p>
             ) : null}
             <div className="flex flex-wrap gap-2">
               <Button

@@ -1,7 +1,7 @@
 """FBO supply schemas for WB/Ozon."""
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class FBOSupplyBoxOut(BaseModel):
@@ -41,8 +41,16 @@ class FBOSupplyCreate(BaseModel):
 
 
 class FBOSupplyImportBarcodes(BaseModel):
-    """Import box barcodes manually (max 500 items)."""
+    """Import box barcodes manually (max 500 items, each barcode max 128 chars)."""
     barcodes: list[str] = Field(..., max_length=500)
+
+    @field_validator("barcodes")
+    @classmethod
+    def barcode_length(cls, v: list[str]) -> list[str]:
+        for b in v or []:
+            if len(b) > 128:
+                raise ValueError("Каждый штрихкод не более 128 символов")
+        return v
 
 
 class FBOSupplyList(BaseModel):

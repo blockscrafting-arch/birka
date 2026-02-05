@@ -46,8 +46,17 @@ export function ContractTemplatesPage() {
     update.mutate({ id, is_default: true });
   };
 
-  const handleDownload = (id: number, fileName: string | null) => {
-    downloadContractTemplate(id, fileName || "template");
+  const handleSendToTelegram = async (id: number) => {
+    setSendingId(id);
+    setToast(null);
+    try {
+      await sendContractTemplateToTelegram(id);
+      setToast({ message: "Шаблон отправлен в Telegram", variant: "success" });
+    } catch {
+      setToast({ message: "Не удалось отправить шаблон", variant: "error" });
+    } finally {
+      setSendingId(null);
+    }
   };
 
   const placeholders: { key: string; label: string }[] = [

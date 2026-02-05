@@ -293,7 +293,7 @@ async def import_fbo_barcodes(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> FBOSupplyOut:
-    """Import box barcodes manually (barcodes in order = box 1, 2, ...)."""
+    """Import box barcodes manually (barcodes in order = box 1, 2, ...). Append mode: new boxes are added to existing ones; to replace, use sync first or delete supply boxes elsewhere."""
     result = await db.execute(
         select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
     )

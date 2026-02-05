@@ -21,6 +21,133 @@ async def test_barcode_validation_empty(client, warehouse_headers):
     assert data["valid"] is False
 
 
+async def test_barcode_validate_product_found(client, auth_headers, warehouse_headers):
+    """Validate returns product when barcode exists in products."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223340"}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+    product_resp = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар с ШК", "barcode": "4601234567890"},
+        headers=auth_headers,
+    )
+    assert product_resp.status_code in (200, 201)
+
+    response = await client.post(
+        "/api/v1/warehouse/barcode/validate",
+        json={"barcode": "4601234567890"},
+        headers=warehouse_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is True
+    assert data.get("type") == "product"
+    assert data.get("product", {}).get("name") == "Товар с ШК"
+    assert data["product"]["barcode"] == "4601234567890"
+
+
+async def test_barcode_validate_in_order_found(client, auth_headers, warehouse_headers):
+    """Validate-in-order returns found when barcode matches order item."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223341"}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+    product_resp = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар заявки", "barcode": "4601234567891"},
+        headers=auth_headers,
+    )
+    product_id = product_resp.json()["id"]
+    order_resp = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 5}]},
+        headers=auth_headers,
+    )
+    order_id = order_resp.json()["id"]
+
+    response = await client.post(
+        "/api/v1/warehouse/barcode/validate-in-order",
+        json={"barcode": "4601234567891", "order_id": order_id},
+        headers=warehouse_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["found"] is True
+    assert data.get("order_item", {}).get("product_name") == "Товар заявки"
+    assert data["remaining_to_receive"] == 5
+
+
+async def test_barcode_validate_in_order_not_found(client, auth_headers, warehouse_headers):
+    """Validate-in-order returns found=False when barcode not in order."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223342"}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+    product_resp = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар", "barcode": "4601234567892"},
+        headers=auth_headers,
+    )
+    product_id = product_resp.json()["id"]
+    order_resp = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 3}]},
+        headers=auth_headers,
+    )
+    order_id = order_resp.json()["id"]
+
+    response = await client.post(
+        "/api/v1/warehouse/barcode/validate-in-order",
+        json={"barcode": "9999999999999", "order_id": order_id},
+        headers=warehouse_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["found"] is False
+    assert "заявке" in data.get("message", "").lower() or "не найден" in data.get("message", "").lower()
+
+
+async def test_barcode_validate_in_order_order_not_found(client, warehouse_headers):
+    """Validate-in-order returns found=False for non-existent order."""
+    response = await client.post(
+        "/api/v1/warehouse/barcode/validate-in-order",
+        json={"barcode": "4601234567890", "order_id": 99999},
+        headers=warehouse_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["found"] is False
+    assert "заявк" in data.get("message", "").lower()
+
+
+async def test_barcode_validate_box_found(client, auth_headers, warehouse_headers):
+    """Validate returns type box when barcode matches FBO supply box."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223343"}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+    supply_resp = await client.post(
+        "/api/v1/fbo/supplies",
+        json={"company_id": company_id, "marketplace": "wb"},
+        headers=auth_headers,
+    )
+    supply_id = supply_resp.json()["id"]
+    await client.post(
+        f"/api/v1/fbo/supplies/{supply_id}/import-barcodes",
+        json={"barcodes": ["WB-BOX-12345"]},
+        headers=auth_headers,
+    )
+
+    response = await client.post(
+        "/api/v1/warehouse/barcode/validate",
+        json={"barcode": "WB-BOX-12345"},
+        headers=warehouse_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is True
+    assert data.get("type") == "box"
+    assert data.get("box", {}).get("external_barcode") == "WB-BOX-12345"
+    assert data["box"]["supply_id"] == supply_id
+
+
 async def test_packing_record_updates_order_and_item_packed_qty(client, auth_headers, warehouse_headers):
     """Creating a packing record updates order.packed_qty and the matching OrderItem.packed_qty."""
     company_resp = await client.post("/api/v1/companies", json={"inn": "1112223330"}, headers=auth_headers)

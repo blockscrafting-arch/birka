@@ -1,9 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+import { BarcodeScanner } from "../../components/shared/BarcodeScanner";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Select } from "../../components/ui/Select";
+import {
+  getCameraErrorMessage,
+  SCAN_ERROR_MISMATCH,
+  SCAN_WARNING_NOT_IN_ORDER,
+} from "../../constants/scanner";
 import { useDestinations } from "../../hooks/useDestinations";
+import { useScanFeedback } from "../../hooks/useScanFeedback";
 import { OrderItem } from "../../types";
 
 export type PackingRow = {
@@ -34,17 +41,22 @@ type PackingFormProps = {
 
 export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: PackingFormProps) {
   const { items: destinations } = useDestinations();
+  const { playSuccess, playError, playWarning } = useScanFeedback();
   const [employeeId, setEmployeeId] = useState("");
-  const [rows, setRows] = useState<PackingRow[]>([{ order_item_id: 0, quantity: 1 }]);
+  const [rows, setRows] = useState<PackingRow[]>([{ rowId: Date.now(), order_item_id: 0, quantity: 1 }]);
   const [warehouse, setWarehouse] = useState("");
   const [materials, setMaterials] = useState("");
   const [time, setTime] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showDetailsFor, setShowDetailsFor] = useState<number | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [scanWarning, setScanWarning] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   useEffect(() => {
     if (resetKey == null) return;
-    setRows([{ order_item_id: 0, quantity: 1 }]);
+    setRows([{ rowId: Date.now(), order_item_id: 0, quantity: 1 }]);
     setWarehouse("");
     setMaterials("");
     setTime("");
@@ -55,8 +67,55 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   };
 
+  const handleScan = useCallback(
+    (text: string) => {
+      setCameraError(null);
+      setScanWarning(null);
+      setScanError(null);
+      const trimmed = text.trim();
+      const item = items.find((i) => (i.barcode ?? "").trim() === trimmed);
+
+      if (!item) {
+        setScanWarning("ШК не найден в позициях заявки");
+        playWarning();
+        return;
+      }
+
+      const hasOtherSelection = rows.some(
+        (r) => r.order_item_id !== 0 && r.order_item_id !== item.id
+      );
+      if (hasOtherSelection) {
+        setScanError("Отсканированный ШК не совпадает с выбранной позицией");
+        playError();
+        return;
+      }
+
+      setRows((prev) => {
+        const existingRowIndex = prev.findIndex((r) => r.order_item_id === item.id);
+        if (existingRowIndex >= 0) {
+          return prev.map((r, i) =>
+            i === existingRowIndex ? { ...r, quantity: r.quantity + 1 } : r
+          );
+        }
+        const emptyRowIndex = prev.findIndex((r) => r.order_item_id === 0);
+        if (emptyRowIndex >= 0) {
+          return prev.map((r, i) =>
+            i === emptyRowIndex ? { ...r, order_item_id: item.id, quantity: 1 } : r
+          );
+        }
+        return [...prev, { order_item_id: item.id, quantity: 1 }];
+      });
+      playSuccess();
+    },
+    [items, rows, playSuccess, playError, playWarning]
+  );
+
+  const handleScannerError = useCallback((msg: string) => {
+    setCameraError(getCameraErrorMessage(msg));
+  }, []);
+
   const addRow = () => {
-    setRows((prev) => [...prev, { order_item_id: 0, quantity: 1 }]);
+    setRows((prev) => [...prev, { rowId: Date.now(), order_item_id: 0, quantity: 1 }]);
   };
 
   const removeRow = (index: number) => {
@@ -108,6 +167,39 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
     >
       <Input label="ID сотрудника" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} />
 
+      {items.length > 0 ? (
+        <div className="space-y-2">
+          <Button type="button" variant="ghost" onClick={() => setScannerOpen((p) => !p)}>
+            {scannerOpen ? "Закрыть сканер" : "Сканировать ШК"}
+          </Button>
+          {scannerOpen ? (
+            <>
+              <BarcodeScanner
+                compact
+                active={scannerOpen}
+                onScan={handleScan}
+                onError={handleScannerError}
+              />
+              {cameraError ? (
+                <div className="rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  {cameraError}
+                </div>
+              ) : null}
+            </>
+          ) : null}
+          {scanWarning ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {scanWarning}
+            </div>
+          ) : null}
+          {scanError ? (
+            <div className="rounded-lg border-2 border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+              {scanError}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {items.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-soft">
           В этой заявке нет позиций для упаковки.
@@ -119,7 +211,7 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
             const selected = items.find((item) => item.id === row.order_item_id);
             return (
               <div
-                key={index}
+                key={row.rowId}
                 className="rounded-lg border border-slate-200 bg-white p-3 shadow-soft space-y-2"
               >
                 <div className="flex flex-wrap items-center gap-2">
