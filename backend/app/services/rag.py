@@ -8,16 +8,15 @@ from sqlalchemy.sql import func
 from app.core.config import settings
 from app.db.models.document_chunk import DocumentChunk
 
+# Дополнительные инструкции при наличии контекста из документации (без дублирования идентичности из system prompt)
 STATIC_BASE = (
-    "Ты помощник фулфилмент компании Бирка. "
-    "Отвечай кратко и по делу, используй статусы заявок: "
-    "На приемке, Принято, Упаковка, Готово к отгрузке, Завершено. "
-    "Если вопрос о браке — напомни, что фото обязательны."
+    "Используй статусы заявок: На приемке, Принято, Упаковка, Готово к отгрузке, Завершено. "
+    "При вопросе о браке напомни, что фото обязательны."
 )
 
 
 def build_rag_context(message: str) -> str:
-    """Build RAG context from static instructions (sync fallback)."""
+    """Build RAG context from static instructions (sync fallback). Returns empty string if no API key."""
     if not settings.OPENAI_API_KEY:
         return ""
     return f"{STATIC_BASE}\nВопрос клиента: {message}"
@@ -113,21 +112,24 @@ def _marketplace_filter_from_message(message: str) -> str | None:
     return None
 
 
-async def build_rag_context_async(db: AsyncSession, message: str) -> str:
-    """Build RAG context: use document chunks if available, else static.
+async def build_rag_context_async(db: AsyncSession, message: str) -> tuple[str | None, str]:
+    """Build RAG context: use document chunks if available.
+    Returns (rag_system_content, user_message). rag_system_content is None when no chunks;
+    then user_message is the raw message. When chunks exist, rag_system_content is the doc context
+    to add as a separate system message; user_message is the raw message.
     When message mentions a marketplace (WB/Ozon), prefer chunks from that marketplace's docs (source_file).
     """
     if not settings.OPENAI_API_KEY:
-        return build_rag_context(message)
+        return (None, message)
     try:
         count_result = await db.execute(select(func.count()).select_from(DocumentChunk))
         if int(count_result.scalar_one()) == 0:
-            return build_rag_context(message)
+            return (None, message)
     except Exception:
-        return build_rag_context(message)
+        return (None, message)
     embedding = await get_embedding(message)
     if not embedding:
-        return build_rag_context(message)
+        return (None, message)
     try:
         base_q = select(DocumentChunk).order_by(DocumentChunk.embedding.cosine_distance(embedding))
         mf = _marketplace_filter_from_message(message)
@@ -143,8 +145,9 @@ async def build_rag_context_async(db: AsyncSession, message: str) -> str:
             )
             chunks = list(result.scalars().all())
         if not chunks:
-            return build_rag_context(message)
+            return (None, message)
         context = "\n\n".join(c.content for c in chunks)
-        return f"{STATIC_BASE}\n\nКонтекст из документации:\n{context}\n\nВопрос клиента: {message}"
+        rag_system = f"{STATIC_BASE}\n\nКонтекст из документации:\n{context}"
+        return (rag_system, message)
     except Exception:
-        return build_rag_context(message)
+        return (None, message)

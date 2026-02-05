@@ -129,9 +129,11 @@ async def chat(
 - Если вопрос не по теме — вежливо перенаправь: «Я помогаю с вопросами о заявках, товарах и услугах фулфилмента. Чем могу помочь?»
 """
     openai_messages = [{"role": "system", "content": AI_SYSTEM_INSTRUCTION}]
+    rag_system, user_content = await build_rag_context_async(db, payload.message)
+    if rag_system:
+        openai_messages.append({"role": "system", "content": rag_system})
     openai_messages.extend([{"role": m.role, "content": m.text} for m in history_rows])
-    prompt = await build_rag_context_async(db, payload.message) or payload.message
-    openai_messages.append({"role": "user", "content": prompt})
+    openai_messages.append({"role": "user", "content": user_content})
 
     answer = await service.chat(openai_messages, db=db, user=current_user, company_id=payload.company_id)
 

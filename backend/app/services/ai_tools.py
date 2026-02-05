@@ -100,19 +100,19 @@ TOOLS = [
             },
         },
     },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_stock_summary",
-                "description": (
-                    "Общая сводка по остаткам на складе, браку и заявкам. Возвращает: total_stock_quantity (остаток на складе), "
-                    "total_defect_quantity (брак), total_products, total_defect_items, products_with_defects; "
-                    "orders_total_planned, orders_total_received, orders_total_packed (по заявкам: плановое, принято, упаковано). "
-                    "Всегда вызывай при вопросах «сколько у меня», «мой остаток», «что на складе», «остатки»."
-                ),
-                "parameters": {"type": "object", "properties": {}},
-            },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_stock_summary",
+            "description": (
+                "Общая сводка по остаткам на складе, браку и заявкам. Возвращает: total_stock_quantity (остаток на складе), "
+                "total_defect_quantity (брак), total_products, total_defect_items, products_with_defects; "
+                "orders_total_planned, orders_total_received, orders_total_packed (по заявкам: плановое, принято, упаковано). "
+                "Всегда вызывай при вопросах «сколько у меня», «мой остаток», «что на складе», «остатки»."
+            ),
+            "parameters": {"type": "object", "properties": {}},
         },
+    },
     {
         "type": "function",
         "function": {

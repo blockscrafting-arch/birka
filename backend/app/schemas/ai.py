@@ -1,5 +1,5 @@
 """AI schemas."""
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class ChatMessage(BaseModel):
@@ -19,7 +19,7 @@ class ChatMessage(BaseModel):
 class AIChatRequest(BaseModel):
     """AI chat request."""
 
-    message: str
+    message: str = Field(..., min_length=1, max_length=8000)
     company_id: int | None = None
     history: list[ChatMessage] = []
 
