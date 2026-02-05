@@ -161,7 +161,7 @@ def render_label_pdf(label: LabelData) -> bytes:
         if barcode_b64:
             barcode_img = (
                 f'<img src="data:image/png;base64,{barcode_b64}" alt="" '
-                'style="display:block;margin:0 auto;max-width:54mm;height:auto;min-height:14mm;" />'
+                'style="display:block;margin:0 auto;max-width:54mm;max-height:12mm;height:auto;" />'
             )
         html_content = f"""
         <!DOCTYPE html>
@@ -171,12 +171,12 @@ def render_label_pdf(label: LabelData) -> bytes:
             <style>
               @page {{ size: 58mm 40mm; margin: 0; }}
               html, body {{ margin: 0; padding: 0; width: 58mm; height: 40mm; font-family: Arial, sans-serif; overflow: hidden; box-sizing: border-box; }}
-              .label {{ padding: 2mm; width: 56mm; min-height: 38mm; box-sizing: border-box; }}
-              .label-title {{ font-weight: bold; font-size: 10pt; line-height: 1.2; margin-bottom: 1.5mm; word-break: break-word; }}
-              .label-meta {{ font-size: 8pt; line-height: 1.35; margin-bottom: 1mm; }}
-              .label-barcode {{ text-align: center; margin: 2mm 0; min-height: 14mm; display: flex; align-items: center; justify-content: center; }}
-              .label-barcode img {{ max-width: 54mm; height: auto; }}
-              .label-footer {{ font-size: 9pt; text-align: center; margin-top: 1mm; letter-spacing: 0.5px; }}
+              .label {{ padding: 2mm; width: 56mm; min-height: 38mm; max-height: 40mm; box-sizing: border-box; overflow: hidden; page-break-inside: avoid; break-inside: avoid; }}
+              .label-title {{ font-weight: bold; font-size: 9pt; line-height: 1.2; margin-bottom: 1.5mm; word-break: break-word; overflow: hidden; text-overflow: ellipsis; }}
+              .label-meta {{ font-size: 7pt; line-height: 1.35; margin-bottom: 1mm; }}
+              .label-barcode {{ text-align: center; margin: 2mm 0; min-height: 12mm; max-height: 12mm; display: flex; align-items: center; justify-content: center; }}
+              .label-barcode img {{ max-width: 54mm; max-height: 12mm; height: auto; }}
+              .label-footer {{ font-size: 8pt; text-align: center; margin-top: 1mm; letter-spacing: 0.5px; }}
             </style>
           </head>
           <body>

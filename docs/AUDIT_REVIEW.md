@@ -14,7 +14,7 @@
 | Шифрование API-ключей (Fernet) | ✅ | crypto.py, ENCRYPTION_KEY в env, encrypt/decrypt при записи/чтении. Обратная совместимость при пустом ключе. |
 | Фикс теста S3 HEAD | ✅ | Мок FILE_PUBLIC_BASE_URL в test_storage.py. |
 | Миграция FBO (order_id, fbo_supply_id) | ✅ | 0023: fbo_supply_id в shipment_requests, order_id nullable в fbo_supplies. |
-| WB/Ozon API: create_supply, get_barcodes | ✅ | wb_api: create_supply(), get_barcodes(); ozon_api: create_supply_draft(), get_supply_barcodes(). |
+| WB/Ozon API: create_supply, get_barcodes | ✅ | wb_api: create_supply(), get_barcodes() (API v3, marketplace-api.wildberries.ru); ozon_api: create_supply_draft(), get_supply_barcodes(). |
 | Эндпоинты /fbo/* | ✅ | list, get, create, sync, import-barcodes. Доступ по компании (владелец или admin/warehouse). |
 | Авто-создание FBOSupply при отгрузке WB/Ozon | ✅ | В create_shipment_request при dest WB/Ozon создаётся FBOSupply, проставляется fbo_supply_id. |
 | UI: useFBOSupplies, ShippingPage, FBOSupplyDetail | ✅ | Хук, кнопка «FBO поставка», модалка с коробами, синхро, ручной ввод ШК. |
@@ -93,6 +93,10 @@
 
 **Риски:**
 - Реальные эндпоинты WB/Ozon (create_supply, create_supply_draft) могут отличаться по контракту — при внедрении проверить по актуальной документации и при необходимости поправить запросы/ответы.
+
+**Обновление интеграций (после аудита):**
+- WB: реализован `create_supply()`, переход на API v3 (marketplace-api.wildberries.ru), добавлен `get_supply_boxes` и `get_box_stickers`.
+- Ozon: улучшен парсинг штрихкодов в `get_supply_barcodes()` (учтены `barcodes`, `package.barcodes`, `packages[0].barcodes`).
 
 ---
 

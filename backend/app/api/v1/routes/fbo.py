@@ -127,7 +127,7 @@ async def create_fbo_supply(
         wb_key = decrypt_value(keys.wb_api_key, secret) if keys else None
         if wb_key:
             api = WildberriesAPI(api_key=wb_key)
-            external_id = await api.create_supply()
+            external_id = await api.create_supply(name="Поставка")
     elif marketplace == "ozon":
         keys_r = await db.execute(
             select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id)

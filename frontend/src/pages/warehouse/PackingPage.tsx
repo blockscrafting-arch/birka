@@ -81,7 +81,8 @@ export function PackingPage() {
       for (const p of payloads) {
         await createPacking.mutateAsync({ order_id: activeOrderId, ...p });
       }
-      setActiveOrderId(null);
+      setToast({ message: "Упаковка сохранена" });
+      setFormResetKey((k) => k + 1);
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Не удалось завершить упаковку");
     }
@@ -155,7 +156,15 @@ export function PackingPage() {
                 ) : null}
               </div>
             ) : null}
-            <PackingForm items={items} isSubmitting={createPacking.isPending} onSubmit={handleSubmit} />
+            <PackingForm
+              items={items}
+              isSubmitting={createPacking.isPending}
+              onSubmit={handleSubmit}
+              resetKey={formResetKey}
+            />
+            <Button variant="secondary" className="mt-2" onClick={() => setActiveOrderId(null)}>
+              Закрыть
+            </Button>
             <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-soft">
               <div className="text-sm font-semibold text-slate-900">Фото заявки</div>
               <div className="mt-2">

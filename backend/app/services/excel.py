@@ -120,8 +120,15 @@ def export_receiving(order_items: list[OrderItem]) -> BytesIO:
 def export_fbo_shipping(packing_records: list[PackingRecord]) -> BytesIO:
     """Export FBO shipping (packing records) to Excel."""
     try:
+        sorted_records = sorted(
+            packing_records,
+            key=lambda r: (
+                r.pallet_number if r.pallet_number is not None else 0,
+                r.box_number if r.box_number is not None else 0,
+            ),
+        )
         rows = []
-        for rec in packing_records:
+        for rec in sorted_records:
             product = rec.product
             employee = rec.employee
             rows.append(

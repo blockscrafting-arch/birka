@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
@@ -29,9 +29,10 @@ type PackingFormProps = {
   items: OrderItem[];
   isSubmitting?: boolean;
   onSubmit: (payloads: PackingFormPayload[]) => void;
+  resetKey?: number;
 };
 
-export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps) {
+export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: PackingFormProps) {
   const { items: destinations } = useDestinations();
   const [employeeId, setEmployeeId] = useState("");
   const [rows, setRows] = useState<PackingRow[]>([{ order_item_id: 0, quantity: 1 }]);
@@ -40,6 +41,15 @@ export function PackingForm({ items, isSubmitting, onSubmit }: PackingFormProps)
   const [time, setTime] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showDetailsFor, setShowDetailsFor] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (resetKey == null) return;
+    setRows([{ order_item_id: 0, quantity: 1 }]);
+    setWarehouse("");
+    setMaterials("");
+    setTime("");
+    setError(null);
+  }, [resetKey]);
 
   const updateRow = (index: number, patch: Partial<PackingRow>) => {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));

@@ -8,28 +8,37 @@ type BarcodeScannerProps = {
 
 export function BarcodeScanner({ onScan, onError }: BarcodeScannerProps) {
   const scannerId = useRef(`scanner-${Math.random().toString(36).slice(2)}`);
+  const onScanRef = useRef(onScan);
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    onScanRef.current = onScan;
+    onErrorRef.current = onError;
+  });
 
   useEffect(() => {
     const scanner = new Html5Qrcode(scannerId.current);
-    let isRunning = false;
+    let mounted = true;
+
     scanner
       .start(
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => onScan(decodedText),
-        (error) => onError?.(String(error))
+        (decodedText) => onScanRef.current(decodedText),
+        (error) => onErrorRef.current?.(String(error))
       )
       .then(() => {
-        isRunning = true;
+        if (!mounted) scanner.stop().catch(() => undefined);
       })
-      .catch((error) => onError?.(String(error)));
+      .catch((error) => {
+        if (mounted) onErrorRef.current?.(String(error));
+      });
 
     return () => {
-      if (isRunning) {
-        scanner.stop().catch(() => undefined);
-      }
+      mounted = false;
+      scanner.stop().catch(() => undefined);
     };
-  }, [onScan, onError]);
+  }, []);
 
   return <div id={scannerId.current} className="rounded border bg-white p-2" />;
 }

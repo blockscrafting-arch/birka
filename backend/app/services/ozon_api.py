@@ -97,5 +97,10 @@ class OzonAPI:
         order = await self.get_supply_order(supply_id)
         if not order or not isinstance(order, dict):
             return []
-        barcodes = order.get("barcodes") or order.get("package", {}).get("barcodes") or []
-        return [str(b) for b in barcodes] if isinstance(barcodes, list) else []
+        barcodes = order.get("barcodes") or order.get("package", {}).get("barcodes")
+        if barcodes is None:
+            packages = order.get("packages") or []
+            barcodes = packages[0].get("barcodes") if packages else []
+        if not barcodes or not isinstance(barcodes, list):
+            barcodes = []
+        return [str(b) for b in barcodes]

@@ -193,7 +193,7 @@ async def create_shipment_request(
                 wb_key = decrypt_value(keys.wb_api_key, secret)
                 if wb_key:
                     api = WildberriesAPI(api_key=wb_key)
-                    external_id = await api.create_supply()
+                    external_id = await api.create_supply(name="Поставка")
             elif dest == "OZON" and keys:
                 ozon_cid = decrypt_value(keys.ozon_client_id, secret)
                 ozon_key = decrypt_value(keys.ozon_api_key, secret)

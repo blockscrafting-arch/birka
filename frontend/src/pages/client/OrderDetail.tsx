@@ -97,15 +97,27 @@ export function OrderDetail() {
           <div className="text-sm font-semibold text-slate-900">Упаковка</div>
           <div className="mt-2 space-y-2 text-sm text-slate-700">
             {packingRecords.map((r) => (
-              <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                <span>{r.product_name}</span>
-                <span className="text-xs text-slate-500">
-                  {r.quantity} шт.
-                  {r.pallet_number != null ? ` · Паллета ${r.pallet_number}` : ""}
-                  {r.box_number != null ? ` · Короб ${r.box_number}` : ""}
-                  {r.warehouse ? ` · ${r.warehouse}` : ""}
-                  {r.box_barcode ? ` · ШК короба ${r.box_barcode}` : ""}
-                </span>
+              <div key={r.id} className="border-b border-slate-100 pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>{r.product_name}</span>
+                  <span className="text-xs text-slate-500">
+                    {r.quantity} шт.
+                    {r.pallet_number != null ? ` · Паллета ${r.pallet_number}` : ""}
+                    {r.box_number != null ? ` · Короб ${r.box_number}` : ""}
+                    {r.warehouse ? ` · ${r.warehouse}` : ""}
+                    {r.box_barcode ? ` · ШК короба ${r.box_barcode}` : ""}
+                  </span>
+                </div>
+                {(r.materials_used || r.time_spent_minutes != null) ? (
+                  <div
+                    className="mt-1 max-w-full truncate text-xs text-slate-400"
+                    title={[r.materials_used ? `Материалы: ${r.materials_used}` : "", r.time_spent_minutes != null ? `Время: ${r.time_spent_minutes} мин` : ""].filter(Boolean).join(" · ")}
+                  >
+                    {r.materials_used ? `Материалы: ${r.materials_used}` : ""}
+                    {r.materials_used && r.time_spent_minutes ? " · " : ""}
+                    {r.time_spent_minutes != null ? `Время: ${r.time_spent_minutes} мин` : ""}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
