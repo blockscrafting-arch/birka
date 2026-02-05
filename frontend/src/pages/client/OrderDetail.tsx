@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { PhotoGallery } from "../../components/shared/PhotoGallery";
 import { PhotoUpload } from "../../components/shared/PhotoUpload";
@@ -15,6 +15,7 @@ import { useOrderPackingRecords } from "../../hooks/useOrders";
 import { apiClient } from "../../services/api";
 
 export function OrderDetail() {
+  const navigate = useNavigate();
   const { orderId } = useParams();
   const { items: companies = [] } = useCompanies();
   const { companyId, setCompanyId } = useActiveCompany();
@@ -44,14 +45,22 @@ export function OrderDetail() {
 
   if (!order) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
-        Заявка не найдена или недоступна.
+      <div className="space-y-4">
+        <Button variant="secondary" onClick={() => navigate("/client/orders")} aria-label="Назад к списку заявок">
+          Назад
+        </Button>
+        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
+          Заявка не найдена или недоступна.
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      <Button variant="secondary" onClick={() => navigate("/client/orders")} aria-label="Назад к списку заявок">
+        Назад
+      </Button>
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
         <div className="flex flex-wrap items-center justify-between gap-2">
