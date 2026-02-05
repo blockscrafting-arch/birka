@@ -1,4 +1,5 @@
 """FastAPI application entrypoint. See project docs in /docs."""
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -15,6 +16,7 @@ from app.core.limiter import limiter
 from app.core.logging import configure_logging, logger
 from app.db.models.user import User
 from app.db.session import get_db, AsyncSessionLocal
+from app.services.shipment_scheduler import run_shipment_scheduler
 
 
 async def sync_roles_on_startup() -> None:
@@ -43,8 +45,15 @@ async def lifespan(app: FastAPI):
     else:
         await sync_roles_on_startup()
     logger.info("app_initialized")
+    scheduler_task = asyncio.create_task(
+        run_shipment_scheduler(interval_seconds=settings.SHIPMENT_SCHEDULER_INTERVAL_SECONDS)
+    )
     yield
-    # shutdown (nothing to do)
+    scheduler_task.cancel()
+    try:
+        await scheduler_task
+    except asyncio.CancelledError:
+        pass
 
 
 def create_app() -> FastAPI:

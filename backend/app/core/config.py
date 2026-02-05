@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # Database
     POSTGRES_DSN: str = "postgresql+asyncpg://user:pass@localhost:5432/birka"
 
+    # Shipment scheduler: интервал проверки просроченных отгрузок (секунды)
+    SHIPMENT_SCHEDULER_INTERVAL_SECONDS: int = 600
+
     # CORS (comma-separated origins)
     CORS_ORIGINS: str = "*"
 
