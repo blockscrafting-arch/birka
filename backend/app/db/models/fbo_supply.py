@@ -34,7 +34,8 @@ class FBOSupplyBox(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     supply_id: Mapped[int] = mapped_column(ForeignKey("fbo_supplies.id"), index=True)
     box_number: Mapped[int] = mapped_column(Integer)
-    external_barcode: Mapped[str | None] = mapped_column(String(128))  # WB_xxx etc
+    external_box_id: Mapped[str | None] = mapped_column(String(128))  # WB-TRBX-xxx etc
+    external_barcode: Mapped[str | None] = mapped_column(String(128))  # сканируемый ШК/QR
 
     supply = relationship("FBOSupply", back_populates="boxes")
     items = relationship("FBOSupplyItem", back_populates="box", cascade="all, delete-orphan")

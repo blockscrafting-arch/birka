@@ -13,6 +13,8 @@ from app.db.models.fbo_supply import FBOSupply, FBOSupplyBox
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.fbo import (
+    BoxStickersOut,
+    BoxStickerOut,
     FBOSupplyCreate,
     FBOSupplyImportBarcodes,
     FBOSupplyList,
@@ -119,15 +121,19 @@ async def create_fbo_supply(
 
     external_id: str | None = None
     if marketplace == "wb":
-        keys_r = await db.execute(
-            select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id)
-        )
-        keys = keys_r.scalar_one_or_none()
-        secret = settings.ENCRYPTION_KEY or ""
-        wb_key = decrypt_value(keys.wb_api_key, secret) if keys else None
-        if wb_key:
-            api = WildberriesAPI(api_key=wb_key)
-            external_id = await api.create_supply(name="Поставка")
+        box_count = getattr(payload, "box_count", None) or 0
+        if box_count > 0:
+            keys_r = await db.execute(
+                select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id)
+            )
+            keys = keys_r.scalar_one_or_none()
+            secret = settings.ENCRYPTION_KEY or ""
+            wb_key = decrypt_value(keys.wb_api_key, secret) if keys else None
+            if wb_key:
+                api = WildberriesAPI(api_key=wb_key)
+                external_id = await api.create_supply(name="Поставка")
+                if external_id:
+                    await api.create_supply_boxes(external_id, box_count)
     elif marketplace == "ozon":
         keys_r = await db.execute(
             select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id)
@@ -180,13 +186,17 @@ async def sync_fbo_supply_barcodes(
     )
     keys = keys_r.scalar_one_or_none()
     secret = settings.ENCRYPTION_KEY or ""
-    barcodes: list[str] = []
+    boxes_data: list[tuple[str | None, str]] = []  # (external_box_id, external_barcode)
     if supply.marketplace == "wb":
         wb_key = decrypt_value(keys.wb_api_key, secret) if keys else None
         if not wb_key:
             raise HTTPException(status_code=400, detail="Укажите API-ключ WB для компании")
         api = WildberriesAPI(api_key=wb_key)
-        barcodes = await api.get_barcodes(supply.external_supply_id)
+        wb_boxes = await api.get_supply_boxes(supply.external_supply_id)
+        for b in wb_boxes:
+            bid = b.get("id")
+            if bid:
+                boxes_data.append((str(bid), str(bid)))
     elif supply.marketplace == "ozon":
         ozon_cid = decrypt_value(keys.ozon_client_id, secret) if keys else None
         ozon_key = decrypt_value(keys.ozon_api_key, secret) if keys else None
@@ -199,17 +209,19 @@ async def sync_fbo_supply_barcodes(
             sid = 0
         if sid:
             barcodes = await api.get_supply_barcodes(sid)
+            for b in barcodes:
+                if b:
+                    boxes_data.append((None, b.strip()))
 
     for box in supply.boxes:
         await db.delete(box)
     await db.flush()
-    for i, barcode in enumerate(barcodes):
-        if not barcode:
-            continue
+    for i, (ext_box_id, ext_barcode) in enumerate(boxes_data):
         box = FBOSupplyBox(
             supply_id=supply.id,
             box_number=i + 1,
-            external_barcode=barcode.strip(),
+            external_box_id=ext_box_id,
+            external_barcode=ext_barcode,
         )
         db.add(box)
     await db.commit()
@@ -218,6 +230,60 @@ async def sync_fbo_supply_barcodes(
     )
     supply = result2.unique().scalar_one()
     return _supply_to_out(supply)
+
+
+@router.post("/supplies/{supply_id}/box-stickers", response_model=BoxStickersOut)
+async def get_fbo_box_stickers(
+    supply_id: int,
+    fmt: str = Query("png", description="Формат стикера: png, svg, zplv, zplh"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BoxStickersOut:
+    """Get box stickers for WB supply (for print). Returns base64 images."""
+    if fmt not in ("png", "svg", "zplv", "zplh"):
+        raise HTTPException(status_code=400, detail="Формат стикера: png, svg, zplv или zplh")
+    result = await db.execute(
+        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
+    )
+    supply = result.unique().scalar_one_or_none()
+    if not supply:
+        raise HTTPException(status_code=404, detail="Поставка не найдена")
+    await _get_company_or_404(db, supply.company_id, current_user)
+    if supply.marketplace != "wb" or not supply.external_supply_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Стикеры коробов доступны только для поставок WB с созданной поставкой в кабинете",
+        )
+    trbx_ids = [b.external_box_id for b in supply.boxes if b.external_box_id]
+    if not trbx_ids:
+        return BoxStickersOut(stickers=[])
+    keys_r = await db.execute(
+        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == supply.company_id)
+    )
+    keys = keys_r.scalar_one_or_none()
+    if not keys or not keys.wb_api_key:
+        raise HTTPException(status_code=400, detail="Укажите API-ключ WB для компании")
+    secret = settings.ENCRYPTION_KEY or ""
+    wb_key = decrypt_value(keys.wb_api_key, secret)
+    if not wb_key:
+        raise HTTPException(status_code=400, detail="Укажите API-ключ WB для компании")
+    api = WildberriesAPI(api_key=wb_key)
+    raw = await api.get_box_stickers(supply.external_supply_id, trbx_ids, fmt=fmt)
+    content_type = "image/png" if fmt == "png" else "image/svg+xml" if fmt == "svg" else "application/octet-stream"
+    stickers = []
+    for s in raw or []:
+        trbx_id = s.get("trbxId") or s.get("trbx_id") or ""
+        barcode = s.get("barcode")
+        file_b64 = s.get("file") or ""
+        stickers.append(
+            BoxStickerOut(
+                trbx_id=trbx_id,
+                barcode=barcode,
+                file_base64=file_b64,
+                content_type=content_type,
+            )
+        )
+    return BoxStickersOut(stickers=stickers)
 
 
 @router.post("/supplies/{supply_id}/import-barcodes", response_model=FBOSupplyOut)
@@ -243,6 +309,7 @@ async def import_fbo_barcodes(
         box = FBOSupplyBox(
             supply_id=supply.id,
             box_number=i + 1,
+            external_box_id=None,
             external_barcode=b,
         )
         db.add(box)

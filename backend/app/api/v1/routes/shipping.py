@@ -189,11 +189,14 @@ async def create_shipment_request(
             secret = settings.ENCRYPTION_KEY or ""
             external_id: str | None = None
             marketplace = dest.lower()
-            if dest == "WB" and keys:
+            box_count = getattr(payload, "box_count", None) or 0
+            if dest == "WB" and keys and box_count > 0:
                 wb_key = decrypt_value(keys.wb_api_key, secret)
                 if wb_key:
                     api = WildberriesAPI(api_key=wb_key)
                     external_id = await api.create_supply(name="Поставка")
+                    if external_id:
+                        await api.create_supply_boxes(external_id, box_count)
             elif dest == "OZON" and keys:
                 ozon_cid = decrypt_value(keys.ozon_client_id, secret)
                 ozon_key = decrypt_value(keys.ozon_api_key, secret)

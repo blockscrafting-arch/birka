@@ -9,6 +9,7 @@ class FBOSupplyBoxOut(BaseModel):
     id: int
     supply_id: int
     box_number: int
+    external_box_id: str | None
     external_barcode: str | None
 
     class Config:
@@ -36,6 +37,7 @@ class FBOSupplyCreate(BaseModel):
     company_id: int
     order_id: int | None = None
     marketplace: str = Field(..., pattern="^(wb|ozon)$", description="wb или ozon")
+    box_count: int | None = Field(None, ge=0, le=1000, description="Число коробов (WB: создаёт поставку и короба в API)")
 
 
 class FBOSupplyImportBarcodes(BaseModel):
@@ -49,3 +51,16 @@ class FBOSupplyList(BaseModel):
     total: int
     page: int
     limit: int
+
+
+class BoxStickerOut(BaseModel):
+    """Single box sticker (WB)."""
+    trbx_id: str
+    barcode: str | None
+    file_base64: str
+    content_type: str = "image/png"
+
+
+class BoxStickersOut(BaseModel):
+    """Box stickers response."""
+    stickers: list[BoxStickerOut]

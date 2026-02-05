@@ -13,6 +13,7 @@ class ShipmentRequestCreate(BaseModel):
     destination_comment: str | None = None
     warehouse_name: str | None = None
     delivery_date: date | None = None
+    box_count: int | None = None  # WB: число коробов для авто-создания поставки и коробов
 
 
 class ShipmentRequestOut(BaseModel):

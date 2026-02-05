@@ -56,6 +56,52 @@ class WildberriesAPI:
             logger.warning("wb_api_supplies_failed", error=str(e))
             return None
 
+    async def create_supply_boxes(self, supply_id: str, amount: int) -> list[str]:
+        """Create boxes in a supply. POST /api/v3/supplies/{supplyId}/trbx. Returns list of trbx IDs."""
+        if amount < 1 or amount > 1000:
+            return []
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.post(
+                    f"{SUPPLIES_BASE_URL}/api/v3/supplies/{supply_id}/trbx",
+                    headers=self._headers,
+                    json={"amount": amount},
+                )
+                if r.status_code in (401, 403):
+                    logger.warning("wb_api_create_boxes_unauthorized", status=r.status_code)
+                    return []
+                r.raise_for_status()
+                data = r.json() or {}
+                ids = data.get("trbxIds") or []
+                return [str(i) for i in ids]
+        except Exception as e:
+            logger.warning(
+                "wb_api_create_boxes_failed", supply_id=supply_id, amount=amount, error=str(e)
+            )
+            return []
+
+    async def add_order_to_supply(self, supply_id: str, order_id: int) -> bool:
+        """Add order to supply (moves to confirm). PATCH /api/v3/supplies/{supplyId}/orders/{orderId}."""
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.patch(
+                    f"{SUPPLIES_BASE_URL}/api/v3/supplies/{supply_id}/orders/{order_id}",
+                    headers=self._headers,
+                )
+                if r.status_code in (401, 403):
+                    logger.warning("wb_api_add_order_unauthorized", status=r.status_code)
+                    return False
+                r.raise_for_status()
+                return True
+        except Exception as e:
+            logger.warning(
+                "wb_api_add_order_failed",
+                supply_id=supply_id,
+                order_id=order_id,
+                error=str(e),
+            )
+            return False
+
     async def get_supply_boxes(self, supply_id: str) -> list[dict]:
         """Get boxes (trbx) for a supply. GET /api/v3/supplies/{supplyId}/trbx."""
         try:

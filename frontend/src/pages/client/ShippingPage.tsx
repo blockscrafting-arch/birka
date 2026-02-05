@@ -15,6 +15,7 @@ import {
   useFBOSupply,
   useFBOImportBarcodes,
   useFBOSyncBarcodes,
+  useFBOBoxStickers,
 } from "../../hooks/useFBOSupplies";
 import {
   useOrdersReadyForShipping,
@@ -50,6 +51,7 @@ export function ShippingPage() {
   const [warehouseName, setWarehouseName] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
   const [comment, setComment] = useState("");
+  const [boxCount, setBoxCount] = useState<number | "">("");
   const [fboSupplyId, setFboSupplyId] = useState<number | null>(null);
 
   const supplyBarcodeInputRef = useRef<HTMLInputElement>(null);
@@ -95,6 +97,7 @@ export function ShippingPage() {
         destination_comment: comment.trim() || undefined,
         warehouse_name: warehouseName.trim() || undefined,
         delivery_date: deliveryDate || undefined,
+        box_count: boxCount === "" ? undefined : Number(boxCount),
       });
       setOpen(false);
       setComment("");
@@ -237,6 +240,17 @@ export function ShippingPage() {
             <option value="OZON">OZON</option>
             <option value="Другое">Другое</option>
           </Select>
+
+          {(destinationType === "WB" || destinationType === "OZON") ? (
+            <Input
+              label="Число коробов (WB: авто-создание поставки и коробов)"
+              type="number"
+              min={0}
+              placeholder="0 = не создавать в маркетплейсе"
+              value={boxCount === "" ? "" : String(boxCount)}
+              onChange={(e) => setBoxCount(e.target.value === "" ? "" : parseInt(e.target.value, 10) || 0)}
+            />
+          ) : null}
 
           {destinationType === "Другое" ? (
             <Input
@@ -384,8 +398,26 @@ function FBOSupplyDetailModal({
   const { data: supply, isLoading } = useFBOSupply(supplyId);
   const sync = useFBOSyncBarcodes(supplyId);
   const importBarcodes = useFBOImportBarcodes(supplyId);
+  const boxStickers = useFBOBoxStickers(supplyId);
   const [barcodeText, setBarcodeText] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [stickersDataUrl, setStickersDataUrl] = useState<string[] | null>(null);
+
+  const handleGetStickers = () => {
+    setActionError(null);
+    setStickersDataUrl(null);
+    boxStickers.mutate("png", {
+      onSuccess: (data) => {
+        const urls = (data.stickers ?? [])
+          .filter((s) => s.file_base64)
+          .map((s) => `data:${s.content_type};base64,${s.file_base64}`);
+        setStickersDataUrl(urls);
+      },
+      onError: (err) => {
+        setActionError(err instanceof Error ? err.message : "Ошибка загрузки стикеров");
+      },
+    });
+  };
 
   const handleImport = () => {
     const barcodes = barcodeText
@@ -424,18 +456,29 @@ function FBOSupplyDetailModal({
               Маркетплейс: {supply.marketplace.toUpperCase()} · Статус: {supply.status}
               {supply.external_supply_id ? ` · ID: ${supply.external_supply_id}` : null}
             </div>
+            {!supply.external_supply_id && (
+              <p className="text-xs text-amber-700 bg-amber-50 rounded p-2">
+                Создайте поставку в кабинете WB/Ozon или укажите число коробов при создании отгрузки для авто-создания.
+              </p>
+            )}
             <div className="text-xs font-medium text-slate-600">Короба ({supply.boxes.length})</div>
             <ul className="max-h-32 overflow-y-auto rounded border border-slate-200 bg-slate-50 p-2 text-xs">
               {supply.boxes.length === 0 ? (
-                <li className="text-slate-500">Нет штрихкодов</li>
+                <li className="text-slate-500">Нет штрихкодов. Синхронизируйте или введите вручную.</li>
               ) : (
                 supply.boxes.map((b) => (
                   <li key={b.id}>
-                    №{b.box_number}: {b.external_barcode ?? "—"}
+                    №{b.box_number}: {b.external_box_id ? `ID: ${b.external_box_id}` : ""}
+                    {b.external_box_id && b.external_barcode ? " · " : ""}
+                    {b.external_barcode ? `ШК: ${b.external_barcode}` : ""}
+                    {!b.external_box_id && !b.external_barcode ? "—" : null}
                   </li>
                 ))
               )}
             </ul>
+            {actionError ? (
+              <p className="text-xs text-red-600 bg-red-50 rounded p-2">{actionError}</p>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="secondary"
@@ -443,9 +486,30 @@ function FBOSupplyDetailModal({
                 disabled={sync.isPending || !supply.external_supply_id}
                 onClick={handleSync}
               >
-                {sync.isPending ? "Синхронизация..." : "Синхронизировать ШК из маркетплейса"}
+                {sync.isPending ? "Синхронизация..." : "Синхронизировать короба из маркетплейса"}
               </Button>
+              {supply.marketplace === "wb" &&
+                supply.boxes.some((b) => b.external_box_id) && (
+                  <Button
+                    variant="secondary"
+                    className="text-xs py-1.5 px-2"
+                    disabled={boxStickers.isPending}
+                    onClick={handleGetStickers}
+                  >
+                    {boxStickers.isPending ? "Загрузка..." : "Получить стикеры коробов"}
+                  </Button>
+                )}
             </div>
+            {stickersDataUrl && stickersDataUrl.length > 0 && (
+              <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                <div className="text-xs font-medium text-slate-600 mb-1">Стикеры для печати</div>
+                <div className="flex flex-wrap gap-2">
+                  {stickersDataUrl.map((url, i) => (
+                    <img key={i} src={url} alt={`Стикер ${i + 1}`} className="max-h-24 object-contain" />
+                  ))}
+                </div>
+              </div>
+            )}
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">
                 Ручной ввод ШК (по одному в строку)

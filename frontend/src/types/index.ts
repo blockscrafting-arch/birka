@@ -126,6 +126,7 @@ export type FBOSupplyBox = {
   id: number;
   supply_id: number;
   box_number: number;
+  external_box_id: string | null;
   external_barcode: string | null;
 };
 

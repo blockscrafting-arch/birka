@@ -36,6 +36,7 @@ export type FBOSupplyCreatePayload = {
   company_id: number;
   order_id?: number;
   marketplace: string;
+  box_count?: number;
 };
 
 export function useFBOCreate(companyId?: number) {
@@ -76,5 +77,24 @@ export function useFBOImportBarcodes(supplyId: number | null) {
       queryClient.invalidateQueries({ queryKey: ["fbo", "supply", supplyId] });
       queryClient.invalidateQueries({ queryKey: ["fbo"] });
     },
+  });
+}
+
+export type BoxSticker = {
+  trbx_id: string;
+  barcode: string | null;
+  file_base64: string;
+  content_type: string;
+};
+
+export type BoxStickersResponse = { stickers: BoxSticker[] };
+
+export function useFBOBoxStickers(supplyId: number | null) {
+  return useMutation({
+    mutationFn: (fmt?: string) =>
+      apiClient.api<BoxStickersResponse>(
+        `/fbo/supplies/${supplyId}/box-stickers${fmt ? `?fmt=${fmt}` : ""}`,
+        { method: "POST" }
+      ),
   });
 }
