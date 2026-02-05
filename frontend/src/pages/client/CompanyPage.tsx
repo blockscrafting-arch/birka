@@ -28,6 +28,7 @@ export function CompanyPage() {
     ozon_api_key: "",
   });
   const [apiKeysError, setApiKeysError] = useState<string | null>(null);
+  const [guideSending, setGuideSending] = useState(false);
   const { data: apiKeysData, isLoading: apiKeysLoading, update: updateApiKeys } = useCompanyAPIKeys(apiKeysCompanyId);
 
   const companies = items;
@@ -104,6 +105,21 @@ export function CompanyPage() {
       setToast({ message: "Не удалось отправить договор", variant: "error" });
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const handleSendGuide = async () => {
+    setApiKeysError(null);
+    setGuideSending(true);
+    try {
+      await apiClient.api("/companies/api-keys-guide/send", { method: "POST" });
+      setToast({ message: "Инструкция отправлена в чат с ботом" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Не удалось отправить инструкцию";
+      setApiKeysError(msg);
+      setToast({ message: msg, variant: "error" });
+    } finally {
+      setGuideSending(false);
     }
   };
 
@@ -212,6 +228,13 @@ export function CompanyPage() {
             <div className="text-sm text-slate-500">Загрузка...</div>
           ) : (
             <>
+              <Button
+                variant="ghost"
+                disabled={guideSending}
+                onClick={handleSendGuide}
+              >
+                {guideSending ? "Отправка..." : "Где взять ключи?"}
+              </Button>
               <Input
                 label="Ключ Wildberries"
                 type="password"

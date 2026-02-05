@@ -24,13 +24,16 @@ from app.schemas.company import (
     CompanyUpdate,
 )
 from app.schemas.company import _mask_key
+from app.core.config import settings
+from app.core.crypto import decrypt_value, encrypt_value
 from app.core.logging import logger
 from app.services.contract_template_service import render_contract_pdf_from_docx_template
 from app.services.dadata import fetch_bank_by_bik, fetch_company_by_inn
 from app.services.pdf import ContractData, render_contract_pdf
 from app.services.files import content_disposition
 from app.services.s3 import S3Service
-from app.services.telegram import send_document
+from app.services.api_keys_guide import API_KEYS_GUIDE_HTML
+from app.services.telegram import send_document, send_notification
 
 router = APIRouter()
 
@@ -117,6 +120,27 @@ async def list_companies(
     result = await db.execute(base_query.offset(offset).limit(limit))
     items = list(result.scalars().all())
     return CompanyList(items=items, total=total, page=page, limit=limit)
+
+
+@router.post("/api-keys-guide/send")
+async def send_api_keys_guide(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Send API keys (WB/Ozon) instruction to the user in the chat with the bot."""
+    telegram_id = current_user.telegram_id
+    if not telegram_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Не удалось отправить инструкцию: пользователь не привязан к Telegram.",
+        )
+    sent = await send_notification(telegram_id, API_KEYS_GUIDE_HTML, parse_mode="HTML")
+    if not sent:
+        logger.warning("api_keys_guide_send_failed", user_id=current_user.id, telegram_id=telegram_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Не удалось отправить сообщение в Telegram. Попробуйте позже.",
+        )
+    return {"sent": True}
 
 
 @router.patch("/{company_id}", response_model=CompanyOut)
