@@ -77,6 +77,28 @@ export function useWarehouse() {
       }),
   });
 
+  const validateBarcodeInOrder = useMutation({
+    mutationFn: (payload: { barcode: string; order_id: number }) =>
+      apiClient.api<{
+        found: boolean;
+        message: string;
+        order_item?: {
+          id: number;
+          product_id: number;
+          product_name: string;
+          planned_qty: number;
+          received_qty: number;
+          packed_qty: number;
+          defect_qty: number;
+        };
+        remaining_to_receive: number;
+        remaining_to_pack: number;
+      }>("/warehouse/barcode/validate-in-order", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+  });
+
   const completeOrder = useMutation({
     mutationFn: (orderId: number) =>
       apiClient.api(`/warehouse/order/${orderId}/complete`, { method: "POST" }),
