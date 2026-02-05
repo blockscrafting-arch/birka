@@ -100,6 +100,18 @@ export function AIPage() {
 
   const renderMessage = (message: { role: "user" | "assistant"; text: string }, index: number) => {
     const isUser = message.role === "user";
+    const raw = message.text ?? "";
+    const normalized =
+      isUser
+        ? raw
+        : (() => {
+            const match = raw.match(/\n{2,}/);
+            return !match || match.index === undefined
+              ? raw.replace(/\n{2,}/g, "\n")
+              : raw.slice(0, match.index).trimEnd() +
+                  "\n\n" +
+                  raw.slice(match.index + match[0].length).replace(/\n{2,}/g, "\n");
+          })();
     return (
       <div
         key={`${message.role}-${index}`}
@@ -127,7 +139,7 @@ export function AIPage() {
         </div>
         <div className="max-w-none break-words text-sm leading-snug [&_p]:my-0 [&_ul]:my-1">
           <ReactMarkdown remarkPlugins={[remarkBreaksModule.default]}>
-            {(message.text ?? "").replace(/\n{2,}/g, "\n")}
+            {normalized}
           </ReactMarkdown>
         </div>
       </div>
