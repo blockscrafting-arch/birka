@@ -30,5 +30,7 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_BYTES: int = 20 * 1024 * 1024
     ADMIN_TELEGRAM_IDS: list[int] = []
 
+    ENCRYPTION_KEY: str = ""  # Fernet base64 url-safe key for API keys storage
+
 
 settings = Settings()

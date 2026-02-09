@@ -13,6 +13,8 @@ type ProductFormProps = {
     barcode?: string;
     wb_article?: string;
     wb_url?: string;
+    ozon_article?: string;
+    ozon_url?: string;
     packing_instructions?: string;
   };
   isSubmitting?: boolean;
@@ -25,6 +27,8 @@ type ProductFormProps = {
     barcode?: string;
     wb_article?: string;
     wb_url?: string;
+    ozon_article?: string;
+    ozon_url?: string;
     packing_instructions?: string;
     photo?: File | null;
   }) => void;
@@ -38,6 +42,8 @@ export function ProductForm({ initial, isSubmitting, submitLabel, onSubmit }: Pr
   const [barcode, setBarcode] = useState("");
   const [article, setArticle] = useState("");
   const [wbUrl, setWbUrl] = useState("");
+  const [ozonArticle, setOzonArticle] = useState("");
+  const [ozonUrl, setOzonUrl] = useState("");
   const [packing, setPacking] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
   const [errors, setErrors] = useState<{ name?: string }>({});
@@ -50,6 +56,8 @@ export function ProductForm({ initial, isSubmitting, submitLabel, onSubmit }: Pr
     setBarcode(initial?.barcode ?? "");
     setArticle(initial?.wb_article ?? "");
     setWbUrl(initial?.wb_url ?? "");
+    setOzonArticle(initial?.ozon_article ?? "");
+    setOzonUrl(initial?.ozon_url ?? "");
     setPacking(initial?.packing_instructions ?? "");
     setPhoto(null);
     setErrors({});
@@ -73,6 +81,8 @@ export function ProductForm({ initial, isSubmitting, submitLabel, onSubmit }: Pr
           barcode: barcode.trim() || undefined,
           wb_article: article.trim() || undefined,
           wb_url: wbUrl.trim() || undefined,
+          ozon_article: ozonArticle.trim() || undefined,
+          ozon_url: ozonUrl.trim() || undefined,
           packing_instructions: packing.trim() || undefined,
           photo,
         });
@@ -85,6 +95,8 @@ export function ProductForm({ initial, isSubmitting, submitLabel, onSubmit }: Pr
       <Input label="Баркод" value={barcode} onChange={(event) => setBarcode(event.target.value)} />
       <Input label="Артикул WB" value={article} onChange={(event) => setArticle(event.target.value)} />
       <Input label="Ссылка WB" value={wbUrl} onChange={(event) => setWbUrl(event.target.value)} />
+      <Input label="Артикул Ozon" value={ozonArticle} onChange={(event) => setOzonArticle(event.target.value)} />
+      <Input label="Ссылка Ozon" value={ozonUrl} onChange={(event) => setOzonUrl(event.target.value)} />
       <Input
         label="ТЗ на упаковку"
         value={packing}

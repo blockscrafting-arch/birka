@@ -27,3 +27,5 @@ class Company(Base):
     user = relationship("User", back_populates="companies")
     products = relationship("Product", back_populates="company")
     orders = relationship("Order", back_populates="company")
+    api_keys = relationship("CompanyAPIKeys", back_populates="company", uselist=False)
+    fbo_supplies = relationship("FBOSupply", back_populates="company")

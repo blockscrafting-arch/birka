@@ -14,6 +14,8 @@ export type Product = {
   barcode?: string;
   wb_article?: string;
   wb_url?: string;
+  ozon_article?: string;
+  ozon_url?: string;
   packing_instructions?: string;
   stock_quantity: number;
   defect_quantity: number;

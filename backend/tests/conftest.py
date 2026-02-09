@@ -1,9 +1,13 @@
 """Test fixtures."""
 import asyncio
+import os
 from datetime import datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
+
+# Set ENCRYPTION_KEY before app imports so API-keys tests can encrypt/decrypt (valid 32-byte base64url)
+os.environ.setdefault("ENCRYPTION_KEY", "dGhpc19pc19hXzMyX2J5dGVfa2V5X2Zvcl90ZXN0cw==")
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 

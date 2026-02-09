@@ -20,7 +20,7 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
             Закрыть
           </button>
         </div>
-        {children}
+        <div className="max-h-[80vh] overflow-y-auto pr-1">{children}</div>
       </div>
     </div>
   );

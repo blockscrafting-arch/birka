@@ -13,6 +13,8 @@ class ProductCreate(BaseModel):
     barcode: str | None = None
     wb_article: str | None = None
     wb_url: str | None = None
+    ozon_article: str | None = None
+    ozon_url: str | None = None
     packing_instructions: str | None = None
 
 
@@ -26,6 +28,8 @@ class ProductUpdate(BaseModel):
     barcode: str | None = None
     wb_article: str | None = None
     wb_url: str | None = None
+    ozon_article: str | None = None
+    ozon_url: str | None = None
     packing_instructions: str | None = None
 
 
@@ -41,6 +45,8 @@ class ProductOut(BaseModel):
     barcode: str | None
     wb_article: str | None
     wb_url: str | None
+    ozon_article: str | None
+    ozon_url: str | None
     packing_instructions: str | None
     stock_quantity: int
     defect_quantity: int

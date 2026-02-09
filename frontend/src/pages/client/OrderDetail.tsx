@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { PhotoGallery } from "../../components/shared/PhotoGallery";
@@ -7,6 +7,7 @@ import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
 import { useOrders } from "../../hooks/useOrders";
 import { useOrderItems } from "../../hooks/useOrderItems";
+import { apiClient } from "../../services/api";
 
 export function OrderDetail() {
   const { orderId } = useParams();
@@ -16,12 +17,29 @@ export function OrderDetail() {
   const { data } = useOrders(activeCompanyId ?? undefined);
   const order = useMemo(() => data?.find((item) => item.id === Number(orderId)), [data, orderId]);
   const { data: items = [] } = useOrderItems(order?.id);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [photosError, setPhotosError] = useState<string | null>(null);
+  const [photosLoading, setPhotosLoading] = useState(false);
 
   useEffect(() => {
     if (!companyId && companies.length > 0) {
       setCompanyId(companies[0].id);
     }
   }, [companies, companyId, setCompanyId]);
+
+  useEffect(() => {
+    if (!order?.id) return;
+    setPhotosLoading(true);
+    setPhotosError(null);
+    apiClient
+      .api<{ url: string }[]>(`/orders/${order.id}/photos`)
+      .then((data) => setPhotos(data.map((photo) => photo.url)))
+      .catch((err) => {
+        setPhotosError(err instanceof Error ? err.message : "Не удалось загрузить фото заказа");
+        setPhotos([]);
+      })
+      .finally(() => setPhotosLoading(false));
+  }, [order?.id]);
 
   if (!order) {
     return (
@@ -64,7 +82,9 @@ export function OrderDetail() {
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
         <div className="text-sm font-semibold text-slate-100">Фото</div>
         <div className="mt-2">
-          <PhotoGallery photos={[]} />
+          {photosLoading ? <div className="text-sm text-slate-400">Загрузка фото...</div> : null}
+          {photosError ? <div className="text-sm text-rose-300">{photosError}</div> : null}
+          {!photosLoading && !photosError ? <PhotoGallery photos={photos} /> : null}
         </div>
       </div>
     </div>

@@ -4,7 +4,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_roles
-from app.db.models.company import Company
 from app.db.models.order import Order, OrderItem
 from app.db.models.packing_record import PackingRecord
 from app.db.models.product import Product
@@ -26,13 +25,7 @@ async def complete_receiving(
     result = await db.execute(select(Order).where(Order.id == payload.order_id))
     order = result.scalar_one_or_none()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    company_result = await db.execute(
-        select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
-    )
-    if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
-
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     total_received = 0
     total_defect = 0
     for item in payload.items:
@@ -69,18 +62,12 @@ async def create_packing_record(
     )
     employee = employee_result.scalar_one_or_none()
     if not employee:
-        raise HTTPException(status_code=404, detail="Employee not found")
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
 
     order_result = await db.execute(select(Order).where(Order.id == payload.order_id))
     order = order_result.scalar_one_or_none()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    company_result = await db.execute(
-        select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
-    )
-    if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
-
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     record = PackingRecord(
         order_id=payload.order_id,
         product_id=payload.product_id,
@@ -117,10 +104,5 @@ async def validate_barcode(
     result = await db.execute(select(Product).where(Product.barcode == payload.barcode))
     product = result.scalar_one_or_none()
     if not product:
-        return {"valid": False, "message": "ШК не найден"}
-    company_result = await db.execute(
-        select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
-    )
-    if not company_result.scalar_one_or_none():
         return {"valid": False, "message": "ШК не найден"}
     return {"valid": True, "message": f"ШК найден: {product.name}"}

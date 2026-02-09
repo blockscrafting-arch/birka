@@ -24,11 +24,11 @@ async def telegram_auth(
 ) -> TelegramAuthResponse:
     """Authenticate via Telegram WebApp initData."""
     if not validate_telegram_init_data(payload.init_data):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid init data")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Некорректные данные инициализации")
 
     user_data = parse_init_data_user(payload.init_data)
     if not user_data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User not found in init data")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пользователь не найден в данных инициализации")
 
     telegram_id = int(user_data["id"])
     result = await db.execute(select(User).where(User.telegram_id == telegram_id))
@@ -70,7 +70,7 @@ async def logout(
 ) -> dict:
     """Revoke current session."""
     if not x_session_token:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing session token")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Отсутствует токен сессии")
     await db.execute(delete(Session).where(Session.token == x_session_token))
     await db.commit()
     return {"status": "ok"}

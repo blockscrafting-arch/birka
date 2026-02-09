@@ -19,6 +19,8 @@ def export_products(products: list[Product]) -> BytesIO:
                 "Баркод": product.barcode,
                 "Артикул WB": product.wb_article,
                 "Ссылка WB": product.wb_url,
+                "Артикул Ozon": product.ozon_article,
+                "Ссылка Ozon": product.ozon_url,
                 "ТЗ упаковка": product.packing_instructions,
             }
         )
@@ -44,6 +46,8 @@ def parse_products_excel(file_bytes: bytes) -> list[dict]:
                 "barcode": str(row.get("Баркод", "")).strip() or None,
                 "wb_article": str(row.get("Артикул WB", "")).strip() or None,
                 "wb_url": str(row.get("Ссылка WB", "")).strip() or None,
+                "ozon_article": str(row.get("Артикул Ozon", "")).strip() or None,
+                "ozon_url": str(row.get("Ссылка Ozon", "")).strip() or None,
                 "packing_instructions": str(row.get("ТЗ упаковка", "")).strip() or None,
             }
         )

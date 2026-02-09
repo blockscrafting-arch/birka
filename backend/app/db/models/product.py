@@ -21,6 +21,8 @@ class Product(Base):
     barcode: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     wb_article: Mapped[str | None] = mapped_column(String(64))
     wb_url: Mapped[str | None] = mapped_column(String(512))
+    ozon_article: Mapped[str | None] = mapped_column(String(64))  # offer_id in Ozon
+    ozon_url: Mapped[str | None] = mapped_column(String(512))
     packing_instructions: Mapped[str | None] = mapped_column(Text)
     stock_quantity: Mapped[int] = mapped_column(Integer, default=0)
     defect_quantity: Mapped[int] = mapped_column(Integer, default=0)

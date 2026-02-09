@@ -6,6 +6,7 @@ import boto3
 import httpx
 
 from app.core.config import settings
+from app.core.logging import logger
 
 
 class S3Service:
@@ -41,6 +42,10 @@ class S3Service:
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.head(url)
-            return response.status_code < 400
-        except httpx.HTTPError:
+            if response.status_code >= 400:
+                logger.warning("s3_head_check_failed", status=response.status_code)
+                return False
+            return True
+        except httpx.HTTPError as exc:
+            logger.warning("s3_head_check_failed", error=str(exc))
             return False

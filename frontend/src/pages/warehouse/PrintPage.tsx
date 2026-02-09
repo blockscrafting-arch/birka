@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { CompanySelect } from "../../components/shared/CompanySelect";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
+import { Toast } from "../../components/ui/Toast";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
 import { useProducts } from "../../hooks/useProducts";
@@ -15,6 +16,7 @@ export function PrintPage() {
   const { data: products = [], isLoading } = useProducts(activeCompanyId ?? undefined);
   const [query, setQuery] = useState("");
   const [pageError, setPageError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
 
   useEffect(() => {
     if (!companyId && companies.length > 0) {
@@ -46,6 +48,7 @@ export function PrintPage() {
       link.download = filename ?? `label_${productId}.pdf`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setToast({ message: "Этикетка скачана" });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Не удалось скачать этикетку");
     }
@@ -53,6 +56,7 @@ export function PrintPage() {
 
   return (
     <div className="space-y-4">
+      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
       <CompanySelect companies={companies} value={activeCompanyId} onChange={setCompanyId} />
       <Input
         label="Поиск по артикулу/баркоду"
@@ -62,6 +66,11 @@ export function PrintPage() {
 
       {pageError ? <div className="text-sm text-rose-300">{pageError}</div> : null}
       {isLoading ? <div className="text-sm text-slate-300">Загрузка товаров...</div> : null}
+      {!isLoading && filtered.length === 0 ? (
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-200">
+          Нет товаров для печати.
+        </div>
+      ) : null}
 
       <div className="space-y-2">
         {filtered.map((product) => (

@@ -4,6 +4,7 @@ import { CompanySelect } from "../../components/shared/CompanySelect";
 import { Button } from "../../components/ui/Button";
 import { Loader } from "../../components/ui/Loader";
 import { Modal } from "../../components/ui/Modal";
+import { Toast } from "../../components/ui/Toast";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
 import { useOrderItems } from "../../hooks/useOrderItems";
@@ -20,6 +21,7 @@ export function ReceivingPage() {
   const { data: items = [], isLoading: itemsLoading } = useOrderItems(activeOrderId ?? undefined);
   const { completeReceiving } = useWarehouse();
   const [pageError, setPageError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
 
   useEffect(() => {
     if (!companyId && companies.length > 0) {
@@ -44,6 +46,7 @@ export function ReceivingPage() {
         items: [payload],
       });
       setActiveOrderId(null);
+      setToast({ message: "Приёмка сохранена" });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Не удалось завершить приёмку");
     }
@@ -51,6 +54,7 @@ export function ReceivingPage() {
 
   return (
     <div className="space-y-4">
+      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
       <CompanySelect companies={companies} value={activeCompanyId} onChange={setCompanyId} />
       {pageError ? <div className="text-sm text-rose-300">{pageError}</div> : null}
 

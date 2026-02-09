@@ -30,6 +30,9 @@ async function handleJsonResponse<T>(response: Response): Promise<T> {
     }
     throw new Error(message);
   }
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return response.json() as Promise<T>;
 }
 
@@ -67,7 +70,22 @@ async function apiFile(path: string, options?: RequestInit): Promise<{ blob: Blo
     ...options,
   });
   if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
+    let message = `API error: ${response.status}`;
+    const contentType = response.headers.get("content-type");
+    if (contentType?.includes("application/json")) {
+      try {
+        const data = await response.json();
+        if (typeof data?.detail === "string") {
+          message = data.detail;
+        } else if (Array.isArray(data?.detail)) {
+          const parts = data.detail.map((p: { msg?: string }) => p?.msg ?? String(p)).filter(Boolean);
+          if (parts.length) message = parts.join("; ");
+        }
+      } catch {
+        // use status fallback
+      }
+    }
+    throw new Error(message);
   }
   const contentDisposition = response.headers.get("content-disposition");
   const match = contentDisposition?.match(/filename="?([^"]+)"?/);

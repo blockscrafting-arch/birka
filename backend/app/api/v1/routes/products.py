@@ -4,7 +4,7 @@ from io import BytesIO
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,8 @@ from app.services.excel import export_products, parse_products_excel
 from app.services.pdf import LabelData, render_label_pdf
 from app.services.s3 import S3Service
 from app.core.config import settings
+from app.core.utils import is_allowed_image_bytes, sanitize_upload_filename
+from app.core.logging import logger
 from app.db.models.user import User
 
 router = APIRouter()
@@ -33,7 +35,7 @@ async def create_product(
         select(Company).where(Company.id == payload.company_id, Company.user_id == current_user.id)
     )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
     product = Product(**payload.model_dump())
     db.add(product)
     await db.commit()
@@ -52,7 +54,7 @@ async def list_products(
         select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
     )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
     result = await db.execute(select(Product).where(Product.company_id == company_id))
     return list(result.scalars().all())
 
@@ -68,12 +70,12 @@ async def update_product(
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
     if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(status_code=404, detail="Товар не найден")
     company_result = await db.execute(
         select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
     )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(product, key, value)
     await db.commit()
@@ -93,15 +95,15 @@ async def import_products(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "application/vnd.ms-excel",
     }:
-        raise HTTPException(status_code=400, detail="Unsupported file type")
+        raise HTTPException(status_code=400, detail="Неподдерживаемый тип файла")
     company_result = await db.execute(
         select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
     )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
     data = await file.read()
     if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
-        raise HTTPException(status_code=400, detail="File too large")
+        raise HTTPException(status_code=400, detail="Файл слишком большой")
     parsed = parse_products_excel(data)
     created = 0
     for row in parsed:
@@ -142,35 +144,41 @@ async def upload_product_photo(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """Upload product photo to S3."""
-    s3 = S3Service()
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Unsupported file type")
-    data = await file.read()
-    if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
-        raise HTTPException(status_code=400, detail="File too large")
-    image = Image.open(BytesIO(data))
-    image.thumbnail((1200, 1200))
-    output = BytesIO()
-    if image.mode in ("RGBA", "P"):
-        image = image.convert("RGB")
-    image.save(output, format="JPEG")
-    data = output.getvalue()
-    key = f"products/{product_id}/{datetime.utcnow().timestamp()}_{file.filename}"
-    s3.upload_bytes(key, data, file.content_type or "image/jpeg")
-    url = s3.build_public_url(key)
-    if not await s3.head_check(url):
-        raise HTTPException(status_code=400, detail="Upload verification failed")
-
+    """Upload product photo to S3. Permissions checked before reading file."""
     product_result = await db.execute(select(Product).where(Product.id == product_id))
     product = product_result.scalar_one_or_none()
     if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(status_code=404, detail="Товар не найден")
     company_result = await db.execute(
         select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
     )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+
+    s3 = S3Service()
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Неподдерживаемый тип файла")
+    data = await file.read()
+    if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="Файл слишком большой")
+    if not is_allowed_image_bytes(data):
+        raise HTTPException(status_code=400, detail="Неподдерживаемый тип файла")
+    try:
+        image = Image.open(BytesIO(data))
+        image.thumbnail((1200, 1200))
+        output = BytesIO()
+        if image.mode in ("RGBA", "P"):
+            image = image.convert("RGB")
+        image.save(output, format="JPEG")
+        data = output.getvalue()
+    except (UnidentifiedImageError, OSError) as e:
+        logger.warning("product_photo_image_error", product_id=product_id, error=str(e))
+        raise HTTPException(status_code=400, detail="Не удалось обработать изображение")
+    key = f"products/{product_id}/{datetime.utcnow().timestamp()}_{sanitize_upload_filename(file.filename)}"
+    s3.upload_bytes(key, data, file.content_type or "image/jpeg")
+    url = s3.build_public_url(key)
+    if not await s3.head_check(url):
+        raise HTTPException(status_code=400, detail="Не удалось проверить загрузку")
 
     photo = ProductPhoto(product_id=product_id, s3_key=key)
     db.add(photo)
@@ -188,19 +196,19 @@ async def generate_label(
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
     if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(status_code=404, detail="Товар не найден")
     company_result = await db.execute(
         select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
     )
     company = company_result.scalar_one_or_none()
     if not company:
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Компания не найдена")
 
     title_parts = [product.name, product.brand, product.size, product.color]
     title = " ".join([part for part in title_parts if part])
     label = LabelData(
         title=title,
-        article=product.wb_article or "-",
+        article=product.wb_article or product.ozon_article or "-",
         supplier=company.name,
         barcode_value=product.barcode or "-",
     )

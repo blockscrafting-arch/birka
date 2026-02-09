@@ -50,3 +50,12 @@ class OrderItemOut(BaseModel):
     received_qty: int
     defect_qty: int
     packed_qty: int
+
+
+class OrderPhotoOut(BaseModel):
+    """Order photo response."""
+
+    id: int
+    url: str
+    photo_type: str | None
+    created_at: str
