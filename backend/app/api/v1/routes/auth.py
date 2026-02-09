@@ -1,5 +1,5 @@
 """Auth endpoints."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -56,17 +56,17 @@ async def telegram_auth(
             await db.commit()
             await db.refresh(user)
 
-    await db.execute(delete(Session).where(Session.expires_at <= datetime.utcnow()))
+    await db.execute(delete(Session).where(Session.expires_at <= datetime.now(timezone.utc)))
 
     token = secrets.token_hex(32)
-    expires_at = datetime.utcnow() + timedelta(days=7)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     user_id = user.id
     role = user.role
     session = Session(user_id=user_id, token=token, expires_at=expires_at)
     db.add(session)
     await db.commit()
 
-    logger.info("user_authenticated", telegram_id=telegram_id, user_id=user_id)
+    logger.info("user_authenticated", user_id=user_id)
 
     return TelegramAuthResponse(
         user_id=user_id,

@@ -1,5 +1,5 @@
 """FBO supply models for marketplace integration (WB/Ozon)."""
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -19,7 +19,7 @@ class FBOSupply(Base):
     external_supply_id: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(32), default="draft")  # draft | created | in_progress | completed
     warehouse_name: Mapped[str | None] = mapped_column(String(128))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     order = relationship("Order", back_populates="fbo_supplies")
     shipment_requests = relationship("ShipmentRequest", back_populates="fbo_supply")

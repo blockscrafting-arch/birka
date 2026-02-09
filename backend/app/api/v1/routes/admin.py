@@ -83,11 +83,11 @@ async def update_user_role(
 ) -> dict:
     """Update user role."""
     if payload.role not in {"client", "warehouse", "admin"}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Недопустимая роль")
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
     user.role = payload.role
     logger.info("role_changed", target_user_id=user_id, new_role=payload.role, by_admin=current_user.id)
     await db.commit()
@@ -297,7 +297,7 @@ async def update_contract_template(
     result = await db.execute(select(ContractTemplate).where(ContractTemplate.id == template_id))
     template = result.scalar_one_or_none()
     if not template:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден")
     data = payload.model_dump(exclude_unset=True)
     if data.get("is_default"):
         await db.execute(update(ContractTemplate).values(is_default=False))
@@ -325,7 +325,7 @@ async def delete_contract_template(
     result = await db.execute(select(ContractTemplate).where(ContractTemplate.id == template_id))
     template = result.scalar_one_or_none()
     if not template:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден")
     if template.file_key:
         s3 = S3Service()
         await asyncio.to_thread(delete_template_files, s3, template.file_key, template.docx_key)

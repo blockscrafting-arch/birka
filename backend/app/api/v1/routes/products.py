@@ -1,6 +1,6 @@
 """Product endpoints."""
 import asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from io import BytesIO
 
 import httpx
@@ -316,7 +316,7 @@ async def upload_product_photo(
     image.save(output, format="JPEG")
     data = output.getvalue()
     safe_name = sanitize_filename_for_storage(file.filename)
-    key = f"products/{product_id}/{datetime.utcnow().timestamp()}_{safe_name}"
+    key = f"products/{product_id}/{datetime.now(timezone.utc).timestamp()}_{safe_name}"
     await asyncio.to_thread(s3.upload_bytes, key, data, file.content_type or "image/jpeg")
     url = s3.build_public_url(key)
     if not await s3.head_check(url, client=http_client):

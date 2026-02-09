@@ -1,9 +1,9 @@
 """FBO supply endpoints tests (create, list, get, import-barcodes)."""
 
 
-async def test_fbo_create_wb_with_box_count_without_keys_returns_400(client, auth_headers):
+async def test_fbo_create_wb_with_box_count_without_keys_returns_400(client, auth_headers, unique_inn):
     """Create WB supply with box_count > 0 without API key returns 400."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223398"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
     create_resp = await client.post(
@@ -15,9 +15,9 @@ async def test_fbo_create_wb_with_box_count_without_keys_returns_400(client, aut
     assert "API" in create_resp.json().get("detail", "") or "ключ" in create_resp.json().get("detail", "").lower()
 
 
-async def test_fbo_create_ozon_without_keys_returns_400(client, auth_headers):
+async def test_fbo_create_ozon_without_keys_returns_400(client, auth_headers, unique_inn):
     """Create Ozon supply without API keys returns 400."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223399"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
     create_resp = await client.post(
@@ -29,9 +29,9 @@ async def test_fbo_create_ozon_without_keys_returns_400(client, auth_headers):
     assert "Ozon" in create_resp.json().get("detail", "") or "ключ" in create_resp.json().get("detail", "").lower()
 
 
-async def test_fbo_create_draft(client, auth_headers):
+async def test_fbo_create_draft(client, auth_headers, unique_inn):
     """Create FBO supply draft (no box_count, no external API call)."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223335"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
 
@@ -49,17 +49,19 @@ async def test_fbo_create_draft(client, auth_headers):
     assert data["boxes"] == []
 
 
-async def test_fbo_list_and_get(client, auth_headers):
+async def test_fbo_list_and_get(client, auth_headers, unique_inn):
     """List FBO supplies and get by id."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223336"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
 
-    await client.post(
+    # WB draft без ключей (Ozon требует Client ID и API Key даже для черновика)
+    create_resp = await client.post(
         "/api/v1/fbo/supplies",
-        json={"company_id": company_id, "marketplace": "ozon"},
+        json={"company_id": company_id, "marketplace": "wb"},
         headers=auth_headers,
     )
+    assert create_resp.status_code == 200
 
     list_resp = await client.get(
         f"/api/v1/fbo/supplies?company_id={company_id}&page=1&limit=10",
@@ -74,12 +76,12 @@ async def test_fbo_list_and_get(client, auth_headers):
     get_resp = await client.get(f"/api/v1/fbo/supplies/{supply_id}", headers=auth_headers)
     assert get_resp.status_code == 200
     assert get_resp.json()["id"] == supply_id
-    assert get_resp.json()["marketplace"] == "ozon"
+    assert get_resp.json()["marketplace"] == "wb"
 
 
-async def test_fbo_import_barcodes(client, auth_headers):
+async def test_fbo_import_barcodes(client, auth_headers, unique_inn):
     """Import barcodes adds boxes to supply."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223337"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
 
@@ -105,9 +107,9 @@ async def test_fbo_import_barcodes(client, auth_headers):
     assert boxes[2]["external_barcode"] == "BC003"
 
 
-async def test_fbo_import_barcodes_validation(client, auth_headers):
+async def test_fbo_import_barcodes_validation(client, auth_headers, unique_inn):
     """Import rejects barcode longer than 128 chars."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223338"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
 
@@ -127,9 +129,9 @@ async def test_fbo_import_barcodes_validation(client, auth_headers):
     assert import_resp.status_code == 422
 
 
-async def test_fbo_sync_requires_external_id(client, auth_headers):
+async def test_fbo_sync_requires_external_id(client, auth_headers, unique_inn):
     """Sync returns 400 when supply has no external_supply_id."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223339"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
 

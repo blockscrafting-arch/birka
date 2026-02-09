@@ -46,3 +46,6 @@
 - [STORAGE.md](STORAGE.md) — S3: загрузка, URL, HEAD-проверка
 - [DEPLOYMENT.md](DEPLOYMENT.md) — Docker, Nginx, VPS
 - [AI.md](AI.md) — AI-бот, tools, RAG
+- [PROD_TEST_READINESS.md](PROD_TEST_READINESS.md) — чек-лист готовности к ограниченному прод-тесту для клиента
+- [CLIENT_TEST_ACCESS.md](CLIENT_TEST_ACCESS.md) — ограниченный доступ (роли, тестовая компания)
+- [CLIENT_TEST_PROTOCOL.md](CLIENT_TEST_PROTOCOL.md) — протокол теста (сценарии, контакты, откат)

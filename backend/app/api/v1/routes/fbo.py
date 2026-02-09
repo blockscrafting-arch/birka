@@ -231,11 +231,23 @@ async def sync_fbo_supply_barcodes(
         )
         db.add(box)
     await db.commit()
-    result2 = await db.execute(
-        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
+    await db.refresh(supply)
+    boxes_result = await db.execute(
+        select(FBOSupplyBox).where(FBOSupplyBox.supply_id == supply_id).order_by(FBOSupplyBox.box_number)
     )
-    supply = result2.unique().scalar_one()
-    return _supply_to_out(supply)
+    boxes_list = list(boxes_result.scalars().all())
+    box_outs = [FBOSupplyBoxOut.model_validate(b, from_attributes=True) for b in boxes_list]
+    return FBOSupplyOut(
+        id=supply.id,
+        order_id=supply.order_id,
+        company_id=supply.company_id,
+        marketplace=supply.marketplace,
+        external_supply_id=supply.external_supply_id,
+        status=supply.status,
+        warehouse_name=supply.warehouse_name,
+        created_at=supply.created_at,
+        boxes=box_outs,
+    )
 
 
 @router.post("/supplies/{supply_id}/box-stickers", response_model=BoxStickersOut)
@@ -309,20 +321,29 @@ async def import_fbo_barcodes(
         raise HTTPException(status_code=404, detail="Поставка не найдена")
     await _get_company_or_404(db, supply.company_id, current_user)
 
+    added: list[FBOSupplyBox] = []
     for i, barcode in enumerate(payload.barcodes or []):
         b = (barcode or "").strip()
         if not b:
             continue
         box = FBOSupplyBox(
             supply_id=supply.id,
-            box_number=i + 1,
+            box_number=len(added) + 1,
             external_box_id=None,
             external_barcode=b,
         )
         db.add(box)
+        added.append(box)
     await db.commit()
-    result2 = await db.execute(
-        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
+    box_outs = [FBOSupplyBoxOut.model_validate(b, from_attributes=True) for b in added]
+    return FBOSupplyOut(
+        id=supply.id,
+        order_id=supply.order_id,
+        company_id=supply.company_id,
+        marketplace=supply.marketplace,
+        external_supply_id=supply.external_supply_id,
+        status=supply.status,
+        warehouse_name=supply.warehouse_name,
+        created_at=supply.created_at,
+        boxes=sorted(box_outs, key=lambda x: x.box_number),
     )
-    supply = result2.unique().scalar_one()
-    return _supply_to_out(supply)

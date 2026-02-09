@@ -5,6 +5,7 @@
   cd backend && python -m scripts.fix_admin_and_companies list     # список пользователей и ролей
   cd backend && python -m scripts.fix_admin_and_companies fix      # выставить admin по ADMIN_TELEGRAM_IDS
   cd backend && python -m scripts.fix_admin_and_companies fix --telegram-id=123456  # выставить admin одному
+  cd backend && python -m scripts.fix_admin_and_companies client --telegram-id=123456  # выставить client (для теста ограниченного доступа)
 
 Требует .env с POSTGRES_DSN. В проде: docker compose -f docker-compose.prod.yml exec backend python -m scripts.fix_admin_and_companies list
 """
@@ -60,6 +61,22 @@ async def fix_admin(session: AsyncSession, telegram_id: int | None = None) -> No
         print("Готово. Перелогиньтесь в приложении, чтобы увидеть админку.")
 
 
+async def set_client_role(session: AsyncSession, telegram_id: int) -> None:
+    """Выставить роль client указанному пользователю (для ограниченного теста клиента)."""
+    result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        print(f"Пользователь с telegram_id={telegram_id} не найден.")
+        return
+    if user.role != "client":
+        user.role = "client"
+        await session.commit()
+        await session.refresh(user)
+        print(f"  user_id={user.id} telegram_id={telegram_id} -> role=client")
+    else:
+        print(f"  user_id={user.id} уже имеет роль client.")
+
+
 async def list_companies(session: AsyncSession) -> None:
     """Вывести компании и владельцев."""
     result = await session.execute(
@@ -89,8 +106,13 @@ async def main() -> None:
             await list_companies(session)
         elif cmd == "fix":
             await fix_admin(session, telegram_id=telegram_id)
+        elif cmd == "client":
+            if telegram_id is None:
+                print("Для команды client нужен --telegram-id=N")
+                sys.exit(1)
+            await set_client_role(session, telegram_id)
         else:
-            print("Использование: fix_admin_and_companies list | fix [--telegram-id=N]")
+            print("Использование: fix_admin_and_companies list | fix [--telegram-id=N] | client --telegram-id=N")
             sys.exit(1)
 
 

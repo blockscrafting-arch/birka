@@ -1,5 +1,5 @@
 """Company model."""
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, JSON, String
 from sqlalchemy.dialects.postgresql import JSONB
@@ -29,7 +29,7 @@ class Company(Base):
     bank_name: Mapped[str | None] = mapped_column(String(256))
     bank_corr_account: Mapped[str | None] = mapped_column(String(32))
     contract_data: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON, "sqlite"))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="companies")
     products = relationship("Product", back_populates="company")

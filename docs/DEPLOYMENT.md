@@ -9,8 +9,22 @@
 ## Секреты и конфигурация
 
 - Все секреты и чувствительные параметры — в **переменных окружения** (env), не в репозитории.
-- Примеры: `POSTGRES_DSN`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_PROVIDER`, `AI_MODEL`, `TELEGRAM_BOT_TOKEN`, `ADMIN_TELEGRAM_IDS`, `S3_*`, `DADATA_TOKEN`, `ENCRYPTION_KEY`, `SHIPMENT_SCHEDULER_INTERVAL_SECONDS` (интервал проверки просроченных отгрузок, по умолчанию 600 сек). Опционально: `DOCS_RAG_PATH` — путь к папке с RAG-документами (по умолчанию `/app/docs/rag`). Fernet для API-ключей: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+- **Файл `.env` не коммитить в git.** Он указан в `.gitignore`. При клонировании репозитория копировать только `.env.example` в `.env` и заполнять значения локально. На общих или публичных машинах не хранить реальный `.env` в корне репо.
+- **Проверка истории:** при сомнении выполнить `git log --all -- .env`. Если в выводе есть коммиты — файл когда-то попадал в репозиторий; тогда считать ключи скомпрометированными и выполнить действия из раздела ниже «Если .env попал в git».
+- Примеры переменных: `POSTGRES_DSN`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_PROVIDER`, `AI_MODEL`, `TELEGRAM_BOT_TOKEN`, `ADMIN_TELEGRAM_IDS`, `S3_*`, `DADATA_TOKEN`, `ENCRYPTION_KEY`, `SHIPMENT_SCHEDULER_INTERVAL_SECONDS` (интервал проверки просроченных отгрузок, по умолчанию 600 сек). Опционально: `DOCS_RAG_PATH` — путь к папке с RAG-документами (по умолчанию `/app/docs/rag`). Fernet для API-ключей: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
 - **Production:** задать `ENVIRONMENT=production`, `CORS_ORIGINS` — явный список доменов (например `https://ffbirka.ru`), `REDIS_DSN=redis://redis:6379/0` при использовании docker-compose.prod (Redis, Celery worker/beat). Для сборки фронта с аналитикой передать `VITE_YM_COUNTER_ID` (номер счётчика Яндекс.Метрики).
+
+### Если .env попал в git
+
+Если проверка `git log --all -- .env` показала, что файл когда-либо коммитился, считать все перечисленные ниже ключи скомпрометированными и **обязательно ротировать**:
+
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBAPP_SECRET`
+- `OPENAI_API_KEY`, `OPENROUTER_API_KEY`
+- `S3_ACCESS_KEY`, `S3_SECRET_KEY`
+- `DADATA_TOKEN`
+- `ENCRYPTION_KEY` (после смены — перешифровать API-ключи компаний в БД, см. подраздел «Ротация ENCRYPTION_KEY» ниже)
+
+После ротации при необходимости удалить файл из истории (например, `git filter-repo --path .env --invert-paths`), сделав бэкап репо и уведомив разработчиков. Для публичных репозиториев запросить удаление кэшированных версий у хостинга (GitHub/GitLab sensitive data removal).
 
 ### Ротация ENCRYPTION_KEY
 

@@ -1,5 +1,5 @@
 """Warehouse endpoints."""
-from datetime import datetime as dt
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -56,10 +56,18 @@ async def complete_receiving(
                 raise HTTPException(status_code=400, detail="Некорректные количества")
             if item.received_qty < item.defect_qty + item.adjustment_qty:
                 raise HTTPException(status_code=400, detail="Полученное количество меньше суммы списаний и брака")
-            item_result = await db.execute(select(OrderItem).where(OrderItem.id == item.order_item_id))
+            item_result = await db.execute(
+                select(OrderItem).where(
+                    OrderItem.id == item.order_item_id,
+                    OrderItem.order_id == payload.order_id,
+                )
+            )
             order_item = item_result.scalar_one_or_none()
             if not order_item:
-                continue
+                raise HTTPException(
+                    status_code=400,
+                    detail="Позиция заявки не найдена или не принадлежит этой заявке",
+                )
             if item.defect_qty > 0:
                 photo_count_result = await db.execute(
                     select(func.count())
@@ -350,7 +358,7 @@ async def complete_order(
     telegram_id = company.user.telegram_id if company.user else None
     order_number = order.order_number
     order.status = "Завершено"
-    order.completed_at = dt.utcnow()
+    order.completed_at = datetime.now(timezone.utc)
     await db.commit()
     if telegram_id:
         msg = f"Заявка {order_number}: Завершено. Упаковано всего {order.packed_qty} шт."

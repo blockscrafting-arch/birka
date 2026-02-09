@@ -1,8 +1,8 @@
 """Orders tests."""
 
 
-async def test_create_order(client, auth_headers):
-    company = await client.post("/api/v1/companies", json={"inn": "1112223330"}, headers=auth_headers)
+async def test_create_order(client, auth_headers, unique_inn):
+    company = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     company_id = company.json()["id"]
     product = await client.post(
         "/api/v1/products",

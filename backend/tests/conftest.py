@@ -1,7 +1,7 @@
 """Test fixtures."""
 import asyncio
 import itertools
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
@@ -15,6 +15,13 @@ from app.db.session import get_db
 from app.main import app
 
 _telegram_id_counter = itertools.count(1)
+_inn_counter = itertools.count(1100000000)  # уникальные ИНН для тестов (избегаем UNIQUE constraint)
+
+
+@pytest.fixture
+def unique_inn():
+    """Уникальный ИНН для каждого теста (общая in-memory БД в тестах)."""
+    return str(next(_inn_counter))
 
 
 @pytest.fixture(scope="session")
@@ -45,9 +52,11 @@ async def client(db_session):
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
+    try:
+        async with AsyncClient(app=app, base_url="http://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture()
@@ -64,7 +73,7 @@ async def auth_headers(db_session):
     await db_session.refresh(user)
 
     token = f"test-token-{telegram_id}"
-    session = Session(user_id=user.id, token=token, expires_at=datetime.utcnow() + timedelta(days=1))
+    session = Session(user_id=user.id, token=token, expires_at=datetime.now(timezone.utc) + timedelta(days=1))
     db_session.add(session)
     await db_session.commit()
 
@@ -86,7 +95,7 @@ async def auth_headers_and_user(db_session):
     await db_session.refresh(user)
 
     token = f"test-token-{telegram_id}"
-    session = Session(user_id=user.id, token=token, expires_at=datetime.utcnow() + timedelta(days=1))
+    session = Session(user_id=user.id, token=token, expires_at=datetime.now(timezone.utc) + timedelta(days=1))
     db_session.add(session)
     await db_session.commit()
 
@@ -107,7 +116,7 @@ async def warehouse_headers(db_session):
     await db_session.refresh(user)
 
     token = f"warehouse-token-{telegram_id}"
-    session = Session(user_id=user.id, token=token, expires_at=datetime.utcnow() + timedelta(days=1))
+    session = Session(user_id=user.id, token=token, expires_at=datetime.now(timezone.utc) + timedelta(days=1))
     db_session.add(session)
     await db_session.commit()
 
@@ -128,7 +137,7 @@ async def admin_headers(db_session):
     await db_session.refresh(user)
 
     token = f"admin-token-{telegram_id}"
-    session = Session(user_id=user.id, token=token, expires_at=datetime.utcnow() + timedelta(days=1))
+    session = Session(user_id=user.id, token=token, expires_at=datetime.now(timezone.utc) + timedelta(days=1))
     db_session.add(session)
     await db_session.commit()
 

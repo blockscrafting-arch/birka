@@ -1,5 +1,5 @@
 """API dependencies."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -27,7 +27,7 @@ async def get_current_user(
     """Resolve current user from Telegram initData header."""
     if x_session_token:
         result = await db.execute(
-            select(Session).where(Session.token == x_session_token, Session.expires_at > datetime.utcnow())
+            select(Session).where(Session.token == x_session_token, Session.expires_at > datetime.now(timezone.utc))
         )
         session = result.scalar_one_or_none()
         if not session:
@@ -76,4 +76,9 @@ def require_roles(*roles: str):
 
 async def get_http_client(request: Request) -> httpx.AsyncClient:
     """Shared HTTP client for WB/Ozon/S3 HEAD (connection pooling)."""
-    return request.app.state.httpx_client
+    try:
+        client = request.app.state.httpx_client
+    except (AttributeError, KeyError):
+        client = httpx.AsyncClient(timeout=30.0)
+        request.app.state.httpx_client = client
+    return client

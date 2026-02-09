@@ -21,9 +21,9 @@ async def test_barcode_validation_empty(client, warehouse_headers):
     assert data["valid"] is False
 
 
-async def test_barcode_validate_product_found(client, auth_headers, warehouse_headers):
+async def test_barcode_validate_product_found(client, auth_headers, warehouse_headers, unique_inn):
     """Validate returns product when barcode exists in products."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223340"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
     product_resp = await client.post(
@@ -46,9 +46,9 @@ async def test_barcode_validate_product_found(client, auth_headers, warehouse_he
     assert data["product"]["barcode"] == "4601234567890"
 
 
-async def test_barcode_validate_in_order_found(client, auth_headers, warehouse_headers):
+async def test_barcode_validate_in_order_found(client, auth_headers, warehouse_headers, unique_inn):
     """Validate-in-order returns found when barcode matches order item."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223341"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
     product_resp = await client.post(
@@ -76,9 +76,9 @@ async def test_barcode_validate_in_order_found(client, auth_headers, warehouse_h
     assert data["remaining_to_receive"] == 5
 
 
-async def test_barcode_validate_in_order_not_found(client, auth_headers, warehouse_headers):
+async def test_barcode_validate_in_order_not_found(client, auth_headers, warehouse_headers, unique_inn):
     """Validate-in-order returns found=False when barcode not in order."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223342"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
     product_resp = await client.post(
@@ -118,9 +118,9 @@ async def test_barcode_validate_in_order_order_not_found(client, warehouse_heade
     assert "заявк" in data.get("message", "").lower()
 
 
-async def test_barcode_validate_box_found(client, auth_headers, warehouse_headers):
+async def test_barcode_validate_box_found(client, auth_headers, warehouse_headers, unique_inn):
     """Validate returns type box when barcode matches FBO supply box."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223343"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
     supply_resp = await client.post(
@@ -148,9 +148,9 @@ async def test_barcode_validate_box_found(client, auth_headers, warehouse_header
     assert data["box"]["supply_id"] == supply_id
 
 
-async def test_packing_record_updates_order_and_item_packed_qty(client, auth_headers, warehouse_headers):
+async def test_packing_record_updates_order_and_item_packed_qty(client, auth_headers, warehouse_headers, unique_inn):
     """Creating a packing record updates order.packed_qty and the matching OrderItem.packed_qty."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223330"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
 
@@ -216,9 +216,9 @@ async def test_packing_record_updates_order_and_item_packed_qty(client, auth_hea
     assert items_after.json()[0]["packed_qty"] == 4
 
 
-async def test_packing_forbidden_before_receiving(client, auth_headers, warehouse_headers):
+async def test_packing_forbidden_before_receiving(client, auth_headers, warehouse_headers, unique_inn):
     """Packing is rejected with 400 when order has not been received yet."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223331"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
 
@@ -257,9 +257,56 @@ async def test_packing_forbidden_before_receiving(client, auth_headers, warehous
     assert "приёмк" in packing_resp.json().get("detail", "").lower()
 
 
-async def test_packing_updates_correct_order_item(client, auth_headers, warehouse_headers):
+async def test_receiving_complete_rejects_order_item_from_another_order(client, auth_headers, warehouse_headers, unique_inn):
+    """Receiving/complete returns 400 when order_item_id belongs to a different order."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+
+    product_resp = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар"},
+        headers=auth_headers,
+    )
+    assert product_resp.status_code in (200, 201)
+    product_id = product_resp.json()["id"]
+
+    order_a_resp = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 5}]},
+        headers=auth_headers,
+    )
+    assert order_a_resp.status_code == 200
+    order_a_id = order_a_resp.json()["id"]
+
+    order_b_resp = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 3}]},
+        headers=auth_headers,
+    )
+    assert order_b_resp.status_code == 200
+    order_b_id = order_b_resp.json()["id"]
+
+    items_a = await client.get(f"/api/v1/orders/{order_a_id}/items", headers=auth_headers)
+    assert items_a.status_code == 200
+    order_item_from_a = items_a.json()[0]["id"]
+
+    receiving_resp = await client.post(
+        "/api/v1/warehouse/receiving/complete",
+        json={
+            "order_id": order_b_id,
+            "items": [{"order_item_id": order_item_from_a, "received_qty": 5, "defect_qty": 0}],
+        },
+        headers=warehouse_headers,
+    )
+    assert receiving_resp.status_code == 400
+    detail = receiving_resp.json().get("detail", "")
+    assert "не принадлежит" in detail or "не найдена" in detail
+
+
+async def test_packing_updates_correct_order_item(client, auth_headers, warehouse_headers, unique_inn):
     """When same product appears in two lines (e.g. different destinations), packing updates the selected line."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223332"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
 
@@ -335,9 +382,9 @@ async def test_packing_updates_correct_order_item(client, auth_headers, warehous
     assert by_id[item_b_id]["packed_qty"] == 1
 
 
-async def test_overpack_rejected(client, auth_headers, warehouse_headers):
+async def test_overpack_rejected(client, auth_headers, warehouse_headers, unique_inn):
     """Packing more than (received - defect - already packed) for the line returns 400."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223333"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
 
@@ -385,9 +432,9 @@ async def test_overpack_rejected(client, auth_headers, warehouse_headers):
     assert "перепаковк" in overpack_resp.json().get("detail", "").lower() or "доступно" in overpack_resp.json().get("detail", "").lower()
 
 
-async def test_packing_status_flow_and_complete(client, auth_headers, warehouse_headers):
+async def test_packing_status_flow_and_complete(client, auth_headers, warehouse_headers, unique_inn):
     """Packing sets Упаковка or Готово к отгрузке; only complete_order sets Завершено."""
-    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223334"}, headers=auth_headers)
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
 

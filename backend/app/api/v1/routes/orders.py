@@ -1,6 +1,6 @@
 """Order endpoints."""
 import asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from io import BytesIO
 
 import httpx
@@ -75,7 +75,7 @@ async def create_order(
 
     try:
         today = date.today()
-        prefix = datetime.utcnow().strftime("Заявка %d/%m/%y")
+        prefix = datetime.now(timezone.utc).strftime("Заявка %d/%m/%y")
         total_planned = sum(item.planned_qty for item in payload.items)
         transaction = db.begin_nested() if db.in_transaction() else db.begin()
         async with transaction:
@@ -331,7 +331,7 @@ async def upload_order_photo(
             raise HTTPException(status_code=400, detail="Товар не входит в эту заявку")
 
     safe_name = sanitize_filename_for_storage(file.filename)
-    key = f"orders/{order_id}/{datetime.utcnow().timestamp()}_{safe_name}"
+    key = f"orders/{order_id}/{datetime.now(timezone.utc).timestamp()}_{safe_name}"
     await asyncio.to_thread(s3.upload_bytes, key, data, file.content_type or "image/jpeg")
     url = s3.build_public_url(key)
     if not await s3.head_check(url, client=http_client):

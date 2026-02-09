@@ -135,7 +135,7 @@ async def send_api_keys_guide(
         )
     sent = await send_notification(telegram_id, API_KEYS_GUIDE_HTML, parse_mode="HTML")
     if not sent:
-        logger.warning("api_keys_guide_send_failed", user_id=current_user.id, telegram_id=telegram_id)
+        logger.warning("api_keys_guide_send_failed", user_id=current_user.id)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Не удалось отправить сообщение в Telegram. Попробуйте позже.",

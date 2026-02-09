@@ -99,7 +99,7 @@ async def test_upload_document_path_traversal_sanitized(client, admin_headers):
         response = await client.post(
             "/api/v1/admin/documents",
             headers=admin_headers,
-            files={"file": ("../../etc/passwd.txt", b"", "text/plain")},
+            files={"file": ("../../etc/passwd.txt", b"valid utf-8 text", "text/plain")},
         )
     assert response.status_code == 200
     assert response.json().get("source_file") == "passwd.txt"

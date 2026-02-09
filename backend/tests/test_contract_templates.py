@@ -107,10 +107,13 @@ def test_validate_template_upload_rejects_type():
 
 def test_validate_template_upload_rejects_size():
     """Reject file over size limit."""
-    content = b"{\\rtf1\n" + (b"x" * (11 * 1024 * 1024))
-    ft, err = validate_template_upload(content, "file.rtf")
+    from app.services import contract_template_service
+    limit = 10 * 1024 * 1024
+    content = b"{\\rtf1\n" + (b"x" * (limit + 1))
+    with patch.object(contract_template_service, "MAX_TEMPLATE_SIZE_BYTES", limit):
+        ft, err = validate_template_upload(content, "file.rtf")
     assert ft == ""
-    assert "большой" in err or "big" in err.lower()
+    assert "большой" in err or "big" in err.lower() or "10" in err
 
 
 def test_get_libreoffice_cmd_prefers_libreoffice():

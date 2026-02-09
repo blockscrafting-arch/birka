@@ -1,5 +1,5 @@
 """Shipment request endpoints."""
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -338,7 +338,7 @@ async def upload_supply_barcode(
         raise HTTPException(status_code=400, detail=err_sig)
     s3 = S3Service()
     safe_name = sanitize_filename_for_storage(file.filename)
-    key = f"shipping/{request_id}/supply_barcode_{datetime.utcnow().timestamp():.0f}_{safe_name}"
+    key = f"shipping/{request_id}/supply_barcode_{datetime.now(timezone.utc).timestamp():.0f}_{safe_name}"
     await asyncio.to_thread(s3.upload_bytes, key, data, content_type)
     url = s3.build_public_url(key)
     if not await s3.head_check(url, client=http_client):
@@ -386,7 +386,7 @@ async def upload_box_barcodes(
             raise HTTPException(status_code=400, detail=err_sig)
     s3 = S3Service()
     safe_name = sanitize_filename_for_storage(file.filename)
-    key = f"shipping/{request_id}/box_barcodes_{datetime.utcnow().timestamp():.0f}_{safe_name}"
+    key = f"shipping/{request_id}/box_barcodes_{datetime.now(timezone.utc).timestamp():.0f}_{safe_name}"
     await asyncio.to_thread(s3.upload_bytes, key, data, content_type)
     url = s3.build_public_url(key)
     if not await s3.head_check(url, client=http_client):
