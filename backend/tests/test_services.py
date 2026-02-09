@@ -1,4 +1,19 @@
 """Services (pricing) and calculator tests."""
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_import_services_large_file_returns_413(client, admin_headers):
+    """Import with file larger than MAX_UPLOAD_SIZE_BYTES returns 413."""
+    from app.core.config import settings
+    big = b"x" * (settings.MAX_UPLOAD_SIZE_BYTES + 1)
+    response = await client.post(
+        "/api/v1/services/import",
+        headers=admin_headers,
+        files={"file": ("big.xlsx", big, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert response.status_code == 413
+    assert "большой" in response.json().get("detail", "")
 
 
 async def test_calculate_empty_items(client, auth_headers):

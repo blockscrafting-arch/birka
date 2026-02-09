@@ -9,6 +9,8 @@ import uuid
 import zipfile
 from io import BytesIO
 
+import httpx
+
 from app.core.config import settings
 from app.core.logging import logger
 from app.services.pdf import ContractData
@@ -163,7 +165,9 @@ HEAD_CHECK_RETRIES = 3
 HEAD_CHECK_BACKOFF_SEC = 0.15
 
 
-async def head_check_upload(s3: S3Service, key: str) -> bool:
+async def head_check_upload(
+    s3: S3Service, key: str, client: httpx.AsyncClient | None = None
+) -> bool:
     """
     Verify uploaded file is reachable via public URL (HEAD).
     Retries up to HEAD_CHECK_RETRIES times with short backoff on failure.
@@ -172,7 +176,7 @@ async def head_check_upload(s3: S3Service, key: str) -> bool:
 
     url = s3.build_public_url(key)
     for attempt in range(HEAD_CHECK_RETRIES):
-        if await s3.head_check(url):
+        if await s3.head_check(url, client=client):
             return True
         if attempt < HEAD_CHECK_RETRIES - 1:
             await asyncio.sleep(HEAD_CHECK_BACKOFF_SEC)

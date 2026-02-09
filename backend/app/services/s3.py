@@ -61,11 +61,14 @@ class S3Service:
         base = settings.FILE_PUBLIC_BASE_URL.rstrip("/")
         return f"{base}/{key}"
 
-    async def head_check(self, url: str) -> bool:
-        """Check URL availability with HEAD request."""
+    async def head_check(self, url: str, client: httpx.AsyncClient | None = None) -> bool:
+        """Check URL availability with HEAD request. Use shared client when provided."""
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            if client is not None:
                 response = await client.head(url)
+            else:
+                async with httpx.AsyncClient(timeout=10) as new_client:
+                    response = await new_client.head(url)
             return response.status_code < 400
         except httpx.HTTPError:
             return False

@@ -3,13 +3,14 @@ import asyncio
 import os
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, status, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_roles
+from app.api.v1.deps import get_http_client, require_roles
 from app.core.config import settings
 from app.core.logging import logger
 from app.db.models.ai_settings import AISettings
@@ -24,6 +25,7 @@ from app.schemas.contract_template import (
     ContractTemplateOut,
     ContractTemplateUpdate,
 )
+from app.services.upload_validation import sanitize_filename_for_storage, validate_rag_document
 from app.services.contract_template_service import (
     delete_template_files,
     head_check_upload,
@@ -127,6 +129,7 @@ async def upload_contract_template(
     is_default: bool = Form(False),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles("admin")),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> ContractTemplateOut:
     """
     Upload DOCX or RTF as contract template. RTF is converted to DOCX when generating the contract.
@@ -139,7 +142,8 @@ async def upload_contract_template(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Не удалось прочитать файл",
         ) from e
-    filename = (file.filename or "document").strip() or "document"
+    raw_filename = (file.filename or "document").strip() or "document"
+    filename = sanitize_filename_for_storage(raw_filename)
     file_type, err = validate_template_upload(content, filename)
     if err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err)
@@ -155,10 +159,10 @@ async def upload_contract_template(
             detail="Ошибка загрузки файла. Попробуйте позже.",
         ) from e
 
-    ok_file = await head_check_upload(s3, file_key)
+    ok_file = await head_check_upload(s3, file_key, client=http_client)
     ok_docx = True
     if docx_key:
-        ok_docx = await head_check_upload(s3, docx_key)
+        ok_docx = await head_check_upload(s3, docx_key, client=http_client)
     if not ok_file or not ok_docx:
         delete_template_files(s3, file_key, docx_key)
         logger.warning("contract_template_head_check_failed", file_key=file_key, docx_key=docx_key)
@@ -207,7 +211,7 @@ async def download_contract_template(
     result = await db.execute(select(ContractTemplate).where(ContractTemplate.id == template_id))
     template = result.scalar_one_or_none()
     if not template or not template.file_key:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template or file not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон или файл не найден")
     s3 = S3Service()
 
     async def chunk_iter():
@@ -249,7 +253,7 @@ async def send_contract_template_to_telegram(
     result = await db.execute(select(ContractTemplate).where(ContractTemplate.id == template_id))
     template = result.scalar_one_or_none()
     if not template or not template.file_key:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template or file not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон или файл не найден")
 
     telegram_id = current_user.telegram_id
     s3 = S3Service()
@@ -376,17 +380,12 @@ async def upload_document(
             detail=f"Файл слишком большой. Максимум {MAX_DOCUMENT_SIZE_BYTES // (1024*1024)} MB",
         )
     raw_name = (file.filename or "document").strip() or "document"
-    name = raw_name.replace("\\", "/").split("/")[-1] or "document"
-    if name.lower().endswith(".docx"):
-        document_type = "docx"
-    elif name.lower().endswith(".txt"):
-        document_type = "txt"
-    elif name.lower().endswith(".rtf"):
-        document_type = "rtf"
-    else:
+    name = sanitize_filename_for_storage(raw_name.replace("\\", "/").split("/")[-1] or "document")
+    document_type, validation_error = validate_rag_document(content, name)
+    if validation_error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Поддерживаются только DOCX, TXT и RTF",
+            detail=validation_error,
         )
     try:
         chunks_added = await index_document(db, name, content, document_type)

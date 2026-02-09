@@ -1,6 +1,34 @@
 """FBO supply endpoints tests (create, list, get, import-barcodes)."""
 
 
+async def test_fbo_create_wb_with_box_count_without_keys_returns_400(client, auth_headers):
+    """Create WB supply with box_count > 0 without API key returns 400."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223398"}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+    create_resp = await client.post(
+        "/api/v1/fbo/supplies",
+        json={"company_id": company_id, "marketplace": "wb", "box_count": 2},
+        headers=auth_headers,
+    )
+    assert create_resp.status_code == 400
+    assert "API" in create_resp.json().get("detail", "") or "ключ" in create_resp.json().get("detail", "").lower()
+
+
+async def test_fbo_create_ozon_without_keys_returns_400(client, auth_headers):
+    """Create Ozon supply without API keys returns 400."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": "1112223399"}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+    create_resp = await client.post(
+        "/api/v1/fbo/supplies",
+        json={"company_id": company_id, "marketplace": "ozon"},
+        headers=auth_headers,
+    )
+    assert create_resp.status_code == 400
+    assert "Ozon" in create_resp.json().get("detail", "") or "ключ" in create_resp.json().get("detail", "").lower()
+
+
 async def test_fbo_create_draft(client, auth_headers):
     """Create FBO supply draft (no box_count, no external API call)."""
     company_resp = await client.post("/api/v1/companies", json={"inn": "1112223335"}, headers=auth_headers)

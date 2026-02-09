@@ -1,11 +1,13 @@
 """Shipment request endpoints."""
 from datetime import datetime
+
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, get_http_client
 from app.core.config import settings
 from app.core.crypto import decrypt_value
 from app.core.logging import logger
@@ -21,6 +23,7 @@ from app.schemas.shipping import ShipmentRequestCreate, ShipmentRequestList, Shi
 from app.schemas.shipping import ShipmentRequestStatusUpdate
 from app.services.ozon_api import OzonAPI
 from app.services.s3 import S3Service
+from app.services.upload_validation import sanitize_filename_for_storage, validate_image_or_pdf_signature
 from app.services.wb_api import WildberriesAPI
 
 router = APIRouter()
@@ -61,7 +64,7 @@ def _shipment_request_to_out(request: ShipmentRequest, s3: S3Service) -> Shipmen
 
 
 async def _validate_marketplace_keys(
-    db: AsyncSession, company_id: int, destination_type: str
+    db: AsyncSession, company_id: int, destination_type: str, http_client: httpx.AsyncClient
 ) -> None:
     """If destination is WB or Ozon, ensure company has API keys and they work. Raises HTTPException on failure."""
     dest = (destination_type or "").strip().upper()
@@ -79,7 +82,7 @@ async def _validate_marketplace_keys(
                 detail="Укажите API-ключ Wildberries в настройках компании (API-ключи WB / Ozon).",
             )
         wb_key = decrypt_value(keys.wb_api_key, secret) or keys.wb_api_key
-        api = WildberriesAPI(api_key=wb_key)
+        api = WildberriesAPI(api_key=wb_key, client=http_client)
         supplies = await api.get_supplies(limit=1)
         if supplies is None:
             raise HTTPException(
@@ -94,7 +97,7 @@ async def _validate_marketplace_keys(
             )
         ozon_cid = decrypt_value(keys.ozon_client_id, secret) or keys.ozon_client_id
         ozon_key = decrypt_value(keys.ozon_api_key, secret) or keys.ozon_api_key
-        api = OzonAPI(client_id=ozon_cid, api_key=ozon_key)
+        api = OzonAPI(client_id=ozon_cid, api_key=ozon_key, client=http_client)
         orders = await api.list_supply_orders()
         if orders is None:
             raise HTTPException(
@@ -134,6 +137,7 @@ async def create_shipment_request(
     payload: ShipmentRequestCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> ShipmentRequestOut:
     """Create shipment request. For WB/Ozon validates company API keys and marketplace connection."""
     company_result = await db.execute(
@@ -167,7 +171,7 @@ async def create_shipment_request(
             detail="На эту заявку уже создана отгрузка. Выберите другую заявку.",
         )
 
-    await _validate_marketplace_keys(db, payload.company_id, payload.destination_type)
+    await _validate_marketplace_keys(db, payload.company_id, payload.destination_type, http_client)
 
     try:
         request = ShipmentRequest(
@@ -193,7 +197,7 @@ async def create_shipment_request(
             if dest == "WB" and keys and box_count > 0:
                 wb_key = decrypt_value(keys.wb_api_key, secret)
                 if wb_key:
-                    api = WildberriesAPI(api_key=wb_key)
+                    api = WildberriesAPI(api_key=wb_key, client=http_client)
                     external_id = await api.create_supply(name="Поставка")
                     if external_id:
                         await api.create_supply_boxes(external_id, box_count)
@@ -201,7 +205,7 @@ async def create_shipment_request(
                 ozon_cid = decrypt_value(keys.ozon_client_id, secret)
                 ozon_key = decrypt_value(keys.ozon_api_key, secret)
                 if ozon_cid and ozon_key:
-                    api = OzonAPI(client_id=ozon_cid, api_key=ozon_key)
+                    api = OzonAPI(client_id=ozon_cid, api_key=ozon_key, client=http_client)
                     sid = await api.create_supply_draft()
                     external_id = str(sid) if sid is not None else None
             fbo = FBOSupply(
@@ -302,6 +306,7 @@ async def upload_supply_barcode(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> dict:
     """Upload supply barcode file (PDF or image) for shipment request."""
     result = await db.execute(
@@ -325,11 +330,15 @@ async def upload_supply_barcode(
     data = await file.read()
     if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="Файл слишком большой")
+    ok_sig, err_sig = validate_image_or_pdf_signature(data, content_type)
+    if not ok_sig:
+        raise HTTPException(status_code=400, detail=err_sig)
     s3 = S3Service()
-    key = f"shipping/{request_id}/supply_barcode_{datetime.utcnow().timestamp():.0f}_{file.filename or 'file'}"
+    safe_name = sanitize_filename_for_storage(file.filename)
+    key = f"shipping/{request_id}/supply_barcode_{datetime.utcnow().timestamp():.0f}_{safe_name}"
     s3.upload_bytes(key, data, content_type)
     url = s3.build_public_url(key)
-    if not await s3.head_check(url):
+    if not await s3.head_check(url, client=http_client):
         raise HTTPException(status_code=400, detail="Проверка загрузки не прошла")
     req.supply_barcode_key = key
     await db.commit()
@@ -342,6 +351,7 @@ async def upload_box_barcodes(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> dict:
     """Upload box barcodes file (PDF or image) for shipment request."""
     result = await db.execute(
@@ -365,11 +375,16 @@ async def upload_box_barcodes(
     data = await file.read()
     if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="Файл слишком большой")
+    if content_type in ALLOWED_BARCODE_CONTENT_TYPES:
+        ok_sig, err_sig = validate_image_or_pdf_signature(data, content_type)
+        if not ok_sig:
+            raise HTTPException(status_code=400, detail=err_sig)
     s3 = S3Service()
-    key = f"shipping/{request_id}/box_barcodes_{datetime.utcnow().timestamp():.0f}_{file.filename or 'file'}"
+    safe_name = sanitize_filename_for_storage(file.filename)
+    key = f"shipping/{request_id}/box_barcodes_{datetime.utcnow().timestamp():.0f}_{safe_name}"
     s3.upload_bytes(key, data, content_type)
     url = s3.build_public_url(key)
-    if not await s3.head_check(url):
+    if not await s3.head_check(url, client=http_client):
         raise HTTPException(status_code=400, detail="Проверка загрузки не прошла")
     req.box_barcodes_key = key
     await db.commit()

@@ -2,14 +2,14 @@
 from datetime import date, datetime
 from io import BytesIO
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, get_http_client
 from app.db.models.company import Company
 from app.db.models.order import Order, OrderItem
 from app.db.models.order_counter import OrderCounter
@@ -24,6 +24,7 @@ from app.schemas.warehouse import PackingRecordOut
 from app.services.excel import export_receiving
 from app.services.files import content_disposition
 from app.services.s3 import S3Service
+from app.services.upload_validation import safe_open_image, sanitize_filename_for_storage, validate_image_signature
 from app.services.telegram import send_document, send_notification
 from app.core.config import settings
 from app.core.logging import logger
@@ -281,6 +282,7 @@ async def upload_order_photo(
     product_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> dict:
     """Upload order photo."""
     s3 = S3Service()
@@ -289,7 +291,12 @@ async def upload_order_photo(
     data = await file.read()
     if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="Файл слишком большой")
-    image = Image.open(BytesIO(data))
+    ok_sig, err_sig = validate_image_signature(data)
+    if not ok_sig:
+        raise HTTPException(status_code=400, detail=err_sig)
+    image, err_open = safe_open_image(data)
+    if image is None:
+        raise HTTPException(status_code=400, detail=err_open)
     image.thumbnail((1200, 1200))
     output = BytesIO()
     if image.mode in ("RGBA", "P"):
@@ -319,11 +326,12 @@ async def upload_order_photo(
         if not product_result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Товар не входит в эту заявку")
 
-    key = f"orders/{order_id}/{datetime.utcnow().timestamp()}_{file.filename}"
+    safe_name = sanitize_filename_for_storage(file.filename)
+    key = f"orders/{order_id}/{datetime.utcnow().timestamp()}_{safe_name}"
     s3.upload_bytes(key, data, file.content_type or "image/jpeg")
     url = s3.build_public_url(key)
-    if not await s3.head_check(url):
-        raise HTTPException(status_code=400, detail="Upload verification failed")
+    if not await s3.head_check(url, client=http_client):
+        raise HTTPException(status_code=400, detail="Не удалось проверить загрузку файла. Попробуйте ещё раз.")
 
     photo = OrderPhoto(order_id=order_id, s3_key=key, photo_type=photo_type, product_id=product_id)
     db.add(photo)

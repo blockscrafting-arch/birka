@@ -2,6 +2,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +18,10 @@ from app.core.logging import configure_logging, logger
 from app.db.models.user import User
 from app.db.session import get_db, AsyncSessionLocal
 from app.services.shipment_scheduler import run_shipment_scheduler
+
+# Shared HTTP client for WB/Ozon/S3 HEAD checks (connection pooling, single timeout)
+HTTP_CLIENT_TIMEOUT = 30.0
+HTTP_CLIENT_LIMITS = httpx.Limits(max_connections=50, max_keepalive_connections=20)
 
 
 async def sync_roles_on_startup() -> None:
@@ -40,20 +45,25 @@ async def sync_roles_on_startup() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
-    if not settings.admin_telegram_ids:
-        logger.warning("ADMIN_TELEGRAM_IDS_empty", detail="Задайте ADMIN_TELEGRAM_IDS в .env для доступа в админку")
-    else:
-        await sync_roles_on_startup()
-    logger.info("app_initialized")
-    scheduler_task = asyncio.create_task(
-        run_shipment_scheduler(interval_seconds=settings.SHIPMENT_SCHEDULER_INTERVAL_SECONDS)
-    )
-    yield
-    scheduler_task.cancel()
-    try:
-        await scheduler_task
-    except asyncio.CancelledError:
-        pass
+    async with httpx.AsyncClient(
+        timeout=HTTP_CLIENT_TIMEOUT,
+        limits=HTTP_CLIENT_LIMITS,
+    ) as http_client:
+        app.state.httpx_client = http_client
+        if not settings.admin_telegram_ids:
+            logger.warning("ADMIN_TELEGRAM_IDS_empty", detail="Задайте ADMIN_TELEGRAM_IDS в .env для доступа в админку")
+        else:
+            await sync_roles_on_startup()
+        logger.info("app_initialized")
+        scheduler_task = asyncio.create_task(
+            run_shipment_scheduler(interval_seconds=settings.SHIPMENT_SCHEDULER_INTERVAL_SECONDS)
+        )
+        yield
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except asyncio.CancelledError:
+            pass
 
 
 def create_app() -> FastAPI:

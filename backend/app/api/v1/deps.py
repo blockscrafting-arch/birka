@@ -1,6 +1,8 @@
 """API dependencies."""
 from datetime import datetime, timedelta
-from fastapi import Depends, Header, HTTPException, status
+
+import httpx
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,3 +72,8 @@ def require_roles(*roles: str):
         return current_user
 
     return checker
+
+
+async def get_http_client(request: Request) -> httpx.AsyncClient:
+    """Shared HTTP client for WB/Ozon/S3 HEAD (connection pooling)."""
+    return request.app.state.httpx_client

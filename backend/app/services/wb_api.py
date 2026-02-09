@@ -4,6 +4,8 @@ Docs: https://openapi.wildberries.ru/marketplace/swagger/api/en/ (Supplies, v3)
 Authorization: Header Authorization: {API_KEY}
 """
 
+from contextlib import asynccontextmanager
+
 import httpx
 
 from app.core.logging import logger
@@ -11,17 +13,32 @@ from app.core.logging import logger
 SUPPLIES_BASE_URL = "https://marketplace-api.wildberries.ru"
 
 
+@asynccontextmanager
+async def _client_or_new(client: httpx.AsyncClient | None):
+    """Yield shared client or a new one (closed on exit)."""
+    if client is not None:
+        yield client
+    else:
+        async with httpx.AsyncClient(timeout=30) as new_client:
+            yield new_client
+
+
 class WildberriesAPI:
     """Client for Wildberries supplies API (FBW, v3)."""
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, client: httpx.AsyncClient | None = None) -> None:
         self.api_key = api_key
         self._headers = {"Authorization": api_key}
+        self._client = client
+
+    def _client_ctx(self):
+        """Context manager: shared client or new AsyncClient."""
+        return _client_or_new(self._client)
 
     async def create_supply(self, name: str = "Поставка") -> str | None:
         """Create a new supply. POST /api/v3/supplies. Returns supply ID (WB-GI-xxx) or None."""
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with self._client_ctx() as client:
                 r = await client.post(
                     f"{SUPPLIES_BASE_URL}/api/v3/supplies",
                     headers=self._headers,
@@ -33,14 +50,17 @@ class WildberriesAPI:
                 r.raise_for_status()
                 data = r.json()
                 return data.get("id")
-        except Exception as e:
+        except httpx.HTTPStatusError as e:
+            logger.warning("wb_api_create_supply_failed", status=e.response.status_code, error=str(e))
+            return None
+        except (httpx.RequestError, httpx.TimeoutException) as e:
             logger.warning("wb_api_create_supply_failed", error=str(e))
             return None
 
     async def get_supplies(self, limit: int = 1000, next_: int = 0) -> list | None:
         """List supplies. GET /api/v3/supplies. Returns None on auth/connection error."""
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with self._client_ctx() as client:
                 r = await client.get(
                     f"{SUPPLIES_BASE_URL}/api/v3/supplies",
                     headers=self._headers,
@@ -52,7 +72,10 @@ class WildberriesAPI:
                 r.raise_for_status()
                 data = r.json() or {}
                 return data.get("supplies") or []
-        except Exception as e:
+        except httpx.HTTPStatusError as e:
+            logger.warning("wb_api_supplies_failed", status=e.response.status_code, error=str(e))
+            return None
+        except (httpx.RequestError, httpx.TimeoutException) as e:
             logger.warning("wb_api_supplies_failed", error=str(e))
             return None
 
@@ -61,7 +84,7 @@ class WildberriesAPI:
         if amount < 1 or amount > 1000:
             return []
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with self._client_ctx() as client:
                 r = await client.post(
                     f"{SUPPLIES_BASE_URL}/api/v3/supplies/{supply_id}/trbx",
                     headers=self._headers,
@@ -74,16 +97,22 @@ class WildberriesAPI:
                 data = r.json() or {}
                 ids = data.get("trbxIds") or []
                 return [str(i) for i in ids]
-        except Exception as e:
+        except httpx.HTTPStatusError as e:
             logger.warning(
-                "wb_api_create_boxes_failed", supply_id=supply_id, amount=amount, error=str(e)
+                "wb_api_create_boxes_failed", supply_id=supply_id, amount=amount,
+                status=e.response.status_code, error=str(e),
+            )
+            return []
+        except (httpx.RequestError, httpx.TimeoutException) as e:
+            logger.warning(
+                "wb_api_create_boxes_failed", supply_id=supply_id, amount=amount, error=str(e),
             )
             return []
 
     async def add_order_to_supply(self, supply_id: str, order_id: int) -> bool:
         """Add order to supply (moves to confirm). PATCH /api/v3/supplies/{supplyId}/orders/{orderId}."""
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with self._client_ctx() as client:
                 r = await client.patch(
                     f"{SUPPLIES_BASE_URL}/api/v3/supplies/{supply_id}/orders/{order_id}",
                     headers=self._headers,
@@ -93,7 +122,7 @@ class WildberriesAPI:
                     return False
                 r.raise_for_status()
                 return True
-        except Exception as e:
+        except (httpx.HTTPStatusError, httpx.RequestError, httpx.TimeoutException) as e:
             logger.warning(
                 "wb_api_add_order_failed",
                 supply_id=supply_id,
@@ -105,7 +134,7 @@ class WildberriesAPI:
     async def get_supply_boxes(self, supply_id: str) -> list[dict]:
         """Get boxes (trbx) for a supply. GET /api/v3/supplies/{supplyId}/trbx."""
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with self._client_ctx() as client:
                 r = await client.get(
                     f"{SUPPLIES_BASE_URL}/api/v3/supplies/{supply_id}/trbx",
                     headers=self._headers,
@@ -113,7 +142,7 @@ class WildberriesAPI:
                 r.raise_for_status()
                 data = r.json() or {}
                 return data.get("trbxes") or []
-        except Exception as e:
+        except (httpx.HTTPStatusError, httpx.RequestError, httpx.TimeoutException) as e:
             logger.warning("wb_api_supply_boxes_failed", supply_id=supply_id, error=str(e))
             return []
 
@@ -136,7 +165,7 @@ class WildberriesAPI:
         if not trbx_ids:
             return []
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with self._client_ctx() as client:
                 r = await client.post(
                     f"{SUPPLIES_BASE_URL}/api/v3/supplies/{supply_id}/trbx/stickers",
                     headers=self._headers,
@@ -146,7 +175,7 @@ class WildberriesAPI:
                 r.raise_for_status()
                 data = r.json() or {}
                 return data.get("stickers") or []
-        except Exception as e:
+        except (httpx.HTTPStatusError, httpx.RequestError, httpx.TimeoutException) as e:
             logger.warning(
                 "wb_api_box_stickers_failed",
                 supply_id=supply_id,

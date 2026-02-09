@@ -7,6 +7,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_roles
+from app.core.config import settings
 from app.core.logging import logger
 from app.db.models.service import Service
 from app.db.models.service_history import ServicePriceHistory
@@ -233,6 +234,11 @@ async def import_services(
 ) -> dict:
     """Import services from Excel file (admin). Columns: Категория, Название, Цена, Ед., Комментарий."""
     file_bytes = await file.read()
+    if len(file_bytes) > settings.MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Файл слишком большой. Максимум {settings.MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)} MB",
+        )
     try:
         rows = parse_services_excel(file_bytes)
     except ValueError as e:

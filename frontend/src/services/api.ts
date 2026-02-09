@@ -40,7 +40,7 @@ async function handleJsonResponse<T>(response: Response): Promise<T> {
     handleUnauthorized();
   }
   if (!response.ok) {
-    let message = `API error: ${response.status}`;
+    let message = "Что-то пошло не так. Попробуйте позже.";
     try {
       const data = await response.json();
       if (typeof data?.detail === "string") {
@@ -123,7 +123,7 @@ function apiFormWithProgress<T>(
             .then(resolve, reject);
           return;
         }
-        let message = `API error: ${xhr.status}`;
+        let message = "Что-то пошло не так. Попробуйте позже.";
         try {
           const data = JSON.parse(xhr.responseText);
           if (typeof data?.detail === "string") message = data.detail;
@@ -170,7 +170,7 @@ async function apiFile(path: string, options?: RequestInit): Promise<{ blob: Blo
     if (response.status === 401) {
       handleUnauthorized();
     }
-    let message = `API error: ${response.status}`;
+    let message = "Что-то пошло не так. Попробуйте позже.";
     try {
       const data = await response.json();
       if (typeof data?.detail === "string") message = data.detail;

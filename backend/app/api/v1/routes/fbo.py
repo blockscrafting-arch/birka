@@ -1,10 +1,11 @@
 """FBO supply endpoints (WB/Ozon)."""
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, get_http_client
 from app.core.config import settings
 from app.core.crypto import decrypt_value
 from app.db.models.company import Company
@@ -112,6 +113,7 @@ async def create_fbo_supply(
     payload: FBOSupplyCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> FBOSupplyOut:
     """Create FBO supply draft. Optionally create supply in WB/Ozon and store external_supply_id."""
     await _get_company_or_404(db, payload.company_id, current_user)
@@ -119,33 +121,36 @@ async def create_fbo_supply(
     if marketplace not in ("wb", "ozon"):
         raise HTTPException(status_code=400, detail="marketplace должен быть wb или ozon")
 
+    keys_r = await db.execute(
+        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id)
+    )
+    keys = keys_r.scalar_one_or_none()
+    secret = settings.ENCRYPTION_KEY or ""
     external_id: str | None = None
     if marketplace == "wb":
         box_count = getattr(payload, "box_count", None) or 0
         if box_count > 0:
-            keys_r = await db.execute(
-                select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id)
-            )
-            keys = keys_r.scalar_one_or_none()
-            secret = settings.ENCRYPTION_KEY or ""
             wb_key = decrypt_value(keys.wb_api_key, secret) if keys else None
-            if wb_key:
-                api = WildberriesAPI(api_key=wb_key)
-                external_id = await api.create_supply(name="Поставка")
-                if external_id:
-                    await api.create_supply_boxes(external_id, box_count)
+            if not wb_key:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Для автосоздания поставки Wildberries укажите API-ключ в настройках компании.",
+                )
+            api = WildberriesAPI(api_key=wb_key, client=http_client)
+            external_id = await api.create_supply(name="Поставка")
+            if external_id:
+                await api.create_supply_boxes(external_id, box_count)
     elif marketplace == "ozon":
-        keys_r = await db.execute(
-            select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id)
-        )
-        keys = keys_r.scalar_one_or_none()
-        secret = settings.ENCRYPTION_KEY or ""
         ozon_cid = decrypt_value(keys.ozon_client_id, secret) if keys else None
         ozon_key = decrypt_value(keys.ozon_api_key, secret) if keys else None
-        if ozon_cid and ozon_key:
-            api = OzonAPI(client_id=ozon_cid, api_key=ozon_key)
-            sid = await api.create_supply_draft()
-            external_id = str(sid) if sid is not None else None
+        if not ozon_cid or not ozon_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Для создания поставки Ozon укажите Client ID и API Key в настройках компании.",
+            )
+        api = OzonAPI(client_id=ozon_cid, api_key=ozon_key, client=http_client)
+        sid = await api.create_supply_draft()
+        external_id = str(sid) if sid is not None else None
 
     supply = FBOSupply(
         company_id=payload.company_id,
@@ -169,6 +174,7 @@ async def sync_fbo_supply_barcodes(
     supply_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> FBOSupplyOut:
     """Fetch box barcodes from WB/Ozon and update supply boxes."""
     result = await db.execute(
@@ -191,7 +197,7 @@ async def sync_fbo_supply_barcodes(
         wb_key = decrypt_value(keys.wb_api_key, secret) if keys else None
         if not wb_key:
             raise HTTPException(status_code=400, detail="Укажите API-ключ WB для компании")
-        api = WildberriesAPI(api_key=wb_key)
+        api = WildberriesAPI(api_key=wb_key, client=http_client)
         wb_boxes = await api.get_supply_boxes(supply.external_supply_id)
         for b in wb_boxes:
             bid = b.get("id")
@@ -202,7 +208,7 @@ async def sync_fbo_supply_barcodes(
         ozon_key = decrypt_value(keys.ozon_api_key, secret) if keys else None
         if not ozon_cid or not ozon_key:
             raise HTTPException(status_code=400, detail="Укажите Client ID и API Key Ozon для компании")
-        api = OzonAPI(client_id=ozon_cid, api_key=ozon_key)
+        api = OzonAPI(client_id=ozon_cid, api_key=ozon_key, client=http_client)
         try:
             sid = int(supply.external_supply_id)
         except ValueError:
@@ -238,6 +244,7 @@ async def get_fbo_box_stickers(
     fmt: str = Query("png", description="Формат стикера: png, svg, zplv, zplh"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> BoxStickersOut:
     """Get box stickers for WB supply (for print). Returns base64 images."""
     if fmt not in ("png", "svg", "zplv", "zplh"):
@@ -267,7 +274,7 @@ async def get_fbo_box_stickers(
     wb_key = decrypt_value(keys.wb_api_key, secret)
     if not wb_key:
         raise HTTPException(status_code=400, detail="Укажите API-ключ WB для компании")
-    api = WildberriesAPI(api_key=wb_key)
+    api = WildberriesAPI(api_key=wb_key, client=http_client)
     raw = await api.get_box_stickers(supply.external_supply_id, trbx_ids, fmt=fmt)
     content_type = "image/png" if fmt == "png" else "image/svg+xml" if fmt == "svg" else "application/octet-stream"
     stickers = []
