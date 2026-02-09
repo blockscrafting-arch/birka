@@ -1,5 +1,4 @@
 """FastAPI application entrypoint. See project docs in /docs."""
-import asyncio
 from contextlib import asynccontextmanager
 
 import httpx
@@ -17,7 +16,6 @@ from app.core.limiter import limiter
 from app.core.logging import configure_logging, logger
 from app.db.models.user import User
 from app.db.session import get_db, AsyncSessionLocal
-from app.services.shipment_scheduler import run_shipment_scheduler
 
 # Shared HTTP client for WB/Ozon/S3 HEAD checks (connection pooling, single timeout)
 HTTP_CLIENT_TIMEOUT = 30.0
@@ -55,27 +53,25 @@ async def lifespan(app: FastAPI):
         else:
             await sync_roles_on_startup()
         logger.info("app_initialized")
-        scheduler_task = asyncio.create_task(
-            run_shipment_scheduler(interval_seconds=settings.SHIPMENT_SCHEDULER_INTERVAL_SECONDS)
-        )
         yield
-        scheduler_task.cancel()
-        try:
-            await scheduler_task
-        except asyncio.CancelledError:
-            pass
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI app."""
     configure_logging()
+    origins = settings.cors_origins_list
+    if settings.ENVIRONMENT == "production" and "*" in origins:
+        raise RuntimeError(
+            "В production при allow_credentials запрещено CORS_ORIGINS=*. "
+            "Задайте явный список доменов в CORS_ORIGINS (например https://ffbirka.ru,https://t.me)."
+        )
     app = FastAPI(title="Birka API", version="0.1.0", lifespan=lifespan)
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins_list,
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Content-Type", "Authorization", "X-Telegram-Init-Data", "X-Session-Token"],

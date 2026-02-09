@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Pagination } from "../../components/ui/Pagination";
 import { Select } from "../../components/ui/Select";
+import { Toast } from "../../components/ui/Toast";
 import { useAdminUsers, useUpdateUserRole } from "../../hooks/useAdmin";
 
 const roles = ["client", "warehouse", "admin"] as const;
@@ -27,6 +28,7 @@ export function UsersPage() {
   );
   const updateRole = useUpdateUserRole();
   const [draftRoles, setDraftRoles] = useState<Record<number, string>>({});
+  const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const sortedUsers = useMemo(() => {
@@ -43,11 +45,19 @@ export function UsersPage() {
 
   const handleSave = (userId: number, currentRole: string) => {
     const role = draftRoles[userId] ?? currentRole;
-    updateRole.mutate({ id: userId, role });
+    setToast(null);
+    updateRole.mutate(
+      { id: userId, role },
+      {
+        onSuccess: () => setToast({ message: "Роль сохранена", variant: "success" }),
+        onError: (err) => setToast({ message: err?.message ?? "Ошибка сохранения роли", variant: "error" }),
+      }
+    );
   };
 
   return (
     <div className="space-y-4">
+      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-lg font-semibold text-slate-900">Пользователи</div>
         <Input

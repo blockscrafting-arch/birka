@@ -47,8 +47,10 @@ class Settings(BaseSettings):
     # Shipment scheduler: интервал проверки просроченных отгрузок (секунды)
     SHIPMENT_SCHEDULER_INTERVAL_SECONDS: int = 600
 
-    # CORS (comma-separated origins)
+    # CORS (comma-separated origins). В production запрещено "*" при allow_credentials.
     CORS_ORIGINS: str = "*"
+    # Окружение: development | production. В production при CORS_ORIGINS=* приложение не стартует.
+    ENVIRONMENT: str = "development"
 
     # Upload limits (bytes)
     MAX_UPLOAD_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB

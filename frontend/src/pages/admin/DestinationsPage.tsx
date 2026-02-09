@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
+import { Toast } from "../../components/ui/Toast";
 import { useAdminDestinations, useCreateDestination, useUpdateDestination } from "../../hooks/useAdmin";
 
 export function DestinationsPage() {
@@ -9,16 +10,35 @@ export function DestinationsPage() {
   const create = useCreateDestination();
   const update = useUpdateDestination();
   const [name, setName] = useState("");
+  const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
 
   const handleCreate = async () => {
     const value = name.trim();
     if (!value) return;
-    await create.mutateAsync({ name: value });
-    setName("");
+    setToast(null);
+    try {
+      await create.mutateAsync({ name: value });
+      setName("");
+      setToast({ message: "Адрес добавлен", variant: "success" });
+    } catch {
+      setToast({ message: "Не удалось добавить адрес", variant: "error" });
+    }
+  };
+
+  const handleToggleActive = (id: number, is_active: boolean) => {
+    setToast(null);
+    update.mutate(
+      { id, is_active: !is_active },
+      {
+        onSuccess: () => setToast({ message: "Статус обновлён", variant: "success" }),
+        onError: (err) => setToast({ message: err?.message ?? "Ошибка обновления статуса", variant: "error" }),
+      }
+    );
   };
 
   return (
     <div className="space-y-4">
+      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
       <div className="text-lg font-semibold text-slate-900">Адреса/назначения</div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -45,7 +65,7 @@ export function DestinationsPage() {
             <div className="mt-2 flex gap-2">
               <Button
                 variant="secondary"
-                onClick={() => update.mutate({ id: dest.id, is_active: !dest.is_active })}
+                onClick={() => handleToggleActive(dest.id, dest.is_active)}
                 disabled={update.isPending}
               >
                 {dest.is_active ? "Отключить" : "Включить"}

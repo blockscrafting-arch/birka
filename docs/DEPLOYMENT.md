@@ -10,6 +10,7 @@
 
 - Все секреты и чувствительные параметры — в **переменных окружения** (env), не в репозитории.
 - Примеры: `POSTGRES_DSN`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_PROVIDER`, `AI_MODEL`, `TELEGRAM_BOT_TOKEN`, `ADMIN_TELEGRAM_IDS`, `S3_*`, `DADATA_TOKEN`, `ENCRYPTION_KEY`, `SHIPMENT_SCHEDULER_INTERVAL_SECONDS` (интервал проверки просроченных отгрузок, по умолчанию 600 сек). Опционально: `DOCS_RAG_PATH` — путь к папке с RAG-документами (по умолчанию `/app/docs/rag`). Fernet для API-ключей: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+- **Production:** задать `ENVIRONMENT=production`, `CORS_ORIGINS` — явный список доменов (например `https://ffbirka.ru`), `REDIS_DSN=redis://redis:6379/0` при использовании docker-compose.prod (Redis, Celery worker/beat). Для сборки фронта с аналитикой передать `VITE_YM_COUNTER_ID` (номер счётчика Яндекс.Метрики).
 
 ### Ротация ENCRYPTION_KEY
 
