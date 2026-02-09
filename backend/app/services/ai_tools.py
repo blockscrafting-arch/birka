@@ -4,6 +4,7 @@ import json
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.db_utils import escape_ilike
 from app.core.logging import logger
 from app.db.models.company import Company
 from app.db.models.destination import Destination
@@ -360,9 +361,10 @@ async def _execute_tool_impl(
                 select(Product).where(Product.company_id == company.id, Product.barcode == barcode)
             )
         elif name_part:
+            pattern = f"%{escape_ilike(name_part)}%"
             result = await db.execute(
                 select(Product)
-                .where(Product.company_id == company.id, Product.name.ilike(f"%{name_part}%"))
+                .where(Product.company_id == company.id, Product.name.ilike(pattern, escape="\\"))
                 .limit(10)
             )
         else:
@@ -456,7 +458,10 @@ async def _execute_tool_impl(
     if name == "get_services_price":
         base = select(Service).where(Service.is_active.is_(True))
         if arguments.get("category"):
-            base = base.where(Service.category.ilike(f"%{arguments['category']}%"))
+            cat = (arguments.get("category") or "").strip()
+            if cat:
+                pattern = f"%{escape_ilike(cat)}%"
+                base = base.where(Service.category.ilike(pattern, escape="\\"))
         total_result = await db.execute(select(func.count()).select_from(base.subquery()))
         total = int(total_result.scalar_one())
         limit, offset = _parse_limit_offset(arguments, "limit", "offset", MAX_SERVICES)

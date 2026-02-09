@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, status, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, status, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_http_client, require_roles
 from app.core.config import settings
+from app.core.db_utils import escape_ilike
+from app.core.limiter import limiter
 from app.core.logging import logger
 from app.db.models.ai_settings import AISettings
 from app.db.models.contract_template import ContractTemplate
@@ -19,7 +21,7 @@ from app.db.models.document_chunk import DocumentChunk
 from app.db.models.service import Service
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.admin import AdminUserOut, AISettingsOut, AISettingsUpdate, RoleUpdate
+from app.schemas.admin import AdminUserList, AdminUserOut, AISettingsOut, AISettingsUpdate, RoleUpdate
 from app.schemas.contract_template import (
     ContractTemplateCreate,
     ContractTemplateOut,
@@ -44,25 +46,32 @@ from app.services.telegram import send_document
 router = APIRouter()
 
 
-@router.get("/users", response_model=list[AdminUserOut])
+@router.get("/users", response_model=AdminUserList)
 async def list_users(
     search: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles("admin")),
-) -> list[AdminUserOut]:
-    """List users for admin with optional search by name, telegram_id, username."""
-    query = select(User).order_by(User.created_at.desc())
+) -> AdminUserList:
+    """List users for admin with optional search; paginated."""
+    base_query = select(User).order_by(User.created_at.desc())
     if search and (s := search.strip()):
+        pattern = f"%{escape_ilike(s)}%"
         conditions = [
-            User.first_name.ilike(f"%{s}%"),
-            User.last_name.ilike(f"%{s}%"),
-            User.telegram_username.ilike(f"%{s}%"),
+            User.first_name.ilike(pattern, escape="\\"),
+            User.last_name.ilike(pattern, escape="\\"),
+            User.telegram_username.ilike(pattern, escape="\\"),
         ]
         if s.isdigit():
             conditions.append(User.telegram_id == int(s))
-        query = query.where(or_(*conditions))
-    result = await db.execute(query)
-    return list(result.scalars().all())
+        base_query = base_query.where(or_(*conditions))
+    total_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
+    total = int(total_result.scalar_one())
+    offset = (page - 1) * limit
+    result = await db.execute(base_query.offset(offset).limit(limit))
+    items = list(result.scalars().all())
+    return AdminUserList(items=items, total=total, page=page, limit=limit)
 
 
 @router.patch("/users/{user_id}/role")
@@ -123,7 +132,9 @@ async def create_contract_template(
 
 
 @router.post("/contract-templates/upload", response_model=ContractTemplateOut)
+@limiter.limit("60/minute")
 async def upload_contract_template(
+    request: Request,
     file: UploadFile = File(...),
     name: str = Form(..., min_length=1),
     is_default: bool = Form(False),
@@ -317,7 +328,7 @@ async def delete_contract_template(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
     if template.file_key:
         s3 = S3Service()
-        delete_template_files(s3, template.file_key, template.docx_key)
+        await asyncio.to_thread(delete_template_files, s3, template.file_key, template.docx_key)
     await db.delete(template)
     await db.commit()
     return {"status": "ok"}
@@ -357,7 +368,9 @@ async def list_documents(
 
 
 @router.post("/documents")
+@limiter.limit("60/minute")
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles("admin")),

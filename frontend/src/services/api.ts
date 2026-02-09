@@ -137,7 +137,7 @@ function apiFormWithProgress<T>(
         const data = xhr.responseText ? (JSON.parse(xhr.responseText) as T) : ({} as T);
         resolve(data);
       } catch {
-        reject(new Error("Invalid JSON response"));
+        reject(new Error("Ошибка ответа сервера."));
       }
     });
 
@@ -147,10 +147,10 @@ function apiFormWithProgress<T>(
           .then(() => apiFormWithProgress(path, formData, onProgress, retriesLeft - 1))
           .then(resolve, reject);
       } else {
-        reject(new Error("Network error"));
+        reject(new Error("Нет соединения. Проверьте интернет и попробуйте снова."));
       }
     });
-    xhr.addEventListener("abort", () => reject(new Error("Request aborted")));
+    xhr.addEventListener("abort", () => reject(new Error("Запрос отменён")));
 
     xhr.open("POST", url);
     Object.entries(auth).forEach(([key, value]) => xhr.setRequestHeader(key, value));

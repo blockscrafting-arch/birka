@@ -11,6 +11,14 @@ def _parse_int_list(value: str) -> List[int]:
     return [int(x.strip()) for x in value.strip().split(",") if x.strip().isdigit()]
 
 
+def _parse_cors_origins(value: str) -> List[str]:
+    """Parse comma-separated CORS origins from env string. '*' remains as single element."""
+    if not value or not value.strip():
+        return []
+    parts = [x.strip() for x in value.strip().split(",") if x.strip()]
+    return parts if parts else ["*"]
+
+
 class Settings(BaseSettings):
     """Configuration loaded from environment and .env."""
 
@@ -32,6 +40,9 @@ class Settings(BaseSettings):
 
     # Database
     POSTGRES_DSN: str = "postgresql+asyncpg://user:pass@localhost:5432/birka"
+
+    # Redis (optional; for caching; empty = no cache)
+    REDIS_DSN: str = ""
 
     # Shipment scheduler: интервал проверки просроченных отгрузок (секунды)
     SHIPMENT_SCHEDULER_INTERVAL_SECONDS: int = 600
@@ -60,6 +71,11 @@ class Settings(BaseSettings):
     def admin_telegram_ids(self) -> List[int]:
         """Admin Telegram user IDs (parsed from ADMIN_TELEGRAM_IDS)."""
         return _parse_int_list(self.ADMIN_TELEGRAM_IDS)
+
+    @property
+    def cors_origins_list(self) -> List[str]:
+        """CORS allowed origins (parsed from CORS_ORIGINS comma-separated string)."""
+        return _parse_cors_origins(self.CORS_ORIGINS)
 
 
 settings = Settings()

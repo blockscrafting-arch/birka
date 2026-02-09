@@ -1,4 +1,5 @@
 """Contract template service: file upload, PDF↔DOCX conversion, placeholder substitution, DOCX→PDF."""
+import base64
 import os
 import re
 import shutil
@@ -103,6 +104,26 @@ def validate_template_upload(content: bytes, filename: str) -> tuple[str, str]:
     return claimed, ""
 
 
+def _run_rtf_to_docx_via_celery(rtf_bytes: bytes) -> bytes:
+    """Run RTF→DOCX in Celery worker when REDIS_DSN is set. Returns DOCX bytes."""
+    from app.tasks.document_tasks import convert_rtf_to_docx_task
+
+    rtf_b64 = base64.b64encode(rtf_bytes).decode("ascii")
+    task = convert_rtf_to_docx_task.delay(rtf_b64)
+    result_b64 = task.get(timeout=120)
+    return base64.b64decode(result_b64)
+
+
+def _run_docx_to_pdf_via_celery(docx_bytes: bytes) -> bytes:
+    """Run DOCX→PDF in Celery worker when REDIS_DSN is set. Returns PDF bytes."""
+    from app.tasks.document_tasks import convert_docx_to_pdf_task
+
+    docx_b64 = base64.b64encode(docx_bytes).decode("ascii")
+    task = convert_docx_to_pdf_task.delay(docx_b64)
+    result_b64 = task.get(timeout=120)
+    return base64.b64decode(result_b64)
+
+
 def rtf_to_docx_bytes(rtf_bytes: bytes) -> bytes:
     """Convert RTF to DOCX using LibreOffice. Returns DOCX bytes. Logs stderr on failure."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -203,6 +224,8 @@ def get_docx_bytes_for_template(s3: S3Service, file_key: str, file_type: str, do
         )
     raw = s3.get_bytes(file_key)
     if ft == "rtf":
+        if settings.REDIS_DSN and settings.REDIS_DSN.strip():
+            return _run_rtf_to_docx_via_celery(raw)
         return rtf_to_docx_bytes(raw)
     return raw
 
@@ -312,11 +335,13 @@ def render_contract_pdf_from_docx_template(
 ) -> bytes:
     """
     Load DOCX template from S3, apply contract context, convert to PDF.
-    Returns PDF bytes.
+    Returns PDF bytes. DOCX→PDF runs in Celery worker when REDIS_DSN is set.
     """
     docx_bytes = get_docx_bytes_for_template(s3, file_key, file_type or "", docx_key)
     context = contract_data_to_context(contract)
     rendered_docx = render_docx_with_context(docx_bytes, context)
+    if settings.REDIS_DSN and settings.REDIS_DSN.strip():
+        return _run_docx_to_pdf_via_celery(rendered_docx)
     return docx_to_pdf_bytes(rendered_docx)
 
 

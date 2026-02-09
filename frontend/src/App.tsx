@@ -7,6 +7,7 @@ import { apiClient } from "./services/api";
 import { Header } from "./components/layout/Header";
 import { Page } from "./components/layout/Page";
 import { TabBar } from "./components/layout/TabBar";
+import { OfflineBanner } from "./components/ui/OfflineBanner";
 import { Loader } from "./components/ui/Loader";
 import { UploadManager } from "./components/shared/UploadManager";
 import { UserProvider, useUser } from "./contexts/UserContext";
@@ -141,6 +142,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <UserProvider>
+        <OfflineBanner />
         <UploadManager />
         <Page>
           <Header title="Бирка — фулфилмент" />

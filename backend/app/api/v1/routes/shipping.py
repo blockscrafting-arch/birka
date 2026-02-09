@@ -2,13 +2,14 @@
 from datetime import datetime
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.api.v1.deps import get_current_user, get_http_client
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.core.crypto import decrypt_value
 from app.core.logging import logger
 from app.db.models.company import Company
@@ -301,7 +302,9 @@ async def update_shipment_status(
 
 
 @router.post("/{request_id}/supply-barcode")
+@limiter.limit("60/minute")
 async def upload_supply_barcode(
+    request: Request,
     request_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -336,7 +339,7 @@ async def upload_supply_barcode(
     s3 = S3Service()
     safe_name = sanitize_filename_for_storage(file.filename)
     key = f"shipping/{request_id}/supply_barcode_{datetime.utcnow().timestamp():.0f}_{safe_name}"
-    s3.upload_bytes(key, data, content_type)
+    await asyncio.to_thread(s3.upload_bytes, key, data, content_type)
     url = s3.build_public_url(key)
     if not await s3.head_check(url, client=http_client):
         raise HTTPException(status_code=400, detail="Проверка загрузки не прошла")
@@ -346,7 +349,9 @@ async def upload_supply_barcode(
 
 
 @router.post("/{request_id}/box-barcodes")
+@limiter.limit("60/minute")
 async def upload_box_barcodes(
+    request: Request,
     request_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -382,7 +387,7 @@ async def upload_box_barcodes(
     s3 = S3Service()
     safe_name = sanitize_filename_for_storage(file.filename)
     key = f"shipping/{request_id}/box_barcodes_{datetime.utcnow().timestamp():.0f}_{safe_name}"
-    s3.upload_bytes(key, data, content_type)
+    await asyncio.to_thread(s3.upload_bytes, key, data, content_type)
     url = s3.build_public_url(key)
     if not await s3.head_check(url, client=http_client):
         raise HTTPException(status_code=400, detail="Проверка загрузки не прошла")

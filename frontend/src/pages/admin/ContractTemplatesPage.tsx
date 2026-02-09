@@ -100,6 +100,12 @@ export function ContractTemplatesPage() {
       {isLoading ? <div className="text-sm text-slate-600">Загрузка шаблонов...</div> : null}
       {error ? <div className="text-sm text-rose-500">Ошибка загрузки шаблонов</div> : null}
 
+      {!isLoading && !error && templates.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-soft">
+          <p className="text-sm text-slate-600">Пока нет шаблонов. Загрузите первый в форме ниже.</p>
+        </div>
+      ) : null}
+
       <div className="space-y-2">
         {templates.map((template) => (
           <div

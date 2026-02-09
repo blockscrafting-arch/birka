@@ -1,13 +1,17 @@
 """Services (pricing) endpoints."""
+import json
 from decimal import ROUND_HALF_UP, Decimal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_roles
+from app.core.cache import cache_get, cache_set
 from app.core.config import settings
+from app.core.db_utils import escape_ilike
+from app.core.limiter import limiter
 from app.core.logging import logger
 from app.db.models.service import Service
 from app.db.models.service_history import ServicePriceHistory
@@ -48,15 +52,12 @@ async def list_services(
         query = query.where(Service.category == category.strip())
     term = (q or "").strip()
     if term:
-        # Escape ILIKE wildcards so user input is literal (\% and \_ not treated as wildcards)
-        escape_char = "\\"
-        term_escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        pattern = f"%{term_escaped}%"
+        pattern = f"%{escape_ilike(term)}%"
         query = query.where(
             or_(
-                Service.name.ilike(pattern, escape=escape_char),
-                Service.category.ilike(pattern, escape=escape_char),
-                Service.comment.ilike(pattern, escape=escape_char),
+                Service.name.ilike(pattern, escape="\\"),
+                Service.category.ilike(pattern, escape="\\"),
+                Service.comment.ilike(pattern, escape="\\"),
             )
         )
     result = await db.execute(query)
@@ -68,7 +69,13 @@ async def list_categories(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ) -> list[str]:
-    """List distinct service categories."""
+    """List distinct service categories. Cached when Redis is configured."""
+    cached = await cache_get("services:categories")
+    if cached is not None:
+        try:
+            return json.loads(cached)
+        except (json.JSONDecodeError, TypeError):
+            pass
     query = (
         select(Service.category)
         .where(Service.is_active.is_(True))
@@ -76,7 +83,9 @@ async def list_categories(
         .order_by(Service.category.asc())
     )
     result = await db.execute(query)
-    return [row[0] for row in result.all()]
+    categories = [row[0] for row in result.all()]
+    await cache_set("services:categories", json.dumps(categories), ttl_seconds=60)
+    return categories
 
 
 @router.post("/calculate", response_model=CalculateResponse)
@@ -227,7 +236,9 @@ async def delete_service(
 
 
 @router.post("/import", response_model=dict)
+@limiter.limit("60/minute")
 async def import_services(
+    request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles("admin")),

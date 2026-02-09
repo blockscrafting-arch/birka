@@ -31,6 +31,12 @@ export function DestinationsPage() {
       {isLoading ? <div className="text-sm text-slate-600">Загрузка адресов...</div> : null}
       {error ? <div className="text-sm text-rose-500">Ошибка загрузки адресов</div> : null}
 
+      {!isLoading && !error && destinations.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-soft">
+          <p className="text-sm text-slate-600">Пока нет адресов. Добавьте первый в форме выше.</p>
+        </div>
+      ) : null}
+
       <div className="space-y-2">
         {destinations.map((dest) => (
           <div key={dest.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">

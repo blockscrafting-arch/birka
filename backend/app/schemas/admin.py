@@ -24,6 +24,15 @@ class AdminUserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdminUserList(BaseModel):
+    """Paginated admin users list."""
+
+    items: list[AdminUserOut]
+    total: int
+    page: int
+    limit: int
+
+
 class AISettingsOut(BaseModel):
     """AI settings response."""
 

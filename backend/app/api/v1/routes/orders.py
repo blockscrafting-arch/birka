@@ -1,15 +1,17 @@
 """Order endpoints."""
+import asyncio
 from datetime import date, datetime
 from io import BytesIO
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.api.v1.deps import get_current_user, get_http_client
+from app.core.limiter import limiter
 from app.db.models.company import Company
 from app.db.models.order import Order, OrderItem
 from app.db.models.order_counter import OrderCounter
@@ -275,7 +277,9 @@ async def update_order_status(
 
 
 @router.post("/{order_id}/photo")
+@limiter.limit("60/minute")
 async def upload_order_photo(
+    request: Request,
     order_id: int,
     file: UploadFile = File(...),
     photo_type: str | None = Query(None),
@@ -328,7 +332,7 @@ async def upload_order_photo(
 
     safe_name = sanitize_filename_for_storage(file.filename)
     key = f"orders/{order_id}/{datetime.utcnow().timestamp()}_{safe_name}"
-    s3.upload_bytes(key, data, file.content_type or "image/jpeg")
+    await asyncio.to_thread(s3.upload_bytes, key, data, file.content_type or "image/jpeg")
     url = s3.build_public_url(key)
     if not await s3.head_check(url, client=http_client):
         raise HTTPException(status_code=400, detail="Не удалось проверить загрузку файла. Попробуйте ещё раз.")

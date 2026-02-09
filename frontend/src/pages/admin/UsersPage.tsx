@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
+import { Pagination } from "../../components/ui/Pagination";
 import { Select } from "../../components/ui/Select";
 import { useAdminUsers, useUpdateUserRole } from "../../hooks/useAdmin";
 
@@ -18,14 +19,23 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 
 export function UsersPage() {
   const [searchInput, setSearchInput] = useState("");
+  const [page, setPage] = useState(1);
   const search = useDebouncedValue(searchInput, 300);
-  const { items: users = [], isLoading, error } = useAdminUsers(search || undefined);
+  const { items: users = [], total, limit, isLoading, error } = useAdminUsers(
+    search || undefined,
+    page
+  );
   const updateRole = useUpdateUserRole();
   const [draftRoles, setDraftRoles] = useState<Record<number, string>>({});
 
+  const totalPages = Math.max(1, Math.ceil(total / limit));
   const sortedUsers = useMemo(() => {
     return [...users].sort((a, b) => b.created_at.localeCompare(a.created_at));
   }, [users]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
 
   const handleRoleChange = (userId: number, role: string) => {
     setDraftRoles((prev) => ({ ...prev, [userId]: role }));
@@ -51,6 +61,14 @@ export function UsersPage() {
 
       {isLoading ? <div className="text-sm text-slate-600">Загрузка пользователей...</div> : null}
       {error ? <div className="text-sm text-rose-500">Ошибка загрузки пользователей</div> : null}
+
+      {!isLoading && !error && sortedUsers.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-soft">
+          <p className="text-sm text-slate-600">
+            {search ? "По запросу пользователи не найдены." : "Пока нет пользователей."}
+          </p>
+        </div>
+      ) : null}
 
       <div className="space-y-3">
         {sortedUsers.map((user) => {
@@ -83,6 +101,7 @@ export function UsersPage() {
           );
         })}
       </div>
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 }

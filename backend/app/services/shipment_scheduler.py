@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import select, update
 from sqlalchemy.orm import joinedload
 
+from app.core.config import settings
 from app.core.logging import logger
 from app.db.models.company import Company
 from app.db.models.order import Order
@@ -91,17 +92,56 @@ async def auto_close_expired_shipments() -> int:
         return len(requests)
 
 
+SCHEDULER_LOCK_KEY = "birka:scheduler:shipment"
+SCHEDULER_LOCK_TTL = 900  # 15 min; if worker dies lock is released
+
+
+async def _try_acquire_scheduler_lock() -> bool:
+    """Try to acquire single-instance lock via Redis. Returns True if we got it."""
+    if not (settings.REDIS_DSN and settings.REDIS_DSN.strip()):
+        return True
+    try:
+        import redis.asyncio as redis
+        r = redis.from_url(settings.REDIS_DSN.strip(), decode_responses=True)
+        acquired = await r.set(SCHEDULER_LOCK_KEY, "1", nx=True, ex=SCHEDULER_LOCK_TTL)
+        await r.aclose()
+        return bool(acquired)
+    except Exception as e:
+        logger.warning("shipment_scheduler_lock_failed", error=str(e))
+        return False
+
+
+async def _release_scheduler_lock() -> None:
+    """Release the scheduler lock so next run can acquire."""
+    if not (settings.REDIS_DSN and settings.REDIS_DSN.strip()):
+        return
+    try:
+        import redis.asyncio as redis
+        r = redis.from_url(settings.REDIS_DSN.strip(), decode_responses=True)
+        await r.delete(SCHEDULER_LOCK_KEY)
+        await r.aclose()
+    except Exception as e:
+        logger.warning("shipment_scheduler_lock_release_failed", error=str(e))
+
+
 async def run_shipment_scheduler(interval_seconds: int = 600) -> None:
     """Запускать auto_close_expired_shipments каждые interval_seconds секунд.
 
+    При наличии REDIS_DSN только один инстанс (из нескольких воркеров) выполняет задачу.
     Не прерывает цикл при исключениях — логирует и продолжает.
     """
     logger.info("shipment_scheduler_started", interval_seconds=interval_seconds)
     while True:
         try:
-            count = await auto_close_expired_shipments()
-            if count > 0:
-                logger.info("shipment_scheduler_run", closed_count=count)
+            if not await _try_acquire_scheduler_lock():
+                await asyncio.sleep(interval_seconds)
+                continue
+            try:
+                count = await auto_close_expired_shipments()
+                if count > 0:
+                    logger.info("shipment_scheduler_run", closed_count=count)
+            finally:
+                await _release_scheduler_lock()
             await asyncio.sleep(interval_seconds)
         except asyncio.CancelledError:
             logger.info("shipment_scheduler_stopped")

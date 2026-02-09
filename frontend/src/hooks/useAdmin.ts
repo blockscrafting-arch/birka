@@ -12,17 +12,31 @@ export type AdminUser = {
   created_at: string;
 };
 
-export function useAdminUsers(search?: string) {
+export type AdminUserListResponse = {
+  items: AdminUser[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export function useAdminUsers(search?: string, page = 1) {
   const query = useQuery({
-    queryKey: ["admin", "users", search ?? ""],
+    queryKey: ["admin", "users", search ?? "", page],
     queryFn: () => {
-      const params = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : "";
-      return apiClient.api<AdminUser[]>(`/admin/users${params}`);
+      const params = new URLSearchParams();
+      if (search?.trim()) params.set("search", search.trim());
+      params.set("page", String(page));
+      params.set("limit", "20");
+      return apiClient.api<AdminUserListResponse>(`/admin/users?${params.toString()}`);
     },
   });
+  const data = query.data;
   return {
     ...query,
-    items: query.data ?? [],
+    items: data?.items ?? [],
+    total: data?.total ?? 0,
+    page: data?.page ?? 1,
+    limit: data?.limit ?? 20,
   };
 }
 

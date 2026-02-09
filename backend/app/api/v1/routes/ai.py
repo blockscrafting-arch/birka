@@ -1,10 +1,11 @@
 """AI endpoints: chat with history persisted in DB."""
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.db.models.ai_settings import AISettings
 from app.db.models.chat_message import ChatMessage
 from app.db.models.user import User
@@ -57,7 +58,9 @@ async def delete_history(
 
 
 @router.post("/chat", response_model=AIChatResponse)
+@limiter.limit("30/minute")
 async def chat(
+    request: Request,
     payload: AIChatRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

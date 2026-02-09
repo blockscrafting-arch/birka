@@ -1,15 +1,18 @@
 """Product endpoints."""
+import asyncio
 from datetime import date, datetime
 from io import BytesIO
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.api.v1.deps import get_current_user, get_http_client
+from app.core.db_utils import escape_ilike
+from app.core.limiter import limiter
 from app.db.models.company import Company
 from app.db.models.order_photo import OrderPhoto
 from app.db.models.product import Product, ProductPhoto
@@ -68,12 +71,13 @@ async def list_products(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     base_query = select(Product).where(Product.company_id == company_id)
     if search:
-        term = f"%{search.strip()}%"
+        term_escaped = escape_ilike(search.strip())
+        pattern = f"%{term_escaped}%"
         base_query = base_query.where(
             or_(
-                Product.name.ilike(term),
-                Product.barcode.ilike(term),
-                Product.wb_article.ilike(term),
+                Product.name.ilike(pattern, escape="\\"),
+                Product.barcode.ilike(pattern, escape="\\"),
+                Product.wb_article.ilike(pattern, escape="\\"),
             )
         )
     total_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
@@ -112,7 +116,9 @@ async def update_product(
 
 
 @router.post("/import", response_model=ImportResult)
+@limiter.limit("60/minute")
 async def import_products(
+    request: Request,
     company_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -281,7 +287,9 @@ async def send_products_template_to_telegram(
 
 
 @router.post("/{product_id}/photo")
+@limiter.limit("60/minute")
 async def upload_product_photo(
+    request: Request,
     product_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -309,7 +317,7 @@ async def upload_product_photo(
     data = output.getvalue()
     safe_name = sanitize_filename_for_storage(file.filename)
     key = f"products/{product_id}/{datetime.utcnow().timestamp()}_{safe_name}"
-    s3.upload_bytes(key, data, file.content_type or "image/jpeg")
+    await asyncio.to_thread(s3.upload_bytes, key, data, file.content_type or "image/jpeg")
     url = s3.build_public_url(key)
     if not await s3.head_check(url, client=http_client):
         raise HTTPException(status_code=400, detail="Ошибка проверки загруженного файла")

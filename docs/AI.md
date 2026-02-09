@@ -10,13 +10,32 @@
 | DELETE | `/api/v1/ai/history` | Очистка истории для текущего пользователя и опционально company_id. |
 | POST | `/api/v1/ai/chat` | Отправка сообщения. Тело: `message`, `company_id` (опционально). Ответ и сохранение в БД (ChatMessage). |
 
-## Сервис OpenAI
+## Провайдеры LLM (OpenAI и OpenRouter)
+
+**Файл:** `backend/app/services/llm_provider.py`
+
+- **get_llm_client(provider, api_key)** — возвращает `AsyncOpenAI`-клиент: для `openrouter` используется `OPENROUTER_BASE_URL` и `OPENROUTER_API_KEY`, для `openai` — стандартный базовый URL и `OPENAI_API_KEY`.
+- **get_default_model(provider)** — модель по умолчанию (например `gpt-4o-mini` для OpenAI, `openai/gpt-4o-mini` для OpenRouter).
+- Провайдер и модель могут переопределяться в БД через **AISettings** (админка).
+
+## Сервис чата
 
 **Файл:** `backend/app/services/openai_service.py`
 
-- Класс **OpenAIService**, метод **chat(messages, db, user, company_id)**.
-- Если переданы `db` и `user` — включается режим **tools** (function calling): модель может вызывать функции, результаты подставляются в диалог, до 10 раундов.
-- Модель: **gpt-4o-mini**.
+- Класс **OpenAIService(provider, model, temperature)** — при создании без аргументов берёт провайдер/модель из конфига (`AI_PROVIDER`, `AI_MODEL`) или при вызове из роута — из записи **AISettings** (id=1), если она есть.
+- Метод **chat(messages, db, user, company_id)** — отправка сообщений в LLM. Если переданы `db` и `user` — включается режим **tools** (function calling): модель может вызывать функции, результаты подставляются в диалог, до 10 раундов.
+
+## Настройки AI в админке
+
+**Роуты:** `backend/app/api/v1/routes/admin.py`
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/api/v1/admin/ai-settings` | Получить текущие настройки (провайдер, модель, temperature). |
+| PATCH | `/api/v1/admin/ai-settings` | Обновить настройки. |
+| POST | `/api/v1/admin/ai-settings/test` | Тестовый запрос к выбранной модели. |
+
+Модель в БД (**AISettings**) имеет приоритет над переменными окружения при формировании `OpenAIService` в роуте `/ai/chat`.
 
 ## Инструменты (tools)
 
@@ -29,7 +48,7 @@
 
 | Имя | Описание |
 |-----|----------|
-| get_orders | Список заявок (опционально фильтр по статусу). |
+| get_orders | Список заявок (опционально фильтр по статусу, пагинация). |
 | get_order_details | Детали заявки по номеру (позиции, услуги). |
 | get_products | Список товаров с остатками и браком. |
 | get_product_details | Детали товара по штрихкоду или названию. |
@@ -39,7 +58,7 @@
 | get_company_info | Реквизиты компании. |
 | get_destinations | Адреса доставки. |
 
-Лимиты (MAX_ORDERS, MAX_PRODUCTS и т.д.) заданы в модуле, чтобы не переполнять контекст ответа.
+Лимиты (MAX_ORDERS, MAX_PRODUCTS и т.д.) заданы в модуле, чтобы не переполнять контекст ответа. Поддерживаются синонимы статусов заявок (например «отгружено» → «Завершено»).
 
 ## RAG
 

@@ -12,6 +12,15 @@ services:
       - db
       - redis
 
+  celery_worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    env_file: .env
+    command: celery -A app.celery_app worker -l info
+    depends_on:
+      - redis
+
   frontend:
     build:
       context: .

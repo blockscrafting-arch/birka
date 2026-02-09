@@ -23,14 +23,14 @@ def build_rag_context(message: str) -> str:
 
 
 async def get_embedding(text: str) -> list[float] | None:
-    """Get embedding for text via OpenAI. Returns None if no API key."""
+    """Get embedding for text via OpenAI (async). Returns None if no API key."""
     if not settings.OPENAI_API_KEY or not text.strip():
         return None
     try:
-        from openai import OpenAI
+        from openai import AsyncOpenAI
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        resp = client.embeddings.create(model="text-embedding-3-small", input=text.strip())
+        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        resp = await client.embeddings.create(model="text-embedding-3-small", input=text.strip())
         return resp.data[0].embedding
     except Exception:
         return None

@@ -9,7 +9,7 @@
 ## Секреты и конфигурация
 
 - Все секреты и чувствительные параметры — в **переменных окружения** (env), не в репозитории.
-- Примеры: `POSTGRES_DSN`, `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `ADMIN_TELEGRAM_IDS`, `S3_*`, `DADATA_TOKEN`, `ENCRYPTION_KEY` (опционально: Fernet-ключ для шифрования API-ключей WB/Ozon в БД; сгенерировать: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`).
+- Примеры: `POSTGRES_DSN`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_PROVIDER`, `AI_MODEL`, `TELEGRAM_BOT_TOKEN`, `ADMIN_TELEGRAM_IDS`, `S3_*`, `DADATA_TOKEN`, `ENCRYPTION_KEY`, `SHIPMENT_SCHEDULER_INTERVAL_SECONDS` (интервал проверки просроченных отгрузок, по умолчанию 600 сек). Опционально: `DOCS_RAG_PATH` — путь к папке с RAG-документами (по умолчанию `/app/docs/rag`). Fernet для API-ключей: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
 
 ### Ротация ENCRYPTION_KEY
 
@@ -47,11 +47,13 @@ cd frontend && npm run build && cd ..
 
 # 4. Собрать и запустить контейнеры
 docker compose -f docker-compose.prod.yml build --no-cache
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
 # 5. Применить миграции БД
 docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
 ```
+
+Флаг `--remove-orphans` убирает контейнеры, которых нет в текущем compose-файле (например, `db` и `redis` из dev — на проде используется внешняя БД). Если предупреждение «Found orphan containers» не мешает, можно не использовать флаг.
 
 Если бэкенд **не в Docker** (запуск напрямую на VPS):
 

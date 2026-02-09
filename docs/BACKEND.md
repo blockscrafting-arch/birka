@@ -4,7 +4,10 @@
 
 - **Файл:** `backend/app/main.py`
 - **API:** префикс `/api/v1`
-- Приложение создаётся в `create_app()`: CORS, лимитер (slowapi), обработчики исключений, health-check `/health` (проверка БД). При старте — `sync_roles_on_startup()` (выставляет роль admin пользователям из `ADMIN_TELEGRAM_IDS`).
+- Приложение создаётся в `create_app()`: CORS, лимитер (slowapi), обработчики исключений, health-check `/health` (проверка БД).
+- **Старт (lifespan):**
+  - `sync_roles_on_startup()` — выставляет роль admin пользователям из `ADMIN_TELEGRAM_IDS`; роль warehouse задаётся только вручную в админке.
+  - Запуск фоновой задачи **shipment scheduler** — периодическая проверка просроченных отгрузок (интервал задаётся `SHIPMENT_SCHEDULER_INTERVAL_SECONDS`).
 
 ## Маршруты
 
@@ -12,16 +15,17 @@
 
 | Префикс | Тег | Описание |
 |---------|-----|----------|
-| `/auth` | auth | Авторизация, сессии |
-| `/admin` | admin | Админка |
-| `/companies` | companies | Компании |
+| `/auth` | auth | Авторизация, сессии (telegram, logout, me) |
+| `/admin` | admin | Админка: пользователи, шаблоны договоров, документы, RAG, AI-настройки |
+| `/companies` | companies | Компании, API-ключи WB/Ozon, договоры |
 | `/destinations` | destinations | Адреса доставки |
-| `/products` | products | Товары |
-| `/orders` | orders | Заявки |
-| `/services` | services | Услуги |
-| `/shipping` | shipping | Отгрузки |
-| `/warehouse` | warehouse | Склад (приёмка, упаковка) |
-| `/ai` | ai | Чат с AI, история |
+| `/products` | products | Товары, импорт/экспорт, этикетки, фото брака |
+| `/orders` | orders | Заявки, позиции, фото, записи упаковки, экспорт приёмки |
+| `/services` | services | Услуги (прайс), категории, расчёт, история цен, импорт/экспорт, PDF |
+| `/shipping` | shipping | Заявки на отгрузку, статусы, штрихкоды поставок |
+| `/fbo` | fbo | FBO-поставки WB/Ozon: создание, синхронизация, этикетки коробов, импорт ШК |
+| `/warehouse` | warehouse | Приёмка, упаковка, валидация ШК, завершение заказа, экспорт FBO |
+| `/ai` | ai | Чат с AI, история сообщений |
 
 ## Авторизация
 
@@ -38,10 +42,13 @@
 
 Класс `Settings` (pydantic-settings, из env и `.env`):
 
-- **Auth:** `ADMIN_TELEGRAM_IDS`, `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`
+- **Auth:** `ADMIN_TELEGRAM_IDS`, `TELEGRAM_BOT_TOKEN`
+- **AI:** `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_PROVIDER` (openai | openrouter), `AI_MODEL` (например gpt-4o-mini или openai/gpt-4o для OpenRouter)
 - **БД:** `POSTGRES_DSN`
+- **Shipment scheduler:** `SHIPMENT_SCHEDULER_INTERVAL_SECONDS` (интервал проверки просроченных отгрузок, по умолчанию 600)
 - **CORS:** `CORS_ORIGINS`
 - **Загрузки:** `MAX_UPLOAD_SIZE_BYTES`
+- **Шифрование API-ключей:** `ENCRYPTION_KEY` (Fernet, base64 url-safe)
 - **Dadata:** `DADATA_TOKEN`
 - **S3:** `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`, `S3_BUCKET_NAME`, `FILE_PUBLIC_BASE_URL`
 
