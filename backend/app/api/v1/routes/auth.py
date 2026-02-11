@@ -56,10 +56,11 @@ async def telegram_auth(
             await db.commit()
             await db.refresh(user)
 
-    await db.execute(delete(Session).where(Session.expires_at <= datetime.now(timezone.utc)))
+    now_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    await db.execute(delete(Session).where(Session.expires_at <= now_utc_naive))
 
     token = secrets.token_hex(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    expires_at = now_utc_naive + timedelta(days=7)
     user_id = user.id
     role = user.role
     session = Session(user_id=user_id, token=token, expires_at=expires_at)

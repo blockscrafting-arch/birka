@@ -26,8 +26,9 @@ async def get_current_user(
 ) -> User:
     """Resolve current user from Telegram initData header."""
     if x_session_token:
+        now_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
         result = await db.execute(
-            select(Session).where(Session.token == x_session_token, Session.expires_at > datetime.now(timezone.utc))
+            select(Session).where(Session.token == x_session_token, Session.expires_at > now_utc_naive)
         )
         session = result.scalar_one_or_none()
         if not session:
