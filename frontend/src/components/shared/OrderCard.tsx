@@ -1,8 +1,9 @@
+import { OrderStatus } from "../../types";
 import { StatusBadge } from "../ui/StatusBadge";
 
 type OrderCardProps = {
   title: string;
-  status: "На приемке" | "Принято" | "Упаковка" | "Готово к отгрузке" | "Завершено";
+  status: OrderStatus;
   onClick?: () => void;
   photoCount?: number;
 };

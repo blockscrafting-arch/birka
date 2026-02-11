@@ -42,11 +42,14 @@ export type Product = {
   defect_quantity: number;
 };
 
+/** Допустимые статусы заказа (совпадают с бэкендом). */
+export type OrderStatus = "На приемке" | "Принято" | "Упаковка" | "Готово к отгрузке" | "Завершено";
+
 export type Order = {
   id: number;
   company_id: number;
   order_number: string;
-  status: string;
+  status: OrderStatus;
   destination: string | null;
   planned_qty: number;
   received_qty: number;
