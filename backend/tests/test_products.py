@@ -10,3 +10,5 @@ async def test_create_product(client, auth_headers):
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "Шлем"
+    assert "created_at" in data
+    assert isinstance(data["created_at"], str) and len(data["created_at"]) > 0

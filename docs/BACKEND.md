@@ -45,6 +45,7 @@
 - **Auth:** `ADMIN_TELEGRAM_IDS`, `TELEGRAM_BOT_TOKEN`
 - **AI:** `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_PROVIDER` (openai | openrouter), `AI_MODEL` (например gpt-4o-mini или openai/gpt-4o для OpenRouter)
 - **БД:** `POSTGRES_DSN`
+- **Redis:** `REDIS_DSN` (опционально) — для кэша и Celery; в production с docker-compose задать `redis://redis:6379/0`.
 - **Shipment scheduler:** `SHIPMENT_SCHEDULER_INTERVAL_SECONDS` (интервал проверки просроченных отгрузок, по умолчанию 600)
 - **CORS:** `CORS_ORIGINS`
 - **Загрузки:** `MAX_UPLOAD_SIZE_BYTES`
@@ -53,6 +54,10 @@
 - **S3:** `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`, `S3_BUCKET_NAME`, `FILE_PUBLIC_BASE_URL`
 
 Секреты хранить только в env, не в репозитории.
+
+## Даты и время
+
+Для колонок БД без timezone (`DateTime()` без `timezone=True`) храним UTC в виде naive datetime. В коде при записи в такие поля использовать `datetime.now(timezone.utc).replace(tzinfo=None)`. Исключения: колонки с `DateTime(timezone=True)` (например document_chunks.created_at, ai_settings.updated_at) — туда передаём aware datetime.
 
 ## Логирование и ПДн
 

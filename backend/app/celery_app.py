@@ -1,10 +1,17 @@
 """Celery app for background tasks (e.g. document conversion in isolated worker)."""
+import logging
+
 from celery import Celery
 from celery.schedules import schedule
 
 from app.core.config import settings
 
-broker = (settings.REDIS_DSN or "redis://localhost:6379/0").strip()
+_redis_dsn = (settings.REDIS_DSN or "").strip()
+if not _redis_dsn:
+    logging.warning(
+        "REDIS_DSN is empty; using localhost fallback. Set REDIS_DSN in production."
+    )
+broker = _redis_dsn or "redis://localhost:6379/0"
 backend = broker
 
 celery_app = Celery(

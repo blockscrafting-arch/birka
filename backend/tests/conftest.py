@@ -73,7 +73,7 @@ async def auth_headers(db_session):
     await db_session.refresh(user)
 
     token = f"test-token-{telegram_id}"
-    session = Session(user_id=user.id, token=token, expires_at=datetime.now(timezone.utc) + timedelta(days=1))
+    session = Session(user_id=user.id, token=token, expires_at=(datetime.now(timezone.utc) + timedelta(days=1)).replace(tzinfo=None))
     db_session.add(session)
     await db_session.commit()
 
@@ -95,7 +95,7 @@ async def auth_headers_and_user(db_session):
     await db_session.refresh(user)
 
     token = f"test-token-{telegram_id}"
-    session = Session(user_id=user.id, token=token, expires_at=datetime.now(timezone.utc) + timedelta(days=1))
+    session = Session(user_id=user.id, token=token, expires_at=(datetime.now(timezone.utc) + timedelta(days=1)).replace(tzinfo=None))
     db_session.add(session)
     await db_session.commit()
 
@@ -116,7 +116,7 @@ async def warehouse_headers(db_session):
     await db_session.refresh(user)
 
     token = f"warehouse-token-{telegram_id}"
-    session = Session(user_id=user.id, token=token, expires_at=datetime.now(timezone.utc) + timedelta(days=1))
+    session = Session(user_id=user.id, token=token, expires_at=(datetime.now(timezone.utc) + timedelta(days=1)).replace(tzinfo=None))
     db_session.add(session)
     await db_session.commit()
 
@@ -137,7 +137,7 @@ async def admin_headers(db_session):
     await db_session.refresh(user)
 
     token = f"admin-token-{telegram_id}"
-    session = Session(user_id=user.id, token=token, expires_at=datetime.now(timezone.utc) + timedelta(days=1))
+    session = Session(user_id=user.id, token=token, expires_at=(datetime.now(timezone.utc) + timedelta(days=1)).replace(tzinfo=None))
     db_session.add(session)
     await db_session.commit()
 

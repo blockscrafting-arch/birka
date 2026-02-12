@@ -19,7 +19,7 @@ class FBOSupply(Base):
     external_supply_id: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(32), default="draft")  # draft | created | in_progress | completed
     warehouse_name: Mapped[str | None] = mapped_column(String(128))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     order = relationship("Order", back_populates="fbo_supplies")
     shipment_requests = relationship("ShipmentRequest", back_populates="fbo_supply")

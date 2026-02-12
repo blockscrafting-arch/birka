@@ -29,6 +29,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.backend
     env_file: .env
+    environment:
+      REDIS_DSN: "redis://redis:6379/0"
     command: celery -A app.celery_app worker -l info
     depends_on:
       - redis
@@ -46,6 +48,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.backend
     env_file: .env
+    environment:
+      REDIS_DSN: "redis://redis:6379/0"
     command: celery -A app.celery_app beat -l info
     depends_on:
       - redis

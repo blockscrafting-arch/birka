@@ -358,7 +358,7 @@ async def complete_order(
     telegram_id = company.user.telegram_id if company.user else None
     order_number = order.order_number
     order.status = "Завершено"
-    order.completed_at = datetime.now(timezone.utc)
+    order.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await db.commit()
     if telegram_id:
         msg = f"Заявка {order_number}: Завершено. Упаковано всего {order.packed_qty} шт."

@@ -510,3 +510,4 @@ async def test_packing_status_flow_and_complete(client, auth_headers, warehouse_
     order_final = next((o for o in list_resp3.json()["items"] if o["id"] == order_id), None)
     assert order_final is not None
     assert order_final["status"] == "Завершено"
+    assert order_final.get("completed_at") is not None

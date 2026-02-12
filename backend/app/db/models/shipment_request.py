@@ -23,7 +23,7 @@ class ShipmentRequest(Base):
     supply_barcode_key: Mapped[str | None] = mapped_column(String(512))
     box_barcodes_key: Mapped[str | None] = mapped_column(String(512))
     status: Mapped[str] = mapped_column(String(32), default="Создано")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     company = relationship("Company", back_populates="shipment_requests")
     order = relationship("Order", back_populates="shipment_requests")
