@@ -14,7 +14,7 @@ import { useCompanies } from "../../hooks/useCompanies";
 import { useDestinations } from "../../hooks/useDestinations";
 import { useOrders } from "../../hooks/useOrders";
 import { useProducts } from "../../hooks/useProducts";
-import { apiClient, downloadFile } from "../../services/api";
+import { apiClient } from "../../services/api";
 import { OrderForm } from "./OrderForm";
 
 type OrderFormPayload = {
@@ -42,6 +42,7 @@ export function OrdersPage() {
   >(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
+  const [templateSending, setTemplateSending] = useState(false);
 
   useEffect(() => {
     const stateServices = (location.state as { services?: { service_id: number; quantity: number }[] } | null)?.services;
@@ -138,9 +139,23 @@ export function OrdersPage() {
           </Button>
           <Button
             variant="ghost"
-            onClick={() => downloadFile("/orders/import/template", "Шаблон_заявки.xlsx")}
+            disabled={templateSending}
+            onClick={async () => {
+              setTemplateSending(true);
+              try {
+                await apiClient.api("/orders/import/template/send", { method: "POST" });
+                setToast({ message: "Файл отправлен вам в Telegram" });
+              } catch (err) {
+                setToast({
+                  message: err instanceof Error ? err.message : "Не удалось отправить шаблон",
+                  variant: "error",
+                });
+              } finally {
+                setTemplateSending(false);
+              }
+            }}
           >
-            Скачать шаблон заявки
+            {templateSending ? "Отправляю..." : "Отправить шаблон в Telegram"}
           </Button>
           <input
             ref={importRef}

@@ -212,6 +212,23 @@ async def get_order_import_template(
     )
 
 
+@router.post("/import/template/send")
+async def send_order_import_template_to_telegram(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Send empty order import template to current user in Telegram."""
+    telegram_id = getattr(current_user, "telegram_id", None)
+    if not telegram_id:
+        raise HTTPException(status_code=400, detail="Telegram не привязан к вашему аккаунту")
+    buffer = export_order_items_template()
+    file_bytes = buffer.getvalue()
+    filename = "Шаблон_заявки.xlsx"
+    sent = await send_document(telegram_id, file_bytes, filename, caption="Шаблон заявки")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}
+
+
 @router.post("/import", response_model=OrderOut)
 @limiter.limit("30/minute")
 async def import_order_from_excel(

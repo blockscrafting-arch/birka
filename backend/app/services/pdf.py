@@ -135,7 +135,7 @@ def _render_barcode_base64(barcode_value: str, module_width: float = 0.35, modul
     try:
         code128 = barcode.get("code128", code, writer=ImageWriter())
         buf = BytesIO()
-        opts = {"module_width": module_width, "module_height": module_height, "font_size": 0}
+        opts = {"module_width": module_width, "module_height": module_height}
         try:
             code128.write(buf, options=opts)
         except TypeError:

@@ -132,6 +132,26 @@ async def warehouse_headers(db_session):
 
 
 @pytest.fixture()
+async def warehouse_headers_and_user(db_session):
+    """Warehouse headers and user (e.g. to assert FBO send goes to current_user)."""
+    telegram_id = next(_telegram_id_counter)
+    user = User(
+        telegram_id=telegram_id,
+        telegram_username=f"worker-{telegram_id}",
+        first_name="Worker",
+        role="warehouse",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    token = f"warehouse-token-{telegram_id}"
+    session = Session(user_id=user.id, token=token, expires_at=(datetime.now(timezone.utc) + timedelta(days=1)).replace(tzinfo=None))
+    db_session.add(session)
+    await db_session.commit()
+    return {"X-Session-Token": token}, user
+
+
+@pytest.fixture()
 async def client_expire_on_commit(db_session_expire_on_commit):
     """Client using session with expire_on_commit=True (production-like)."""
     async def override_get_db():

@@ -420,17 +420,14 @@ async def send_export_fbo_to_telegram(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles("warehouse", "admin")),
 ) -> dict:
-    """Export FBO and send to company owner in Telegram."""
-    order_result = await db.execute(
-        select(Order).options(joinedload(Order.company).joinedload(Company.user)).where(Order.id == order_id)
-    )
-    order = order_result.unique().scalar_one_or_none()
+    """Export FBO and send to current user (who clicked) in Telegram."""
+    order_result = await db.execute(select(Order).where(Order.id == order_id))
+    order = order_result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    company = order.company
-    if not company or not company.user:
-        raise HTTPException(status_code=404, detail="Компания или пользователь не найдены")
-    telegram_id = company.user.telegram_id
+    telegram_id = getattr(current_user, "telegram_id", None)
+    if not telegram_id:
+        raise HTTPException(status_code=400, detail="Telegram не привязан к вашему аккаунту")
     result = await db.execute(
         select(PackingRecord)
         .options(

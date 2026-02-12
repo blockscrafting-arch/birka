@@ -1,4 +1,6 @@
 """Warehouse tests."""
+from unittest.mock import AsyncMock, patch
+
 from app.db.models.order_photo import OrderPhoto
 
 
@@ -809,3 +811,56 @@ async def test_complete_order_with_expire_on_commit(
     assert order_final is not None
     assert order_final["status"] == "Завершено"
     assert order_final.get("completed_at") is not None
+
+
+async def test_export_fbo_send_to_current_user(client, auth_headers, warehouse_headers_and_user, unique_inn):
+    """POST /warehouse/export-fbo/send sends file to current_user (warehouse), not company owner."""
+    wh_headers, wh_user = warehouse_headers_and_user
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+    product_resp = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар FBO"},
+        headers=auth_headers,
+    )
+    assert product_resp.status_code in (200, 201)
+    product_id = product_resp.json()["id"]
+    order_resp = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 5}]},
+        headers=auth_headers,
+    )
+    assert order_resp.status_code == 200
+    order_id = order_resp.json()["id"]
+    items_resp = await client.get(f"/api/v1/orders/{order_id}/items", headers=auth_headers)
+    assert items_resp.status_code == 200
+    order_item_id = items_resp.json()[0]["id"]
+    await client.post(
+        "/api/v1/warehouse/receiving/complete",
+        json={"order_id": order_id, "items": [{"order_item_id": order_item_id, "received_qty": 5, "defect_qty": 0}]},
+        headers=wh_headers,
+    )
+    await client.post(
+        "/api/v1/warehouse/packing/record",
+        json={
+            "order_id": order_id,
+            "order_item_id": order_item_id,
+            "product_id": product_id,
+            "employee_code": "E1",
+            "quantity": 5,
+        },
+        headers=wh_headers,
+    )
+    with patch("app.api.v1.routes.warehouse.send_document", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = True
+        response = await client.post(
+            f"/api/v1/warehouse/export-fbo/send?order_id={order_id}",
+            headers=wh_headers,
+        )
+    assert response.status_code == 200
+    assert response.json() == {"sent": True}
+    mock_send.assert_called_once()
+    call_telegram_id = mock_send.call_args[0][0]
+    assert call_telegram_id == wh_user.telegram_id
+    assert "FBO" in mock_send.call_args[0][2] or "Отгрузка" in mock_send.call_args[0][2]

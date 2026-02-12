@@ -1,5 +1,6 @@
 """Orders tests."""
 import io
+from unittest.mock import AsyncMock, patch
 
 import pandas as pd
 
@@ -107,3 +108,43 @@ async def test_order_import_missing_columns(client, auth_headers, unique_inn):
     )
     assert response.status_code == 400
     assert "столбц" in response.json().get("detail", "").lower() or "Название" in response.json().get("detail", "")
+
+
+async def test_send_import_template_to_telegram(client, auth_headers_and_user):
+    """POST /orders/import/template/send sends template to current user in Telegram."""
+    headers, user = auth_headers_and_user
+    with patch("app.api.v1.routes.orders.send_document", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = True
+        response = await client.post("/api/v1/orders/import/template/send", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {"sent": True}
+    mock_send.assert_called_once()
+    call_args = mock_send.call_args[0]
+    assert call_args[0] == user.telegram_id
+    assert call_args[2] == "Шаблон_заявки.xlsx"
+    assert len(call_args[1]) > 100  # Excel buffer
+
+
+async def test_send_import_template_no_telegram_returns_400(client):
+    """POST /orders/import/template/send returns 400 when current user has no telegram_id."""
+    from app.api.v1.deps import get_current_user
+    from app.main import app
+
+    class UserNoTelegram:
+        id = 1
+        role = "client"
+        telegram_id = None
+
+    async def mock_get_current_user():
+        return UserNoTelegram()
+
+    app.dependency_overrides[get_current_user] = mock_get_current_user
+    try:
+        response = await client.post(
+            "/api/v1/orders/import/template/send",
+            headers={"X-Session-Token": "any"},  # override ignores real auth
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+    assert response.status_code == 400
+    assert "Telegram" in response.json().get("detail", "")

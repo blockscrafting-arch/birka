@@ -37,7 +37,7 @@ export function PackingPage() {
   const handleExportFBO = async (orderId: number) => {
     try {
       await apiClient.api(`/warehouse/export-fbo/send?order_id=${orderId}`, { method: "POST" });
-      setToast({ message: "Файл отправлен в чат с ботом клиенту" });
+      setToast({ message: "Файл отправлен вам в Telegram" });
     } catch (err) {
       setToast({ message: err instanceof Error ? err.message : "Ошибка выгрузки", variant: "error" });
     }

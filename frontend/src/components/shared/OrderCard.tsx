@@ -15,7 +15,7 @@ export function OrderCard({ title, status, onClick, onExport, photoCount }: Orde
       <button
         type="button"
         onClick={onClick}
-        className="w-full text-left transition hover:border-slate-700 hover:bg-slate-900"
+        className="w-full text-left transition hover:border-slate-700"
       >
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold text-slate-100">{title}</div>
