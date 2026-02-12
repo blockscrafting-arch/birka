@@ -55,6 +55,7 @@ export type Order = {
   received_qty: number;
   packed_qty: number;
   photo_count?: number;
+  company_name?: string;
 };
 
 export type OrderItem = {

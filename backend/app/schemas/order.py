@@ -46,6 +46,8 @@ class OrderOut(BaseModel):
     received_qty: int
     packed_qty: int
     photo_count: int = 0
+    completed_at: datetime | None = None
+    company_name: str | None = None
 
     class Config:
         from_attributes = True

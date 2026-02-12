@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import { CompanySelect } from "../../components/shared/CompanySelect";
 import { PhotoGallery } from "../../components/shared/PhotoGallery";
 import { PhotoUpload } from "../../components/shared/PhotoUpload";
 import { Button } from "../../components/ui/Button";
@@ -8,8 +7,6 @@ import { Loader } from "../../components/ui/Loader";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { Modal } from "../../components/ui/Modal";
 import { Toast } from "../../components/ui/Toast";
-import { useActiveCompany } from "../../hooks/useActiveCompany";
-import { useCompanies } from "../../hooks/useCompanies";
 import { useOrderItems } from "../../hooks/useOrderItems";
 import { useOrders } from "../../hooks/useOrders";
 import { useWarehouse } from "../../hooks/useWarehouse";
@@ -18,11 +15,8 @@ import { apiClient } from "../../services/api";
 import { PackingForm } from "./PackingForm";
 
 export function PackingPage() {
-  const { items: companies = [] } = useCompanies();
-  const { companyId, setCompanyId } = useActiveCompany();
-  const activeCompanyId = companyId ?? companies[0]?.id ?? null;
   const { items: orders = [], isLoading, updateStatus } = useOrders(
-    activeCompanyId ?? undefined,
+    undefined,
     1,
     100,
     "Принято,Упаковка,Готово к отгрузке"
@@ -48,20 +42,6 @@ export function PackingPage() {
       setToast({ message: err instanceof Error ? err.message : "Ошибка выгрузки", variant: "error" });
     }
   };
-
-  useEffect(() => {
-    if (!companyId && companies.length > 0) {
-      setCompanyId(companies[0].id);
-    }
-  }, [companies, companyId, setCompanyId]);
-
-  if (companies.length === 0) {
-    return (
-      <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
-        Сначала добавьте компанию, чтобы работать со складом.
-      </div>
-    );
-  }
 
   const handleSubmit = async (
     payloads: {
@@ -92,7 +72,6 @@ export function PackingPage() {
   return (
     <div className="space-y-4">
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
-      <CompanySelect companies={companies} value={activeCompanyId} onChange={setCompanyId} />
       {pageError ? <div className="text-sm text-rose-500">{pageError}</div> : null}
 
       {isLoading ? <div className="text-sm text-slate-600">Загрузка заявок...</div> : null}
@@ -106,7 +85,7 @@ export function PackingPage() {
         {orders.map((order) => (
           <div key={order.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-sm font-semibold text-slate-900">{order.order_number}</div>
+              <div className="text-sm font-semibold text-slate-900">{order.company_name} {order.order_number}</div>
               <StatusBadge status={order.status} />
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -138,23 +117,12 @@ export function PackingPage() {
 
       <Modal title="Упаковка" open={Boolean(activeOrderId)} onClose={() => setActiveOrderId(null)}>
         {itemsLoading ? (
-          <Loader text="Загрузка позиций..." />
+          <Loader text="Загрузка товаров..." />
         ) : (
           <div className="space-y-4">
-            {activeOrder && effectivePlan > 0 ? (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                Упаковано {activeOrder.packed_qty} из {effectivePlan}
-                {isFullyPacked ? (
-                  <div className="mt-2">
-                    <Button
-                      variant="secondary"
-                      onClick={() => activeOrderId && completeOrder.mutate(activeOrderId)}
-                      disabled={completeOrder.isPending}
-                    >
-                      Завершить заказ
-                    </Button>
-                  </div>
-                ) : null}
+            {activeOrder ? (
+              <div className="text-sm font-semibold text-slate-900">
+                {activeOrder.company_name} {activeOrder.order_number}
               </div>
             ) : null}
             <PackingForm
@@ -163,6 +131,15 @@ export function PackingPage() {
               onSubmit={handleSubmit}
               resetKey={formResetKey}
             />
+            {activeOrder && isFullyPacked ? (
+              <Button
+                variant="secondary"
+                onClick={() => activeOrderId && completeOrder.mutate(activeOrderId)}
+                disabled={completeOrder.isPending}
+              >
+                Завершить заказ
+              </Button>
+            ) : null}
             <Button variant="secondary" className="mt-2" onClick={() => setActiveOrderId(null)}>
               Закрыть
             </Button>

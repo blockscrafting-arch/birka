@@ -1,19 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { BarcodeScanner } from "../../components/shared/BarcodeScanner";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Select } from "../../components/ui/Select";
-import {
-  getCameraErrorMessage,
-  SCAN_ERROR_MISMATCH,
-  SCAN_WARNING_NOT_IN_ORDER,
-} from "../../constants/scanner";
 import { useDestinations } from "../../hooks/useDestinations";
-import { useScanFeedback } from "../../hooks/useScanFeedback";
 import { OrderItem } from "../../types";
 
 export type PackingRow = {
+  rowId: number;
   order_item_id: number;
   pallet_number?: string;
   box_number?: string;
@@ -41,18 +35,15 @@ type PackingFormProps = {
 
 export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: PackingFormProps) {
   const { items: destinations } = useDestinations();
-  const { playSuccess, playError, playWarning } = useScanFeedback();
   const [employeeId, setEmployeeId] = useState("");
-  const [rows, setRows] = useState<PackingRow[]>([{ rowId: Date.now(), order_item_id: 0, quantity: 1 }]);
+  const [rows, setRows] = useState<PackingRow[]>([
+    { rowId: Date.now(), order_item_id: 0, quantity: 1 },
+  ]);
   const [warehouse, setWarehouse] = useState("");
   const [materials, setMaterials] = useState("");
   const [time, setTime] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showDetailsFor, setShowDetailsFor] = useState<number | null>(null);
-  const [scannerOpen, setScannerOpen] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [scanWarning, setScanWarning] = useState<string | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
 
   useEffect(() => {
     if (resetKey == null) return;
@@ -67,59 +58,28 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   };
 
-  const handleScan = useCallback(
-    (text: string) => {
-      setCameraError(null);
-      setScanWarning(null);
-      setScanError(null);
-      const trimmed = text.trim();
-      const item = items.find((i) => (i.barcode ?? "").trim() === trimmed);
-
-      if (!item) {
-        setScanWarning("ШК не найден в позициях заявки");
-        playWarning();
-        return;
-      }
-
-      const hasOtherSelection = rows.some(
-        (r) => r.order_item_id !== 0 && r.order_item_id !== item.id
-      );
-      if (hasOtherSelection) {
-        setScanError("Отсканированный ШК не совпадает с выбранной позицией");
-        playError();
-        return;
-      }
-
-      setRows((prev) => {
-        const existingRowIndex = prev.findIndex((r) => r.order_item_id === item.id);
-        if (existingRowIndex >= 0) {
-          return prev.map((r, i) =>
-            i === existingRowIndex ? { ...r, quantity: r.quantity + 1 } : r
-          );
-        }
-        const emptyRowIndex = prev.findIndex((r) => r.order_item_id === 0);
-        if (emptyRowIndex >= 0) {
-          return prev.map((r, i) =>
-            i === emptyRowIndex ? { ...r, order_item_id: item.id, quantity: 1 } : r
-          );
-        }
-        return [...prev, { order_item_id: item.id, quantity: 1 }];
-      });
-      playSuccess();
-    },
-    [items, rows, playSuccess, playError, playWarning]
-  );
-
-  const handleScannerError = useCallback((msg: string) => {
-    setCameraError(getCameraErrorMessage(msg));
-  }, []);
-
   const addRow = () => {
     setRows((prev) => [...prev, { rowId: Date.now(), order_item_id: 0, quantity: 1 }]);
   };
 
   const removeRow = (index: number) => {
     setRows((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const duplicateLastRow = () => {
+    setRows((prev) => {
+      const last = prev[prev.length - 1];
+      return [
+        ...prev,
+        {
+          rowId: Date.now(),
+          order_item_id: last.order_item_id,
+          pallet_number: last.pallet_number,
+          box_number: last.box_number,
+          quantity: last.quantity,
+        },
+      ];
+    });
   };
 
   return (
@@ -134,7 +94,7 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
         }
         const valid = rows.filter((r) => r.order_item_id && r.quantity > 0);
         if (valid.length === 0) {
-          setError("Добавьте хотя бы одну позицию с товаром и количеством");
+          setError("Добавьте хотя бы одну строку с товаром и количеством");
           return;
         }
         const toOptionalInt = (s: string | undefined): number | undefined => {
@@ -147,7 +107,7 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
         for (const row of valid) {
           const item = items.find((i) => i.id === row.order_item_id);
           if (!item) {
-            setError("Выберите позицию заявки");
+            setError("Выберите товар заявки");
             return;
           }
           payloads.push({
@@ -167,46 +127,13 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
     >
       <Input label="ID сотрудника" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} />
 
-      {items.length > 0 ? (
-        <div className="space-y-2">
-          <Button type="button" variant="ghost" onClick={() => setScannerOpen((p) => !p)}>
-            {scannerOpen ? "Закрыть сканер" : "Сканировать ШК"}
-          </Button>
-          {scannerOpen ? (
-            <>
-              <BarcodeScanner
-                compact
-                active={scannerOpen}
-                onScan={handleScan}
-                onError={handleScannerError}
-              />
-              {cameraError ? (
-                <div className="rounded-lg border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  {cameraError}
-                </div>
-              ) : null}
-            </>
-          ) : null}
-          {scanWarning ? (
-            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              {scanWarning}
-            </div>
-          ) : null}
-          {scanError ? (
-            <div className="rounded-lg border-2 border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {scanError}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
       {items.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-soft">
-          В этой заявке нет позиций для упаковки.
+          В этой заявке нет товаров для упаковки.
         </div>
       ) : (
         <>
-          <div className="text-sm font-medium text-slate-700">Позиции упаковки</div>
+          <div className="text-sm font-medium text-slate-700">Товары упаковки</div>
           {rows.map((row, index) => {
             const selected = items.find((item) => item.id === row.order_item_id);
             return (
@@ -216,12 +143,12 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <Select
-                    label="Позиция заявки"
+                    label="Товар заявки"
                     value={row.order_item_id ? String(row.order_item_id) : ""}
                     onChange={(e) => updateRow(index, { order_item_id: Number(e.target.value) })}
                   >
                     <option value="" disabled>
-                      Выберите позицию
+                      Выберите товар
                     </option>
                     {items.map((item) => (
                       <option key={item.id} value={item.id}>
@@ -231,11 +158,9 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
                       </option>
                     ))}
                   </Select>
-                  {rows.length > 1 ? (
-                    <Button type="button" variant="ghost" onClick={() => removeRow(index)}>
-                      Удалить
-                    </Button>
-                  ) : null}
+                  <Button type="button" variant="ghost" onClick={() => removeRow(index)}>
+                    Удалить
+                  </Button>
                 </div>
                 {selected ? (
                   <div className="rounded border border-slate-100 bg-slate-50 p-2 text-xs text-slate-600">
@@ -276,9 +201,19 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
               </div>
             );
           })}
-          <Button type="button" variant="secondary" onClick={addRow} disabled={items.length === 0}>
-            + Добавить позицию
-          </Button>
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" onClick={addRow} disabled={items.length === 0}>
+              + Добавить товар
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={duplicateLastRow}
+              disabled={rows.length === 0}
+            >
+              Дублировать
+            </Button>
+          </div>
         </>
       )}
 

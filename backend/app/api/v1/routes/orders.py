@@ -21,9 +21,9 @@ from app.db.models.service import Service
 from app.db.models.order_photo import OrderPhoto
 from app.db.models.product import Product
 from app.db.session import get_db
-from app.schemas.order import OrderCreate, OrderItemOut, OrderList, OrderOut, OrderPhotoOut, OrderStatusUpdate
+from app.schemas.order import OrderCreate, OrderItemCreate, OrderItemOut, OrderList, OrderOut, OrderPhotoOut, OrderStatusUpdate
 from app.schemas.warehouse import PackingRecordOut
-from app.services.excel import export_receiving
+from app.services.excel import export_order_items, export_order_items_template, export_receiving, parse_orders_excel
 from app.services.files import content_disposition
 from app.services.s3 import S3Service
 from app.services.upload_validation import safe_open_image, sanitize_filename_for_storage, validate_image_signature
@@ -137,23 +137,28 @@ async def create_order(
 
 @router.get("", response_model=OrderList)
 async def list_orders(
-    company_id: int,
+    company_id: int | None = Query(None, description="Company ID; for warehouse/admin optional (all companies)"),
     status: str | None = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> OrderList:
-    """List orders by company with pagination."""
-    if current_user.role in {"warehouse", "admin"}:
-        company_result = await db.execute(select(Company).where(Company.id == company_id))
-    else:
-        company_result = await db.execute(
-            select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
-        )
-    if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    base_query = select(Order).where(Order.company_id == company_id).order_by(Order.created_at.desc())
+    """List orders by company with pagination. Warehouse/admin may omit company_id to see all orders."""
+    if company_id is not None:
+        if current_user.role in {"warehouse", "admin"}:
+            company_result = await db.execute(select(Company).where(Company.id == company_id))
+        else:
+            company_result = await db.execute(
+                select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
+            )
+        if not company_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Компания не найдена")
+    elif current_user.role not in {"warehouse", "admin"}:
+        raise HTTPException(status_code=400, detail="Укажите компанию")
+    base_query = select(Order).order_by(Order.created_at.desc())
+    if company_id is not None:
+        base_query = base_query.where(Order.company_id == company_id)
     if status:
         statuses = [value.strip() for value in status.split(",") if value.strip()]
         if statuses:
@@ -161,28 +166,107 @@ async def list_orders(
     total_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
     total = int(total_result.scalar_one())
     offset = (page - 1) * limit
-    conditions = [Order.company_id == company_id]
+    conditions: list = []
+    if company_id is not None:
+        conditions.append(Order.company_id == company_id)
     if status:
         statuses = [value.strip() for value in status.split(",") if value.strip()]
         if statuses:
             conditions.append(Order.status.in_(statuses))
-    result = await db.execute(
+    q = (
         select(Order, func.count(OrderPhoto.id))
         .outerjoin(OrderPhoto, OrderPhoto.order_id == Order.id)
-        .where(*conditions)
         .group_by(Order.id)
         .order_by(Order.created_at.desc())
         .offset(offset)
         .limit(limit)
     )
-    items: list[OrderOut] = []
-    for order, photo_count in result.all():
-        items.append(
-            OrderOut.model_validate(order, from_attributes=True).model_copy(
-                update={"photo_count": int(photo_count)}
-            )
+    if conditions:
+        q = q.where(*conditions)
+    result = await db.execute(q)
+    rows = result.all()
+    company_ids = list({order.company_id for order, _ in rows})
+    companies_result = await db.execute(select(Company.id, Company.name).where(Company.id.in_(company_ids)))
+    company_map = {row[0]: row[1] for row in companies_result.all()}
+    items = [
+        OrderOut.model_validate(order, from_attributes=True).model_copy(
+            update={"photo_count": int(photo_count), "company_name": company_map.get(order.company_id)}
         )
+        for order, photo_count in rows
+    ]
     return OrderList(items=items, total=total, page=page, limit=limit)
+
+
+@router.get("/import/template")
+async def get_order_import_template(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Download empty Excel template for order import."""
+    buffer = export_order_items_template()
+    filename = "Шаблон_заявки.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": content_disposition(filename)},
+    )
+
+
+@router.post("/import", response_model=OrderOut)
+@limiter.limit("30/minute")
+async def import_order_from_excel(
+    request: Request,
+    company_id: int = Query(..., description="Company ID"),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> OrderOut:
+    """Import order from Excel: columns as in export (Название, Количество required). Finds or creates products."""
+    company_result = await db.execute(
+        select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
+    )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if not file.filename or not (file.filename.endswith(".xlsx") or file.filename.endswith(".xls")):
+        raise HTTPException(status_code=400, detail="Загрузите файл Excel (.xlsx или .xls)")
+    data = await file.read()
+    try:
+        rows = parse_orders_excel(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not rows:
+        raise HTTPException(status_code=400, detail="В файле нет строк с названием и количеством")
+    product_ids: list[int] = []
+    products_created = 0
+    for row in rows:
+        barcode = (row.get("barcode") or "").strip() or None
+        product = None
+        if barcode:
+            prod_result = await db.execute(
+                select(Product).where(Product.company_id == company_id, Product.barcode == barcode)
+            )
+            product = prod_result.scalar_one_or_none()
+        if not product:
+            product = Product(
+                company_id=company_id,
+                name=row["name"],
+                brand=row.get("brand"),
+                size=row.get("size"),
+                color=row.get("color"),
+                barcode=row.get("barcode"),
+                wb_article=row.get("wb_article"),
+                wb_url=row.get("wb_url"),
+                packing_instructions=row.get("packing_instructions"),
+                supplier_name=row.get("supplier_name"),
+            )
+            db.add(product)
+            await db.flush()
+            products_created += 1
+        product_ids.append((product.id, row["planned_qty"]))
+    items_payload = [OrderItemCreate(product_id=pid, planned_qty=qty) for pid, qty in product_ids]
+    payload = OrderCreate(company_id=company_id, items=items_payload)
+    return await create_order(payload, db, current_user)
 
 
 @router.get("/{order_id}/items", response_model=list[OrderItemOut])
@@ -456,6 +540,83 @@ async def export_receiving_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": content_disposition(filename)},
     )
+
+
+@router.get("/{order_id}/export")
+async def export_order_items_excel(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Export order items (goods list) to Excel."""
+    order_result = await db.execute(select(Order).where(Order.id == order_id))
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == order.company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
+        )
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    result = await db.execute(
+        select(OrderItem)
+        .options(joinedload(OrderItem.product))
+        .where(OrderItem.order_id == order_id)
+    )
+    items = list(result.unique().scalars().all())
+    if not items:
+        raise HTTPException(status_code=400, detail="Нет товаров для выгрузки")
+    buffer = export_order_items(items)
+    filename = f"Заявка_{order.order_number}_товары.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": content_disposition(filename)},
+    )
+
+
+@router.post("/{order_id}/export/send")
+async def send_export_order_items_to_telegram(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Export order items and send to company owner in Telegram."""
+    order_result = await db.execute(
+        select(Order).options(joinedload(Order.company).joinedload(Company.user)).where(Order.id == order_id)
+    )
+    order = order_result.unique().scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    company = order.company
+    if not company or not company.user:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if current_user.role not in ("warehouse", "admin") and company.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Нет доступа")
+    telegram_id = company.user.telegram_id
+    if not telegram_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Не удалось отправить файл: пользователь не привязан к Telegram.",
+        )
+    result = await db.execute(
+        select(OrderItem)
+        .options(joinedload(OrderItem.product))
+        .where(OrderItem.order_id == order_id)
+    )
+    items = list(result.unique().scalars().all())
+    if not items:
+        raise HTTPException(status_code=400, detail="Нет товаров для выгрузки")
+    buffer = export_order_items(items)
+    file_bytes = buffer.getvalue()
+    filename = f"Заявка_{order.order_number}_товары.xlsx"
+    sent = await send_document(telegram_id, file_bytes, filename, caption="Товары заявки")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}
 
 
 @router.post("/{order_id}/export-receiving/send")

@@ -1,5 +1,6 @@
 """ORM models."""
 from app.db.models.ai_settings import AISettings
+from app.db.models.chat_message import ChatMessage
 from app.db.models.company import Company
 from app.db.models.company_api_keys import CompanyAPIKeys
 from app.db.models.contract_template import ContractTemplate

@@ -5,7 +5,7 @@ export const CAMERA_ERROR_PERMISSION =
 export const CAMERA_ERROR_NOT_FOUND = "Камера не найдена";
 export const CAMERA_ERROR_NOT_READABLE = "Камера занята или недоступна";
 export const SCANNER_ERROR_PREFIX = "Ошибка сканера";
-export const SCAN_WARNING_NOT_IN_ORDER = "ШК не найден в позициях заявки";
+export const SCAN_WARNING_NOT_IN_ORDER = "ШК не найден в товарах заявки";
 export const SCAN_ERROR_MISMATCH =
   "Отсканированный ШК не совпадает с выбранной позицией";
 

@@ -27,6 +27,16 @@
 | `/warehouse` | warehouse | Приёмка, упаковка, валидация ШК, завершение заказа, экспорт FBO |
 | `/ai` | ai | Чат с AI, история сообщений |
 
+### Дополнительные эндпоинты
+
+- **DELETE /api/v1/companies/{company_id}** — удаление компании. Доступно только владельцу. Возвращает 400, если у компании есть заявки не в статусе «Завершено».
+- **GET /api/v1/orders/import/template** — скачивание пустого шаблона Excel для импорта заявки (колонки: Название, Количество и др.).
+- **POST /api/v1/orders/import** — импорт заявки из Excel (`company_id` в query, файл в body). Обязательные столбцы: Название, Количество. Товары ищутся по баркоду или создаются новые.
+- **GET /api/v1/orders/{order_id}/export** — экспорт товаров заявки в Excel.
+- **POST /api/v1/orders/{order_id}/export/send** — отправка файла экспорта заявки в Telegram чат с ботом.
+- **POST /api/v1/warehouse/receiving/complete** — завершение приёмки. Если обработаны не все товары заявки, возвращает `{"status": "partial", "received", "defects", "remaining"}` и статус заявки не меняется. При приёмке всех товаров — статус «Принято», уведомление в Telegram. Для брака требуется не меньше фото, чем единиц брака по каждому товару.
+- **Экспорт товаров (products):** колонки без «Название компании»; добавлена колонка «Остаток».
+
 ## Авторизация
 
 **Файл:** `backend/app/api/v1/deps.py`
@@ -45,7 +55,7 @@
 - **Auth:** `ADMIN_TELEGRAM_IDS`, `TELEGRAM_BOT_TOKEN`
 - **AI:** `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_PROVIDER` (openai | openrouter), `AI_MODEL` (например gpt-4o-mini или openai/gpt-4o для OpenRouter)
 - **БД:** `POSTGRES_DSN`
-- **Redis:** `REDIS_DSN` (опционально) — для кэша и Celery; в production с docker-compose задать `redis://redis:6379/0`.
+- **Redis:** `REDIS_DSN` (опционально) — для кэша и Celery (worker, beat). В production с docker-compose задать `redis://redis:6379/0`; в [docker-compose.prod.yml](../docker-compose.prod.yml) для celery_worker и celery_beat переменная переопределена через `environment`, чтобы не зависеть от .env. При пустом REDIS_DSN в логах Celery выводится предупреждение и используется fallback localhost (для локальной разработки).
 - **Shipment scheduler:** `SHIPMENT_SCHEDULER_INTERVAL_SECONDS` (интервал проверки просроченных отгрузок, по умолчанию 600)
 - **CORS:** `CORS_ORIGINS`
 - **Загрузки:** `MAX_UPLOAD_SIZE_BYTES`
@@ -73,3 +83,4 @@
 - URL к файлам строить централизованно на бэке; в БД — только ключ объекта.
 - После загрузки файла — HEAD-проверка доступности.
 - Для S3 (Beget) — non-chunked загрузка.
+- **Async SQLAlchemy:** не обращаться к атрибутам загруженных ORM-объектов после `await db.commit()`, если сессия создана с дефолтным `expire_on_commit=True`. После commit объекты считаются expired, обращение к атрибутам вызывает lazy load и в async приводит к `MissingGreenlet`. Сохранять нужные значения в локальные переменные до commit либо перезагружать объект через `await db.refresh(obj)` после commit.

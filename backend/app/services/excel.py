@@ -12,7 +12,6 @@ from app.db.models.service import Service
 
 EXPORT_COLUMNS = [
     "Название",
-    "Название компании",
     "Бренд",
     "Размер",
     "Цвет",
@@ -21,6 +20,7 @@ EXPORT_COLUMNS = [
     "Ссылка WB",
     "ТЗ упаковка",
     "Поставщик",
+    "Остаток",
 ]
 REQUIRED_COLUMNS = {"Название", "Баркод", "Артикул WB", "Поставщик"}
 
@@ -47,6 +47,96 @@ FBO_COLUMNS = [
     "Баркод короба",
 ]
 
+ORDER_IMPORT_COLUMNS = [
+    "Название",
+    "Бренд",
+    "Размер",
+    "Цвет",
+    "Баркод",
+    "Артикул WB",
+    "Ссылка WB",
+    "ТЗ упаковка",
+    "Поставщик",
+    "Количество",
+]
+ORDER_IMPORT_REQUIRED = {"Название", "Количество"}
+
+
+def export_order_items(order_items: list[OrderItem]) -> BytesIO:
+    """Export order items to Excel (for import template / export)."""
+    try:
+        rows = []
+        for item in order_items:
+            product = item.product
+            rows.append(
+                {
+                    "Название": product.name if product else "",
+                    "Бренд": product.brand if product else "",
+                    "Размер": product.size if product else "",
+                    "Цвет": product.color if product else "",
+                    "Баркод": product.barcode if product else "",
+                    "Артикул WB": product.wb_article if product else "",
+                    "Ссылка WB": product.wb_url if product else "",
+                    "ТЗ упаковка": product.packing_instructions if product else "",
+                    "Поставщик": product.supplier_name if product else "",
+                    "Количество": item.planned_qty or 0,
+                }
+            )
+        df = pd.DataFrame(rows, columns=ORDER_IMPORT_COLUMNS)
+        buffer = BytesIO()
+        df.to_excel(buffer, index=False)
+        buffer.seek(0)
+        return buffer
+    except Exception as exc:
+        logger.exception("excel_export_order_items_failed", error=str(exc))
+        raise
+
+
+def export_order_items_template() -> BytesIO:
+    """Export empty order items template."""
+    buffer = BytesIO()
+    pd.DataFrame(columns=ORDER_IMPORT_COLUMNS).to_excel(buffer, index=False)
+    buffer.seek(0)
+    return buffer
+
+
+def parse_orders_excel(file_bytes: bytes) -> list[dict]:
+    """Parse order items from Excel (Название, Количество required). Returns list of dicts with product fields + planned_qty."""
+    try:
+        df = pd.read_excel(BytesIO(file_bytes))
+        missing = ORDER_IMPORT_REQUIRED.difference(set(df.columns))
+        if missing:
+            raise ValueError(f"Отсутствуют столбцы: {', '.join(sorted(missing))}")
+        df = df.fillna("")
+        result = []
+        for _, row in df.iterrows():
+            name = str(row.get("Название", "")).strip()
+            qty_val = row.get("Количество", 0)
+            try:
+                planned_qty = int(qty_val) if qty_val != "" else 0
+            except (TypeError, ValueError):
+                planned_qty = 0
+            if not name or planned_qty <= 0:
+                continue
+            result.append(
+                {
+                    "name": name,
+                    "brand": str(row.get("Бренд", "")).strip() or None,
+                    "size": str(row.get("Размер", "")).strip() or None,
+                    "color": str(row.get("Цвет", "")).strip() or None,
+                    "barcode": str(row.get("Баркод", "")).strip() or None,
+                    "wb_article": str(row.get("Артикул WB", "")).strip() or None,
+                    "wb_url": str(row.get("Ссылка WB", "")).strip() or None,
+                    "packing_instructions": str(row.get("ТЗ упаковка", "")).strip() or None,
+                    "supplier_name": str(row.get("Поставщик", "")).strip() or None,
+                    "planned_qty": planned_qty,
+                }
+            )
+        return result
+    except Exception as exc:
+        logger.exception("excel_parse_orders_failed", error=str(exc))
+        raise
+
 
 def export_products_template() -> BytesIO:
     """Export empty Excel template with required columns."""
@@ -61,13 +151,9 @@ def export_products(products: list[Product]) -> BytesIO:
     try:
         rows = []
         for product in products:
-            company_name = ""
-            if product.company:
-                company_name = product.company.name or ""
             rows.append(
                 {
                     "Название": product.name,
-                    "Название компании": company_name,
                     "Бренд": product.brand,
                     "Размер": product.size,
                     "Цвет": product.color,
@@ -76,6 +162,7 @@ def export_products(products: list[Product]) -> BytesIO:
                     "Ссылка WB": product.wb_url,
                     "ТЗ упаковка": product.packing_instructions,
                     "Поставщик": product.supplier_name,
+                    "Остаток": product.stock_quantity,
                 }
             )
         df = pd.DataFrame(rows, columns=EXPORT_COLUMNS)

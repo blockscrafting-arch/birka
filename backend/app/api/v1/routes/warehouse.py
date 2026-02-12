@@ -66,7 +66,7 @@ async def complete_receiving(
             if not order_item:
                 raise HTTPException(
                     status_code=400,
-                    detail="Позиция заявки не найдена или не принадлежит этой заявке",
+                    detail="Товар заявки не найден или не принадлежит этой заявке",
                 )
             if item.defect_qty > 0:
                 photo_count_result = await db.execute(
@@ -78,10 +78,11 @@ async def complete_receiving(
                         OrderPhoto.photo_type == "defect",
                     )
                 )
-                if int(photo_count_result.scalar_one()) == 0:
+                photo_count = int(photo_count_result.scalar_one())
+                if photo_count < item.defect_qty:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Требуется фото брака для товара (product_id={order_item.product_id})",
+                        detail=f"Требуется {item.defect_qty} фото брака для товара (product_id={order_item.product_id}), загружено {photo_count}",
                     )
             order_item.received_qty = item.received_qty
             order_item.defect_qty = item.defect_qty
@@ -96,6 +97,18 @@ async def complete_receiving(
                 net_received = item.received_qty - item.defect_qty - item.adjustment_qty
                 product.stock_quantity += max(net_received, 0)
                 product.defect_quantity += item.defect_qty
+
+        all_items_result = await db.execute(select(OrderItem).where(OrderItem.order_id == payload.order_id))
+        all_order_items = all_items_result.scalars().all()
+        not_received_count = sum(1 for oi in all_order_items if oi.received_qty == 0)
+        if not_received_count > 0:
+            await db.commit()
+            return {
+                "status": "partial",
+                "received": total_received,
+                "defects": total_defect,
+                "remaining": not_received_count,
+            }
 
         order.received_qty = total_received
         order.status = "Принято"
@@ -178,7 +191,7 @@ async def create_packing_record(
         if not order_item:
             raise HTTPException(
                 status_code=400,
-                detail="Позиция заявки не найдена или не совпадает с заказом и товаром.",
+                detail="Товар заявки не найден или не совпадает с заказом и товаром.",
             )
         remainder = order_item.received_qty - order_item.defect_qty - order_item.packed_qty
         if payload.quantity > remainder:
@@ -320,7 +333,7 @@ async def validate_barcode_in_order(
         )
         return BarcodeValidateInOrderResponse(
             found=True,
-            message=f"Позиция в заявке: {product.name}, план {item.planned_qty}, принято {item.received_qty}",
+            message=f"Товар в заявке: {product.name}, план {item.planned_qty}, принято {item.received_qty}",
             order_item={
                 "id": item.id,
                 "product_id": item.product_id,
@@ -357,11 +370,12 @@ async def complete_order(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     telegram_id = company.user.telegram_id if company.user else None
     order_number = order.order_number
+    packed_qty_val = order.packed_qty
     order.status = "Завершено"
     order.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await db.commit()
     if telegram_id:
-        msg = f"Заявка {order_number}: Завершено. Упаковано всего {order.packed_qty} шт."
+        msg = f"Заявка {order_number}: Завершено. Упаковано всего {packed_qty_val} шт."
         await send_notification(telegram_id, msg)
     return {"status": "ok"}
 

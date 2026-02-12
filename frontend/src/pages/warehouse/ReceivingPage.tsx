@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { CompanySelect } from "../../components/shared/CompanySelect";
 import { PhotoGallery } from "../../components/shared/PhotoGallery";
 import { PhotoUpload } from "../../components/shared/PhotoUpload";
 import { Button } from "../../components/ui/Button";
 import { Loader } from "../../components/ui/Loader";
 import { Modal } from "../../components/ui/Modal";
-import { useActiveCompany } from "../../hooks/useActiveCompany";
-import { useCompanies } from "../../hooks/useCompanies";
+import { Toast } from "../../components/ui/Toast";
 import { useOrderItems } from "../../hooks/useOrderItems";
 import { useOrders } from "../../hooks/useOrders";
 import { useWarehouse } from "../../hooks/useWarehouse";
@@ -15,16 +13,15 @@ import { useOrderPhotos } from "../../hooks/useOrderPhotos";
 import { ReceivingForm } from "./ReceivingForm";
 
 export function ReceivingPage() {
-  const { items: companies = [] } = useCompanies();
-  const { companyId, setCompanyId } = useActiveCompany();
-  const activeCompanyId = companyId ?? companies[0]?.id ?? null;
-  const { items: orders = [], isLoading } = useOrders(activeCompanyId ?? undefined, 1, 100, "На приемке");
+  const { items: orders = [], isLoading } = useOrders(undefined, 1, 100, "На приемке");
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
   const { data: items = [], isLoading: itemsLoading } = useOrderItems(activeOrderId ?? undefined);
   const { completeReceiving } = useWarehouse();
   const { data: photos = [], upload } = useOrderPhotos(activeOrderId ?? undefined);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string } | null>(null);
+  const [remainingFromSubmit, setRemainingFromSubmit] = useState<number | null>(null);
   const defectPhotosByProduct = useMemo(() => {
     const counts: Record<number, number> = {};
     for (const photo of photos) {
@@ -37,24 +34,11 @@ export function ReceivingPage() {
   }, [photos]);
 
   useEffect(() => {
-    if (!companyId && companies.length > 0) {
-      setCompanyId(companies[0].id);
-    }
-  }, [companies, companyId, setCompanyId]);
-
-  useEffect(() => {
     if (!activeOrderId) {
       setSelectedItemId(null);
+      setRemainingFromSubmit(null);
     }
   }, [activeOrderId]);
-
-  if (companies.length === 0) {
-    return (
-      <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
-        Сначала добавьте компанию, чтобы работать со складом.
-      </div>
-    );
-  }
 
   const handleSubmit = async (payload: {
     order_item_id: number;
@@ -66,12 +50,20 @@ export function ReceivingPage() {
     if (!activeOrderId) return;
     setPageError(null);
     try {
-      await completeReceiving.mutateAsync({
+      const result = await completeReceiving.mutateAsync({
         order_id: activeOrderId,
         items: [payload],
       });
-      setActiveOrderId(null);
-      setSelectedItemId(null);
+      const data = result as { status?: string; remaining?: number };
+      if (data.status === "partial" && data.remaining != null) {
+        setRemainingFromSubmit(data.remaining);
+        setToast({ message: `Товар принят. Осталось: ${data.remaining}` });
+      } else {
+        setRemainingFromSubmit(null);
+        setActiveOrderId(null);
+        setSelectedItemId(null);
+        setToast({ message: "Приёмка завершена" });
+      }
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Не удалось завершить приёмку");
     }
@@ -79,7 +71,7 @@ export function ReceivingPage() {
 
   return (
     <div className="space-y-4">
-      <CompanySelect companies={companies} value={activeCompanyId} onChange={setCompanyId} />
+      {toast ? <Toast message={toast.message} onClose={() => setToast(null)} /> : null}
       {pageError ? <div className="text-sm text-rose-500">{pageError}</div> : null}
 
       {isLoading ? <div className="text-sm text-slate-600">Загрузка заявок...</div> : null}
@@ -92,7 +84,7 @@ export function ReceivingPage() {
       <div className="space-y-3">
         {orders.map((order) => (
           <div key={order.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
-            <div className="text-sm font-semibold text-slate-900">{order.order_number}</div>
+            <div className="text-sm font-semibold text-slate-900">{order.company_name} {order.order_number}</div>
             <Button className="mt-2" onClick={() => setActiveOrderId(order.id)}>
               Взять в работу
             </Button>
@@ -102,7 +94,7 @@ export function ReceivingPage() {
 
       <Modal title="Приёмка" open={Boolean(activeOrderId)} onClose={() => setActiveOrderId(null)}>
         {itemsLoading ? (
-          <Loader text="Загрузка позиций..." />
+          <Loader text="Загрузка товаров..." />
         ) : (
           <div className="space-y-4">
             <ReceivingForm
@@ -112,6 +104,17 @@ export function ReceivingPage() {
               onSubmit={handleSubmit}
               onSelectItem={(itemId) => setSelectedItemId(itemId)}
             />
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={remainingFromSubmit !== null && remainingFromSubmit > 0}
+              onClick={() => {
+                setActiveOrderId(null);
+                setRemainingFromSubmit(null);
+              }}
+            >
+              Завершить приёмку
+            </Button>
             <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-soft">
               <div className="text-sm font-semibold text-slate-900">Фото заявки</div>
               <div className="mt-2">

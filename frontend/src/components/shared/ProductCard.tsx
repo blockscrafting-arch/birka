@@ -17,7 +17,7 @@ export function ProductCard({ name, barcode, stock, defect, onClick, onShowDefec
       >
         <div className="text-sm font-semibold text-slate-100">{name}</div>
         <div className="mt-1 text-xs text-slate-400">ШК: {barcode ?? "—"}</div>
-        <div className="mt-2 flex gap-4 text-xs text-slate-400">
+        <div className="mt-2 flex gap-4 text-xs font-semibold text-slate-100">
           <span>Остаток: {stock ?? 0}</span>
           <span>Брак: {defect ?? 0}</span>
         </div>

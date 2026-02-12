@@ -27,6 +27,8 @@ celery_app.conf.update(
     task_time_limit=120,
     task_soft_time_limit=110,
     worker_prefetch_multiplier=1,
+    # Retain broker retry on startup when upgrading to Celery 6+
+    broker_connection_retry_on_startup=True,
     beat_schedule={
         "auto-close-expired-shipments": {
             "task": "app.tasks.shipment_tasks.auto_close_expired_shipments_task",

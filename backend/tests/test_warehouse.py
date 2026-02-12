@@ -1,4 +1,5 @@
 """Warehouse tests."""
+from app.db.models.order_photo import OrderPhoto
 
 
 async def test_receiving_requires_role(client, auth_headers):
@@ -508,6 +509,303 @@ async def test_packing_status_flow_and_complete(client, auth_headers, warehouse_
     assert complete_resp.status_code == 200
     list_resp3 = await client.get(f"/api/v1/orders?company_id={company_id}&page=1&limit=10", headers=auth_headers)
     order_final = next((o for o in list_resp3.json()["items"] if o["id"] == order_id), None)
+    assert order_final is not None
+    assert order_final["status"] == "Завершено"
+    assert order_final.get("completed_at") is not None
+
+
+async def test_receiving_partial(client, auth_headers, warehouse_headers, unique_inn):
+    """Receiving only one of two items returns status partial and order stays На приемке."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+
+    p1 = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар 1"},
+        headers=auth_headers,
+    )
+    p2 = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар 2"},
+        headers=auth_headers,
+    )
+    assert p1.status_code in (200, 201)
+    assert p2.status_code in (200, 201)
+    product_id_1 = p1.json()["id"]
+    product_id_2 = p2.json()["id"]
+
+    order_resp = await client.post(
+        "/api/v1/orders",
+        json={
+            "company_id": company_id,
+            "items": [
+                {"product_id": product_id_1, "planned_qty": 3},
+                {"product_id": product_id_2, "planned_qty": 2},
+            ],
+        },
+        headers=auth_headers,
+    )
+    assert order_resp.status_code == 200
+    order_id = order_resp.json()["id"]
+
+    items_resp = await client.get(f"/api/v1/orders/{order_id}/items", headers=auth_headers)
+    assert items_resp.status_code == 200
+    items = items_resp.json()
+    assert len(items) == 2
+    item_1_id = next(i["id"] for i in items if i["product_id"] == product_id_1)
+    item_2_id = next(i["id"] for i in items if i["product_id"] == product_id_2)
+
+    receiving_resp = await client.post(
+        "/api/v1/warehouse/receiving/complete",
+        json={
+            "order_id": order_id,
+            "items": [{"order_item_id": item_1_id, "received_qty": 3, "defect_qty": 0, "adjustment_qty": 0}],
+        },
+        headers=warehouse_headers,
+    )
+    assert receiving_resp.status_code == 200
+    data = receiving_resp.json()
+    assert data.get("status") == "partial"
+    assert data.get("remaining") == 1
+
+    list_resp = await client.get(
+        f"/api/v1/orders?company_id={company_id}&page=1&limit=10&status=На приемке",
+        headers=auth_headers,
+    )
+    assert list_resp.status_code == 200
+    orders = list_resp.json()["items"]
+    order = next((o for o in orders if o["id"] == order_id), None)
+    assert order is not None
+    assert order["status"] == "На приемке"
+
+
+async def test_receiving_all_items(client, auth_headers, warehouse_headers, unique_inn):
+    """Receiving all items sets order status Принято."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+
+    p1 = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар A"},
+        headers=auth_headers,
+    )
+    p2 = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар B"},
+        headers=auth_headers,
+    )
+    assert p1.status_code in (200, 201)
+    assert p2.status_code in (200, 201)
+    product_id_1 = p1.json()["id"]
+    product_id_2 = p2.json()["id"]
+
+    order_resp = await client.post(
+        "/api/v1/orders",
+        json={
+            "company_id": company_id,
+            "items": [
+                {"product_id": product_id_1, "planned_qty": 2},
+                {"product_id": product_id_2, "planned_qty": 2},
+            ],
+        },
+        headers=auth_headers,
+    )
+    assert order_resp.status_code == 200
+    order_id = order_resp.json()["id"]
+
+    items_resp = await client.get(f"/api/v1/orders/{order_id}/items", headers=auth_headers)
+    assert items_resp.status_code == 200
+    items = items_resp.json()
+    item_1_id = next(i["id"] for i in items if i["product_id"] == product_id_1)
+    item_2_id = next(i["id"] for i in items if i["product_id"] == product_id_2)
+
+    receiving_resp = await client.post(
+        "/api/v1/warehouse/receiving/complete",
+        json={
+            "order_id": order_id,
+            "items": [
+                {"order_item_id": item_1_id, "received_qty": 2, "defect_qty": 0, "adjustment_qty": 0},
+                {"order_item_id": item_2_id, "received_qty": 2, "defect_qty": 0, "adjustment_qty": 0},
+            ],
+        },
+        headers=warehouse_headers,
+    )
+    assert receiving_resp.status_code == 200
+    data = receiving_resp.json()
+    assert data.get("status") != "partial"
+    assert "received" in data
+
+    list_resp = await client.get(f"/api/v1/orders?company_id={company_id}&page=1&limit=10", headers=auth_headers)
+    orders = list_resp.json()["items"]
+    order = next((o for o in orders if o["id"] == order_id), None)
+    assert order is not None
+    assert order["status"] == "Принято"
+
+
+async def test_receiving_defect_photo_count(client, auth_headers, warehouse_headers, db_session, unique_inn):
+    """Receiving with defect_qty=3 but only 1 defect photo returns 400."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+
+    product_resp = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар с браком"},
+        headers=auth_headers,
+    )
+    assert product_resp.status_code in (200, 201)
+    product_id = product_resp.json()["id"]
+
+    order_resp = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 5}]},
+        headers=auth_headers,
+    )
+    assert order_resp.status_code == 200
+    order_id = order_resp.json()["id"]
+
+    items_resp = await client.get(f"/api/v1/orders/{order_id}/items", headers=auth_headers)
+    assert items_resp.status_code == 200
+    order_item_id = items_resp.json()[0]["id"]
+
+    db_session.add(
+        OrderPhoto(order_id=order_id, product_id=product_id, s3_key="test/defect1.jpg", photo_type="defect")
+    )
+    await db_session.commit()
+
+    receiving_resp = await client.post(
+        "/api/v1/warehouse/receiving/complete",
+        json={
+            "order_id": order_id,
+            "items": [
+                {"order_item_id": order_item_id, "received_qty": 5, "defect_qty": 3, "adjustment_qty": 0},
+            ],
+        },
+        headers=warehouse_headers,
+    )
+    assert receiving_resp.status_code == 400
+    detail = receiving_resp.json().get("detail", "")
+    assert "3" in detail and "1" in detail
+    assert "фото" in detail.lower()
+
+
+async def test_receiving_defect_exact_photos(client, auth_headers, warehouse_headers, db_session, unique_inn):
+    """Receiving with defect_qty=2 and 2 defect photos succeeds."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+
+    product_resp = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар брак 2"},
+        headers=auth_headers,
+    )
+    assert product_resp.status_code in (200, 201)
+    product_id = product_resp.json()["id"]
+
+    order_resp = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 4}]},
+        headers=auth_headers,
+    )
+    assert order_resp.status_code == 200
+    order_id = order_resp.json()["id"]
+
+    items_resp = await client.get(f"/api/v1/orders/{order_id}/items", headers=auth_headers)
+    assert items_resp.status_code == 200
+    order_item_id = items_resp.json()[0]["id"]
+
+    db_session.add(
+        OrderPhoto(order_id=order_id, product_id=product_id, s3_key="test/d1.jpg", photo_type="defect")
+    )
+    db_session.add(
+        OrderPhoto(order_id=order_id, product_id=product_id, s3_key="test/d2.jpg", photo_type="defect")
+    )
+    await db_session.commit()
+
+    receiving_resp = await client.post(
+        "/api/v1/warehouse/receiving/complete",
+        json={
+            "order_id": order_id,
+            "items": [
+                {"order_item_id": order_item_id, "received_qty": 4, "defect_qty": 2, "adjustment_qty": 0},
+            ],
+        },
+        headers=warehouse_headers,
+    )
+    assert receiving_resp.status_code == 200
+    data = receiving_resp.json()
+    assert data.get("status") != "partial"
+    assert data.get("defects") == 2
+
+
+async def test_complete_order_with_expire_on_commit(
+    client_expire_on_commit,
+    auth_headers_expire_on_commit,
+    warehouse_headers_expire_on_commit,
+    unique_inn,
+):
+    """complete_order returns 200 and sets Завершено when session has expire_on_commit=True (production-like)."""
+    client = client_expire_on_commit
+    auth = auth_headers_expire_on_commit
+    wh = warehouse_headers_expire_on_commit
+
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+
+    product_resp = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар complete"},
+        headers=auth,
+    )
+    assert product_resp.status_code in (200, 201)
+    product_id = product_resp.json()["id"]
+
+    order_resp = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 5}]},
+        headers=auth,
+    )
+    assert order_resp.status_code == 200
+    order_id = order_resp.json()["id"]
+
+    items_resp = await client.get(f"/api/v1/orders/{order_id}/items", headers=auth)
+    assert items_resp.status_code == 200
+    order_item_id = items_resp.json()[0]["id"]
+
+    await client.post(
+        "/api/v1/warehouse/receiving/complete",
+        json={
+            "order_id": order_id,
+            "items": [{"order_item_id": order_item_id, "received_qty": 5, "defect_qty": 0}],
+        },
+        headers=wh,
+    )
+
+    await client.post(
+        "/api/v1/warehouse/packing/record",
+        json={
+            "order_id": order_id,
+            "order_item_id": order_item_id,
+            "product_id": product_id,
+            "employee_code": "EMP1",
+            "quantity": 5,
+        },
+        headers=wh,
+    )
+
+    complete_resp = await client.post(
+        f"/api/v1/warehouse/order/{order_id}/complete",
+        headers=wh,
+    )
+    assert complete_resp.status_code == 200
+    assert complete_resp.json() == {"status": "ok"}
+
+    list_resp = await client.get(f"/api/v1/orders?company_id={company_id}&page=1&limit=10", headers=auth)
+    order_final = next((o for o in list_resp.json()["items"] if o["id"] == order_id), None)
     assert order_final is not None
     assert order_final["status"] == "Завершено"
     assert order_final.get("completed_at") is not None

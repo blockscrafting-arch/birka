@@ -13,7 +13,7 @@
   - `ENVIRONMENT=production`
   - `CORS_ORIGINS` — явный список доменов (например `https://ffbirka.ru`), **не** `*`
   - `POSTGRES_DSN` — корректная строка к внешней БД (Beget Cloud Database)
-  - `REDIS_DSN=redis://redis:6379/0` для docker-compose.prod
+  - `REDIS_DSN=redis://redis:6379/0` для docker-compose.prod (можно задать в .env; в compose для celery_worker и celery_beat уже переопределено через `environment`, см. [docker-compose.prod.yml](../docker-compose.prod.yml))
   - `TELEGRAM_BOT_TOKEN`, `ADMIN_TELEGRAM_IDS` заданы
   - `ENCRYPTION_KEY` (Fernet, сгенерирован и не в репозитории)
   - S3: `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET_NAME`, `FILE_PUBLIC_BASE_URL`
@@ -47,8 +47,10 @@
 Используйте [docs/CHECKLIST_VERIFICATION.md](CHECKLIST_VERIFICATION.md) и дополнительно:
 
 - [ ] Приёмка / упаковка / отгрузка и **печать этикеток** (PDF, читаемость ШК на целевом принтере).
+- [ ] **Приёмка:** пошаговая по товарам, фото брака по числу единиц брака; частичная приёмка (осталось N) и полная (статус «Принято»).
+- [ ] **Упаковка:** кнопки «Добавить товар», «Дублировать», «Удалить» по строкам; завершение заказа при полной упаковке.
+- [ ] **Заявки:** импорт Excel (шаблон, загрузка), экспорт заявки в Excel и отправка в Telegram.
 - [ ] **Загрузка фото браков** — файл доступен после загрузки (HEAD-проверка на бэке, см. тесты в [backend/tests/test_s3_head.py](../backend/tests/test_s3_head.py)).
-- [ ] **Сканер** — камера, звук/вибрация, страницы приёмки/упаковки на реальном устройстве.
 - [ ] **WB/Ozon** — только тестовые ключи: создание поставки, синхронизация, импорт ШК (если сценарий включён в тест).
 
 ---

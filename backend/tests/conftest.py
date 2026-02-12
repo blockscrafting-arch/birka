@@ -47,6 +47,14 @@ async def db_session(engine):
 
 
 @pytest.fixture()
+async def db_session_expire_on_commit(engine):
+    """Session with expire_on_commit=True (production-like) for testing complete_order."""
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=True)
+    async with async_session() as session:
+        yield session
+
+
+@pytest.fixture()
 async def client(db_session):
     async def override_get_db():
         yield db_session
@@ -119,6 +127,64 @@ async def warehouse_headers(db_session):
     session = Session(user_id=user.id, token=token, expires_at=(datetime.now(timezone.utc) + timedelta(days=1)).replace(tzinfo=None))
     db_session.add(session)
     await db_session.commit()
+
+    return {"X-Session-Token": token}
+
+
+@pytest.fixture()
+async def client_expire_on_commit(db_session_expire_on_commit):
+    """Client using session with expire_on_commit=True (production-like)."""
+    async def override_get_db():
+        yield db_session_expire_on_commit
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(app=app, base_url="http://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+async def auth_headers_expire_on_commit(db_session_expire_on_commit):
+    """Auth headers for client user, using expire_on_commit session."""
+    telegram_id = next(_telegram_id_counter)
+    user = User(
+        telegram_id=telegram_id,
+        telegram_username=f"user-{telegram_id}",
+        first_name="Test",
+        role="client",
+    )
+    db_session_expire_on_commit.add(user)
+    await db_session_expire_on_commit.commit()
+    await db_session_expire_on_commit.refresh(user)
+
+    token = f"test-token-{telegram_id}"
+    session = Session(user_id=user.id, token=token, expires_at=(datetime.now(timezone.utc) + timedelta(days=1)).replace(tzinfo=None))
+    db_session_expire_on_commit.add(session)
+    await db_session_expire_on_commit.commit()
+
+    return {"X-Session-Token": token}
+
+
+@pytest.fixture()
+async def warehouse_headers_expire_on_commit(db_session_expire_on_commit):
+    """Warehouse headers using expire_on_commit session."""
+    telegram_id = next(_telegram_id_counter)
+    user = User(
+        telegram_id=telegram_id,
+        telegram_username=f"worker-{telegram_id}",
+        first_name="Worker",
+        role="warehouse",
+    )
+    db_session_expire_on_commit.add(user)
+    await db_session_expire_on_commit.commit()
+    await db_session_expire_on_commit.refresh(user)
+
+    token = f"warehouse-token-{telegram_id}"
+    session = Session(user_id=user.id, token=token, expires_at=(datetime.now(timezone.utc) + timedelta(days=1)).replace(tzinfo=None))
+    db_session_expire_on_commit.add(session)
+    await db_session_expire_on_commit.commit()
 
     return {"X-Session-Token": token}
 

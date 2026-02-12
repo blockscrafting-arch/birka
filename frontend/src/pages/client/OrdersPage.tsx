@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { CompanySelect } from "../../components/shared/CompanySelect";
@@ -14,6 +14,7 @@ import { useCompanies } from "../../hooks/useCompanies";
 import { useDestinations } from "../../hooks/useDestinations";
 import { useOrders } from "../../hooks/useOrders";
 import { useProducts } from "../../hooks/useProducts";
+import { apiClient, downloadFile } from "../../services/api";
 import { OrderForm } from "./OrderForm";
 
 type OrderFormPayload = {
@@ -31,7 +32,8 @@ export function OrdersPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const limit = 20;
-  const { items, total, isLoading, error, create } = useOrders(activeCompanyId ?? undefined, page, limit, statusFilter);
+  const { items, total, isLoading, error, create, importExcel } = useOrders(activeCompanyId ?? undefined, page, limit, statusFilter);
+  const importRef = useRef<HTMLInputElement | null>(null);
   const { items: products = [] } = useProducts(activeCompanyId ?? undefined, 1, 100);
   const { items: destinations = [] } = useDestinations(true);
   const [open, setOpen] = useState(false);
@@ -84,6 +86,28 @@ export function OrdersPage() {
     }
   };
 
+  const handleImport = async (file: File) => {
+    if (!activeCompanyId) return;
+    setPageError(null);
+    try {
+      await importExcel.mutateAsync({ companyId: activeCompanyId, file });
+      setPage(1);
+      setToast({ message: "Заявка создана из файла" });
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : "Ошибка импорта");
+    }
+  };
+
+  const handleExportSend = async (orderId: number) => {
+    setPageError(null);
+    try {
+      await apiClient.api(`/orders/${orderId}/export/send`, { method: "POST" });
+      setToast({ message: "Файл отправлен в чат с ботом" });
+    } catch (err) {
+      setToast({ message: err instanceof Error ? err.message : "Ошибка выгрузки", variant: "error" });
+    }
+  };
+
   return (
     <div className="space-y-4">
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
@@ -105,6 +129,32 @@ export function OrdersPage() {
             <option value="Завершено">Завершено</option>
           </Select>
           <Button onClick={() => setOpen(true)}>Создать заявку</Button>
+          <Button
+            variant="secondary"
+            onClick={() => importRef.current?.click()}
+            disabled={importExcel.isPending}
+          >
+            {importExcel.isPending ? "Импортирую..." : "Импорт Excel"}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => downloadFile("/orders/import/template", "Шаблон_заявки.xlsx")}
+          >
+            Скачать шаблон заявки
+          </Button>
+          <input
+            ref={importRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                handleImport(file);
+                e.target.value = "";
+              }
+            }}
+          />
         </div>
         {pageError ? <div className="text-sm text-rose-500">{pageError}</div> : null}
       </div>
@@ -131,6 +181,7 @@ export function OrdersPage() {
             status={order.status}
             photoCount={order.photo_count}
             onClick={() => navigate(`/client/orders/${order.id}`)}
+            onExport={() => handleExportSend(order.id)}
           />
         ))}
       </div>

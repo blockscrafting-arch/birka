@@ -50,3 +50,63 @@ async def test_send_api_keys_guide_telegram_failure(client, auth_headers):
         )
     assert response.status_code == 502
     assert "detail" in response.json()
+
+
+async def test_delete_company_success(client, auth_headers, unique_inn):
+    """Delete company returns 200 and company is removed from list."""
+    create = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert create.status_code in (200, 201)
+    company_id = create.json()["id"]
+
+    response = await client.delete(f"/api/v1/companies/{company_id}", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json().get("deleted") is True
+
+    list_resp = await client.get("/api/v1/companies", headers=auth_headers)
+    assert list_resp.status_code == 200
+    ids = [c["id"] for c in list_resp.json()]
+    assert company_id not in ids
+
+
+async def test_delete_company_with_active_orders(client, auth_headers, unique_inn):
+    """Delete company with non-completed order returns 400."""
+    create = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert create.status_code in (200, 201)
+    company_id = create.json()["id"]
+
+    product = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар"},
+        headers=auth_headers,
+    )
+    assert product.status_code in (200, 201)
+    product_id = product.json()["id"]
+
+    order = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 5}]},
+        headers=auth_headers,
+    )
+    assert order.status_code == 200
+
+    response = await client.delete(f"/api/v1/companies/{company_id}", headers=auth_headers)
+    assert response.status_code == 400
+    assert "активными" in response.json().get("detail", "")
+
+
+async def test_delete_company_not_found(client, auth_headers):
+    """DELETE non-existent company returns 404."""
+    response = await client.delete("/api/v1/companies/99999", headers=auth_headers)
+    assert response.status_code == 404
+    assert "найдена" in response.json().get("detail", "").lower()
+
+
+async def test_delete_company_other_user(client, auth_headers, warehouse_headers, unique_inn):
+    """DELETE company belonging to another user returns 404."""
+    create = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert create.status_code in (200, 201)
+    company_id = create.json()["id"]
+
+    response = await client.delete(f"/api/v1/companies/{company_id}", headers=warehouse_headers)
+    assert response.status_code == 404
+    assert "найдена" in response.json().get("detail", "").lower()

@@ -10,7 +10,7 @@ const primaryTabs = [
 ];
 
 const clientTabs = [
-  { to: "/client/company", label: "Компании" },
+  { to: "/client/company", label: "Моя компания" },
   { to: "/client/products", label: "Товары" },
   { to: "/client/orders", label: "Заявки" },
   { to: "/client/shipping", label: "Отгрузка" },
@@ -22,7 +22,7 @@ const warehouseTabs = [
   { to: "/warehouse/receiving", label: "Приёмка" },
   { to: "/warehouse/packing", label: "Упаковка" },
   { to: "/warehouse/shipping", label: "Отгрузка" },
-  { to: "/warehouse/print", label: "Печать" },
+  { to: "/warehouse/print", label: "Печать ШК" },
   { to: "/warehouse/scanner", label: "Сканер" },
 ];
 

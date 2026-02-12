@@ -24,9 +24,10 @@ export function useOrders(companyId?: number, page = 1, limit = 20, status?: str
     queryKey: ["orders", companyId, page, limit, status],
     queryFn: () => {
       const statusParam = status ? `&status=${encodeURIComponent(status)}` : "";
-      return apiClient.api<Paginated<Order>>(`/orders?company_id=${companyId}&page=${page}&limit=${limit}${statusParam}`);
+      const companyParam = companyId != null ? `company_id=${companyId}&` : "";
+      return apiClient.api<Paginated<Order>>(`/orders?${companyParam}page=${page}&limit=${limit}${statusParam}`);
     },
-    enabled: Boolean(companyId),
+    enabled: true,
   });
 
   const create = useMutation({
@@ -51,6 +52,21 @@ export function useOrders(companyId?: number, page = 1, limit = 20, status?: str
     },
   });
 
+  const importExcel = useMutation({
+    mutationFn: (payload: { companyId: number; file: File }) => {
+      const formData = new FormData();
+      formData.append("file", payload.file);
+      return apiClient.apiForm<Order>(
+        `/orders/import?company_id=${payload.companyId}`,
+        formData,
+        { method: "POST" }
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+    },
+  });
+
   return {
     ...query,
     items: query.data?.items ?? [],
@@ -59,6 +75,7 @@ export function useOrders(companyId?: number, page = 1, limit = 20, status?: str
     limit: query.data?.limit ?? limit,
     create,
     updateStatus,
+    importExcel,
   };
 }
 

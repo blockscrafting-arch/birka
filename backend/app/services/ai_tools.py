@@ -77,7 +77,10 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_products",
-            "description": "Список товаров пользователя с остатками на складе и количеством брака.",
+            "description": (
+                "Список товаров с остатками на складе и количеством брака по каждому. "
+                "Вызывай при запросах «покажи все товары с остатками», «остатки по товарам»."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -91,7 +94,10 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_product_details",
-            "description": "Детали товара по штрихкоду или названию.",
+            "description": (
+                "Детали товара по штрихкоду или названию. Включает остаток (stock_quantity) и брак. "
+                "Вызывай при вопросах вида «сколько на остатке [название товара]»."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -106,10 +112,13 @@ TOOLS = [
         "function": {
             "name": "get_stock_summary",
             "description": (
-                "Общая сводка по остаткам на складе, браку и заявкам. Возвращает: total_stock_quantity (остаток на складе), "
-                "total_defect_quantity (брак), total_products, total_defect_items, products_with_defects; "
-                "orders_total_planned, orders_total_received, orders_total_packed (по заявкам: плановое, принято, упаковано). "
-                "Всегда вызывай при вопросах «сколько у меня», «мой остаток», «что на складе», «остатки»."
+                "Общая сводка по остаткам на складе, браку и заявкам. "
+                "Возвращает: total_stock_quantity (остаток на складе), "
+                "total_defect_quantity (брак), total_products, total_defect_items, products_with_defects, "
+                "top_stock_products (топ товаров по остаткам). "
+                "Всегда вызывай при вопросах: «сколько у меня», «мой остаток», «что на складе», "
+                "«остатки», «какие товары на остатках», «сколько товаров у вас», "
+                "«напиши остатки по товарам», «сколько осталось после отгрузки»."
             ),
             "parameters": {"type": "object", "properties": {}},
         },
@@ -421,6 +430,16 @@ async def _execute_tool_impl(
             .limit(MAX_DEFECT_ITEMS)
         )
         defect_list = [{"name": n, "defect_quantity": q} for n, q in defect_result.all()]
+        top_stock_result = await db.execute(
+            select(Product.name, Product.stock_quantity, Product.barcode)
+            .where(Product.company_id == company.id, Product.stock_quantity > 0)
+            .order_by(Product.stock_quantity.desc())
+            .limit(20)
+        )
+        top_stock = [
+            {"name": n, "stock_quantity": q, "barcode": b}
+            for n, q, b in top_stock_result.all()
+        ]
         out = {
             "total_products": count,
             "total_stock_quantity": total_stock,
@@ -430,6 +449,7 @@ async def _execute_tool_impl(
             "orders_total_received": int(orders_row[1]),
             "orders_total_packed": int(orders_row[2]),
             "products_with_defects": defect_list,
+            "top_stock_products": top_stock,
         }
         return json.dumps(out, ensure_ascii=False)
 

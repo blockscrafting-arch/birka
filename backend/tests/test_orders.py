@@ -1,4 +1,8 @@
 """Orders tests."""
+import io
+
+import pandas as pd
+
 
 
 async def test_create_order(client, auth_headers, unique_inn):
@@ -16,3 +20,90 @@ async def test_create_order(client, auth_headers, unique_inn):
     assert response.status_code == 200
     data = response.json()
     assert data["company_id"] == company_id
+
+
+async def test_order_export(client, auth_headers, unique_inn):
+    """Export order items returns xlsx file."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+
+    product_resp = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар для экспорта"},
+        headers=auth_headers,
+    )
+    assert product_resp.status_code in (200, 201)
+    product_id = product_resp.json()["id"]
+
+    order_resp = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 5}]},
+        headers=auth_headers,
+    )
+    assert order_resp.status_code == 200
+    order_id = order_resp.json()["id"]
+
+    response = await client.get(f"/api/v1/orders/{order_id}/export", headers=auth_headers)
+    assert response.status_code == 200
+    assert "spreadsheet" in response.headers.get("content-type", "")
+    buf = io.BytesIO(response.content)
+    df = pd.read_excel(buf)
+    assert "Название" in df.columns
+    assert "Количество" in df.columns
+    assert len(df) >= 1
+    assert list(df["Количество"])[0] == 5
+
+
+async def test_order_import(client, auth_headers, unique_inn):
+    """Import order from Excel creates order with items."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+
+    df = pd.DataFrame(
+        [{"Название": "Импортный товар", "Количество": 7}],
+        columns=["Название", "Количество"],
+    )
+    buf = io.BytesIO()
+    df.to_excel(buf, index=False)
+    buf.seek(0)
+    files = {"file": ("import.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+
+    response = await client.post(
+        f"/api/v1/orders/import?company_id={company_id}",
+        files=files,
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["company_id"] == company_id
+    assert "id" in data
+
+    items_resp = await client.get(f"/api/v1/orders/{data['id']}/items", headers=auth_headers)
+    assert items_resp.status_code == 200
+    items = items_resp.json()
+    assert len(items) == 1
+    assert items[0]["planned_qty"] == 7
+    assert "Импортный товар" in (items[0].get("product_name") or "")
+
+
+async def test_order_import_missing_columns(client, auth_headers, unique_inn):
+    """Import with Excel missing required columns returns 400."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+
+    df = pd.DataFrame([{"Другой столбец": "значение"}])
+    buf = io.BytesIO()
+    df.to_excel(buf, index=False)
+    buf.seek(0)
+    files = {"file": ("bad.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+
+    response = await client.post(
+        f"/api/v1/orders/import?company_id={company_id}",
+        files=files,
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+    assert "столбц" in response.json().get("detail", "").lower() or "Название" in response.json().get("detail", "")

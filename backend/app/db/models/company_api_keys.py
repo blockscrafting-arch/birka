@@ -16,9 +16,9 @@ class CompanyAPIKeys(Base):
     company_id: Mapped[int] = mapped_column(
         ForeignKey("companies.id", ondelete="CASCADE"), unique=True, index=True
     )
-    wb_api_key: Mapped[str | None] = mapped_column(String(512))
-    ozon_client_id: Mapped[str | None] = mapped_column(String(128))
-    ozon_api_key: Mapped[str | None] = mapped_column(String(512))
+    wb_api_key: Mapped[str | None] = mapped_column(String(2048))  # encrypted JWT can be long
+    ozon_client_id: Mapped[str | None] = mapped_column(String(512))
+    ozon_api_key: Mapped[str | None] = mapped_column(String(2048))  # encrypted token
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

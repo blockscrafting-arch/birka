@@ -15,7 +15,7 @@ import { CompanyForm } from "./CompanyForm";
 export function CompanyPage() {
   const [page, setPage] = useState(1);
   const limit = 20;
-  const { items, total, isLoading, error, create, update } = useCompanies(page, limit);
+  const { items, total, isLoading, error, create, update, remove } = useCompanies(page, limit);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Company | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -213,6 +213,27 @@ export function CompanyPage() {
           onSubmit={handleUpdate}
           submitLabel="Сохранить"
         />
+        <div className="mt-4 border-t border-slate-200 pt-4">
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-rose-600"
+            disabled={remove.isPending}
+            onClick={async () => {
+              if (!editing) return;
+              if (!window.confirm("Удалить компанию? Это действие нельзя отменить.")) return;
+              try {
+                await remove.mutateAsync(editing.id);
+                setEditing(null);
+                setToast({ message: "Компания удалена" });
+              } catch (err) {
+                setPageError(err instanceof Error ? err.message : "Не удалось удалить");
+              }
+            }}
+          >
+            {remove.isPending ? "Удаление..." : "Удалить компанию"}
+          </Button>
+        </div>
       </Modal>
 
       <Modal

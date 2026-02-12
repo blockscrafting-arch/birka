@@ -9,6 +9,7 @@ from sqlalchemy.orm import joinedload
 
 from app.db.models.company import Company
 from app.db.models.contract_template import ContractTemplate
+from app.db.models.order import Order
 from app.db.session import get_db
 from fastapi.responses import StreamingResponse
 
@@ -163,6 +164,37 @@ async def update_company(
     await db.commit()
     await db.refresh(company)
     return company
+
+
+@router.delete("/{company_id}")
+async def delete_company(
+    company_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Delete company if it belongs to current user and has no active orders."""
+    result = await db.execute(
+        select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
+    )
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
+
+    active_orders_result = await db.execute(
+        select(func.count()).select_from(Order).where(
+            Order.company_id == company_id,
+            Order.status != "Завершено",
+        )
+    )
+    if int(active_orders_result.scalar_one()) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Невозможно удалить компанию с активными заявками",
+        )
+
+    await db.delete(company)
+    await db.commit()
+    return {"deleted": True}
 
 
 @router.get("/{company_id}/contract")

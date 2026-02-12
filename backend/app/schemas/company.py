@@ -90,6 +90,6 @@ class CompanyAPIKeysOut(BaseModel):
 class CompanyAPIKeysUpdate(BaseModel):
     """Update company API keys (WB/Ozon)."""
 
-    wb_api_key: str | None = Field(None, max_length=512)
+    wb_api_key: str | None = Field(None, max_length=1024)  # WB JWT can be long
     ozon_client_id: str | None = Field(None, max_length=512)
-    ozon_api_key: str | None = Field(None, max_length=512)
+    ozon_api_key: str | None = Field(None, max_length=1024)

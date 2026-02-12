@@ -52,6 +52,14 @@ export function useCompanies(page = 1, limit = 20) {
     },
   });
 
+  const remove = useMutation({
+    mutationFn: (id: number) =>
+      apiClient.api<{ deleted: boolean }>(`/companies/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+    },
+  });
+
   return {
     ...query,
     items: query.data?.items ?? [],
@@ -60,5 +68,6 @@ export function useCompanies(page = 1, limit = 20) {
     limit: query.data?.limit ?? limit,
     create,
     update,
+    remove,
   };
 }
