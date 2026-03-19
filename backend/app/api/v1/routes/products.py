@@ -359,11 +359,8 @@ async def generate_label(
     if not company:
         raise HTTPException(status_code=404, detail="Компания не найдена")
 
-    if not product.name or not product.barcode or not product.wb_article:
-        raise HTTPException(status_code=400, detail="Не заполнены обязательные поля для этикетки")
-    supplier_name = product.supplier_name or company.name
-    if not supplier_name:
-        raise HTTPException(status_code=400, detail="Укажите поставщика для этикетки")
+    if not product.name or not product.barcode:
+        raise HTTPException(status_code=400, detail="Для этикетки обязательны название и баркод")
 
     title = product.name.strip()
     if product.size and product.size.strip():
@@ -371,7 +368,7 @@ async def generate_label(
     label = LabelData(
         title=title,
         article=product.wb_article or "-",
-        supplier=supplier_name,
+        supplier=product.supplier_name or (company.name if company else "") or "-",
         barcode_value=product.barcode or "-",
     )
     pdf_bytes = render_label_pdf(label)
@@ -403,18 +400,15 @@ async def send_label_to_telegram(
     company = company_result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail="Компания не найдена")
-    if not product.name or not product.barcode or not product.wb_article:
-        raise HTTPException(status_code=400, detail="Не заполнены обязательные поля для этикетки")
-    supplier_name = product.supplier_name or company.name
-    if not supplier_name:
-        raise HTTPException(status_code=400, detail="Укажите поставщика для этикетки")
+    if not product.name or not product.barcode:
+        raise HTTPException(status_code=400, detail="Для этикетки обязательны название и баркод")
     title = product.name.strip()
     if product.size and product.size.strip():
         title = f"{title}, размер {product.size.strip()}"
     label = LabelData(
         title=title,
         article=product.wb_article or "-",
-        supplier=supplier_name,
+        supplier=product.supplier_name or (company.name if company else "") or "-",
         barcode_value=product.barcode or "-",
     )
     pdf_bytes = render_label_pdf(label)

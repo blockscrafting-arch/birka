@@ -21,7 +21,7 @@ from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.order import OrderOut
 from app.schemas.shipping import ShipmentRequestCreate, ShipmentRequestList, ShipmentRequestOut
-from app.schemas.shipping import ShipmentRequestStatusUpdate
+from app.schemas.shipping import ShipmentRequestStatusUpdate, ShipmentRequestFboLink
 from app.services.ozon_api import OzonAPI
 from app.services.s3 import S3Service
 from app.services.upload_validation import sanitize_filename_for_storage, validate_image_or_pdf_signature
@@ -172,7 +172,9 @@ async def create_shipment_request(
             detail="На эту заявку уже создана отгрузка. Выберите другую заявку.",
         )
 
-    await _validate_marketplace_keys(db, payload.company_id, payload.destination_type, http_client)
+    dest = (payload.destination_type or "").strip().upper()
+    if dest in ("WB", "OZON"):
+        await _validate_marketplace_keys(db, payload.company_id, payload.destination_type, http_client)
 
     try:
         request = ShipmentRequest(
@@ -185,7 +187,6 @@ async def create_shipment_request(
         )
         db.add(request)
         await db.flush()
-        dest = (payload.destination_type or "").strip().upper()
         if dest in ("WB", "OZON"):
             keys_r = await db.execute(
                 select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id)
@@ -237,32 +238,86 @@ async def create_shipment_request(
 
 @router.get("", response_model=ShipmentRequestList)
 async def list_shipment_requests(
-    company_id: int,
+    company_id: int | None = Query(None, description="Company ID; for warehouse/admin optional (all companies)"),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ShipmentRequestList:
-    """List shipment requests by company."""
-    if current_user.role in {"warehouse", "admin"}:
-        company_result = await db.execute(select(Company).where(Company.id == company_id))
-    else:
-        company_result = await db.execute(
-            select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
-        )
-    if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    base_query = select(ShipmentRequest).where(ShipmentRequest.company_id == company_id)
-    total_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
+    """List shipment requests by company. Warehouse/admin may omit company_id to see all, ordered by order date."""
+    if company_id is not None:
+        if current_user.role in {"warehouse", "admin"}:
+            company_result = await db.execute(select(Company).where(Company.id == company_id))
+        else:
+            company_result = await db.execute(
+                select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
+            )
+        if not company_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Компания не найдена")
+    elif current_user.role not in {"warehouse", "admin"}:
+        raise HTTPException(status_code=400, detail="Укажите компанию")
+    base_filter = select(ShipmentRequest).join(Order, Order.id == ShipmentRequest.order_id)
+    if company_id is not None:
+        base_filter = base_filter.where(ShipmentRequest.company_id == company_id)
+    total_result = await db.execute(select(func.count()).select_from(base_filter.subquery()))
     total = int(total_result.scalar_one())
     offset = (page - 1) * limit
-    result = await db.execute(
-        base_query.options(joinedload(ShipmentRequest.order)).offset(offset).limit(limit)
+    order_query = (
+        select(ShipmentRequest)
+        .join(Order, Order.id == ShipmentRequest.order_id)
+        .order_by(Order.created_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
+    if company_id is not None:
+        order_query = order_query.where(ShipmentRequest.company_id == company_id)
+    result = await db.execute(order_query.options(joinedload(ShipmentRequest.order)))
     requests = list(result.unique().scalars().all())
     s3 = S3Service()
     items = [_shipment_request_to_out(r, s3) for r in requests]
     return ShipmentRequestList(items=items, total=total, page=page, limit=limit)
+
+
+@router.patch("/{request_id}", response_model=ShipmentRequestOut)
+async def update_shipment_request(
+    request_id: int,
+    payload: ShipmentRequestFboLink,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ShipmentRequestOut:
+    """Link an FBO supply to a shipment request (e.g. after creating FBO for a 'Другое' shipment)."""
+    result = await db.execute(
+        select(ShipmentRequest).options(joinedload(ShipmentRequest.order)).where(ShipmentRequest.id == request_id)
+    )
+    req = result.unique().scalar_one_or_none()
+    if not req:
+        raise HTTPException(status_code=404, detail="Заявка на отгрузку не найдена")
+    if current_user.role not in {"warehouse", "admin"}:
+        company_result = await db.execute(
+            select(Company).where(Company.id == req.company_id, Company.user_id == current_user.id)
+        )
+        if not company_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Компания не найдена")
+    fbo_result = await db.execute(
+        select(FBOSupply).where(
+            FBOSupply.id == payload.fbo_supply_id,
+            FBOSupply.company_id == req.company_id,
+        )
+    )
+    if not fbo_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail="FBO поставка не найдена или принадлежит другой компании.",
+        )
+    req.fbo_supply_id = payload.fbo_supply_id
+    await db.commit()
+    await db.refresh(req)
+    result2 = await db.execute(
+        select(ShipmentRequest).options(joinedload(ShipmentRequest.order)).where(ShipmentRequest.id == request_id)
+    )
+    req = result2.unique().scalar_one()
+    s3 = S3Service()
+    return _shipment_request_to_out(req, s3)
 
 
 @router.patch("/{request_id}/status", response_model=ShipmentRequestOut)

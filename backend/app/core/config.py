@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     AI_PROVIDER: str = "openai"  # openai | openrouter
     AI_MODEL: str = "gpt-4o-mini"  # or e.g. openai/gpt-4o, anthropic/claude-3-sonnet for OpenRouter
+    # RAG: сколько чанков документации подставлять в контекст (больше — полнее ответ, больше токенов)
+    RAG_CHUNKS_LIMIT: int = 6
+    # RAG hybrid: добирать чанки по ключевым словам (ILIKE по content) для obuv/zerkala/posuda
+    RAG_HYBRID_KEYWORD_BOOST: bool = True
+    RAG_HYBRID_KEYWORD_CHUNKS_MAX: int = 3
+    # RAG DOCX: маппинг заголовков в section (JSON, например {"Обувь":"obuv","Зеркала":"zerkala"}; пусто = из кода)
+    RAG_DOCX_SECTION_HEADINGS_JSON: str = ""
 
     # Database
     POSTGRES_DSN: str = "postgresql+asyncpg://user:pass@localhost:5432/birka"

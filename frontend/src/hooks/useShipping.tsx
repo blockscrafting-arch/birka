@@ -32,9 +32,12 @@ export function useShipping(companyId?: number, page = 1, limit = 20) {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["shipping", companyId, page, limit],
-    queryFn: () =>
-      apiClient.api<Paginated<ShippingRequest>>(`/shipping?company_id=${companyId}&page=${page}&limit=${limit}`),
-    enabled: Boolean(companyId),
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (companyId != null) params.set("company_id", String(companyId));
+      return apiClient.api<Paginated<ShippingRequest>>(`/shipping?${params.toString()}`);
+    },
+    enabled: true,
   });
 
   const create = useMutation({
@@ -87,6 +90,17 @@ export function useShipping(companyId?: number, page = 1, limit = 20) {
     },
   });
 
+  const linkFbo = useMutation({
+    mutationFn: (payload: { requestId: number; fbo_supply_id: number }) =>
+      apiClient.api<ShippingRequest>(`/shipping/${payload.requestId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ fbo_supply_id: payload.fbo_supply_id }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["shipping"] });
+    },
+  });
+
   return {
     ...query,
     items: query.data?.items ?? [],
@@ -97,5 +111,6 @@ export function useShipping(companyId?: number, page = 1, limit = 20) {
     updateStatus,
     uploadSupplyBarcode,
     uploadBoxBarcodes,
+    linkFbo,
   };
 }

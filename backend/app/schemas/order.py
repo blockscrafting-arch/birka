@@ -1,7 +1,16 @@
 """Order schemas."""
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+OrderStatusLiteral = Literal[
+    "На приемке",
+    "Принято",
+    "Упаковка",
+    "Готово к отгрузке",
+    "Завершено",
+]
 
 
 class OrderItemCreate(BaseModel):
@@ -29,9 +38,9 @@ class OrderCreate(BaseModel):
 
 
 class OrderStatusUpdate(BaseModel):
-    """Update order status."""
+    """Update order status (only warehouse/admin; transitions validated)."""
 
-    status: str
+    status: OrderStatusLiteral
 
 
 class OrderOut(BaseModel):

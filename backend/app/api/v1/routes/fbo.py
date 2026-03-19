@@ -1,6 +1,7 @@
 """FBO supply endpoints (WB/Ozon)."""
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -22,6 +23,8 @@ from app.schemas.fbo import (
     FBOSupplyOut,
     FBOSupplyBoxOut,
 )
+from app.services.excel import export_fbo_supply_boxes, parse_fbo_supply_excel
+from app.services.files import content_disposition
 from app.services.ozon_api import OzonAPI
 from app.services.wb_api import WildberriesAPI
 
@@ -108,6 +111,76 @@ async def get_fbo_supply(
     return _supply_to_out(supply)
 
 
+@router.get("/supplies/{supply_id}/export")
+async def export_fbo_supply_excel(
+    supply_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Download FBO supply boxes as Excel (Номер короба, Штрихкод) for manual fill and re-import."""
+    result = await db.execute(
+        select(FBOSupply)
+        .where(FBOSupply.id == supply_id)
+        .options(joinedload(FBOSupply.boxes))
+    )
+    supply = result.unique().scalar_one_or_none()
+    if not supply:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Поставка не найдена")
+    await _get_company_or_404(db, supply.company_id, current_user)
+    boxes = sorted(supply.boxes, key=lambda b: b.box_number)
+    if not boxes:
+        boxes = [{"box_number": 1, "external_barcode": ""}]
+    buffer = export_fbo_supply_boxes(boxes)
+    filename = f"FBO_поставка_{supply_id}_короба.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": content_disposition(filename)},
+    )
+
+
+@router.post("/supplies/{supply_id}/import", response_model=FBOSupplyOut)
+async def import_fbo_supply_excel(
+    supply_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> FBOSupplyOut:
+    """Import FBO supply boxes from Excel (Номер короба, Штрихкод). Replaces existing boxes."""
+    if not file.filename or not (file.filename.endswith(".xlsx") or file.filename.endswith(".xls")):
+        raise HTTPException(status_code=400, detail="Загрузите файл Excel (.xlsx или .xls)")
+    result = await db.execute(
+        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
+    )
+    supply = result.unique().scalar_one_or_none()
+    if not supply:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Поставка не найдена")
+    await _get_company_or_404(db, supply.company_id, current_user)
+    data = await file.read()
+    try:
+        rows = parse_fbo_supply_excel(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    for box in supply.boxes:
+        await db.delete(box)
+    await db.flush()
+    for row in rows:
+        box = FBOSupplyBox(
+            supply_id=supply.id,
+            box_number=row["box_number"],
+            external_box_id=None,
+            external_barcode=row.get("barcode"),
+        )
+        db.add(box)
+    await db.commit()
+    await db.refresh(supply)
+    result2 = await db.execute(
+        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
+    )
+    supply = result2.unique().scalar_one()
+    return _supply_to_out(supply)
+
+
 @router.post("/supplies", response_model=FBOSupplyOut)
 async def create_fbo_supply(
     payload: FBOSupplyCreate,
@@ -115,7 +188,7 @@ async def create_fbo_supply(
     current_user: User = Depends(get_current_user),
     http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> FBOSupplyOut:
-    """Create FBO supply draft. Optionally create supply in WB/Ozon and store external_supply_id."""
+    """Create FBO supply draft. Without API keys creates local draft; with keys can create in WB/Ozon."""
     await _get_company_or_404(db, payload.company_id, current_user)
     marketplace = (payload.marketplace or "").strip().lower()
     if marketplace not in ("wb", "ozon"):
@@ -127,20 +200,19 @@ async def create_fbo_supply(
     keys = keys_r.scalar_one_or_none()
     secret = settings.ENCRYPTION_KEY or ""
     external_id: str | None = None
-    if marketplace == "wb":
-        box_count = getattr(payload, "box_count", None) or 0
-        if box_count > 0:
-            wb_key = decrypt_value(keys.wb_api_key, secret) if keys else None
-            if not wb_key:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Для автосоздания поставки Wildberries укажите API-ключ в настройках компании.",
-                )
-            api = WildberriesAPI(api_key=wb_key, client=http_client)
-            external_id = await api.create_supply(name="Поставка")
-            if external_id:
-                await api.create_supply_boxes(external_id, box_count)
-    elif marketplace == "ozon":
+    box_count = getattr(payload, "box_count", None) or 0
+    if marketplace == "wb" and box_count > 0:
+        wb_key = decrypt_value(keys.wb_api_key, secret) if keys else None
+        if not wb_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Для автосоздания поставки Wildberries укажите API-ключ в настройках компании.",
+            )
+        api = WildberriesAPI(api_key=wb_key, client=http_client)
+        external_id = await api.create_supply(name="Поставка")
+        if external_id:
+            await api.create_supply_boxes(external_id, box_count)
+    elif marketplace == "ozon" and box_count > 0:
         ozon_cid = decrypt_value(keys.ozon_client_id, secret) if keys else None
         ozon_key = decrypt_value(keys.ozon_api_key, secret) if keys else None
         if not ozon_cid or not ozon_key:
@@ -151,6 +223,7 @@ async def create_fbo_supply(
         api = OzonAPI(client_id=ozon_cid, api_key=ozon_key, client=http_client)
         sid = await api.create_supply_draft()
         external_id = str(sid) if sid is not None else None
+    # else: manual/draft — no API keys required, external_id stays None
 
     supply = FBOSupply(
         company_id=payload.company_id,
@@ -312,7 +385,7 @@ async def import_fbo_barcodes(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> FBOSupplyOut:
-    """Import box barcodes manually (barcodes in order = box 1, 2, ...). Append mode: new boxes are added to existing ones; to replace, use sync first or delete supply boxes elsewhere."""
+    """Import box barcodes manually (barcodes in order = box 1, 2, ...). Append mode: new boxes are added to existing ones; box_number continues from max(existing)."""
     result = await db.execute(
         select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
     )
@@ -321,17 +394,21 @@ async def import_fbo_barcodes(
         raise HTTPException(status_code=404, detail="Поставка не найдена")
     await _get_company_or_404(db, supply.company_id, current_user)
 
+    next_box_number = max((b.box_number for b in supply.boxes), default=0) + 1
+    seen_barcodes: set[str] = set()
     added: list[FBOSupplyBox] = []
-    for i, barcode in enumerate(payload.barcodes or []):
+    for barcode in payload.barcodes or []:
         b = (barcode or "").strip()
-        if not b:
+        if not b or b in seen_barcodes:
             continue
+        seen_barcodes.add(b)
         box = FBOSupplyBox(
             supply_id=supply.id,
-            box_number=len(added) + 1,
+            box_number=next_box_number,
             external_box_id=None,
             external_barcode=b,
         )
+        next_box_number += 1
         db.add(box)
         added.append(box)
     await db.commit()

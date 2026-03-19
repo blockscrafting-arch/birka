@@ -433,7 +433,7 @@ async def delete_document(
 
 
 def _resolve_rag_dir() -> Path | None:
-    """Папка с .txt для RAG (в контейнере /docs/rag)."""
+    """Папка с .txt и .docx для RAG (в контейнере /docs/rag)."""
     env_path = os.getenv("DOCS_RAG_PATH")
     if env_path:
         p = Path(env_path).expanduser()
@@ -450,23 +450,35 @@ async def rag_seed(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles("admin")),
 ) -> dict:
-    """Заполнить RAG: загрузить .txt из docs/rag и опционально синхронизировать прайс услуг."""
+    """Заполнить RAG: загрузить .txt и .docx из docs/rag (в т.ч. Как_правильно_упаковать_разные_виды_товаров.docx)."""
     rag_dir = _resolve_rag_dir()
     if not rag_dir:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Папка docs/rag не найдена (DOCS_RAG_PATH или /docs/rag)",
         )
-    files = sorted(rag_dir.glob("*.txt"))
+    files_txt = sorted(rag_dir.glob("*.txt"))
+    files_docx = sorted(rag_dir.glob("*.docx"))
     total = 0
-    for path in files:
+    for path in files_txt:
         try:
             content = path.read_text(encoding="utf-8")
             count = await upload_document_to_rag(db, content, path.name)
             total += count
         except Exception as e:
             logger.warning("rag_seed_file_failed", path=str(path), error=str(e))
-    return {"status": "ok", "files_processed": len(files), "chunks_added": total}
+    for path in files_docx:
+        try:
+            content = path.read_bytes()
+            count = await index_document(db, path.name, content, "docx")
+            total += count
+        except Exception as e:
+            logger.warning("rag_seed_file_failed", path=str(path), error=str(e))
+    return {
+        "status": "ok",
+        "files_processed": len(files_txt) + len(files_docx),
+        "chunks_added": total,
+    }
 
 
 SERVICES_RAG_SOURCE = "services_price.txt"

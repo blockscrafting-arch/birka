@@ -64,7 +64,7 @@ async def test_delete_company_success(client, auth_headers, unique_inn):
 
     list_resp = await client.get("/api/v1/companies", headers=auth_headers)
     assert list_resp.status_code == 200
-    ids = [c["id"] for c in list_resp.json()]
+    ids = [c["id"] for c in list_resp.json()["items"]]
     assert company_id not in ids
 
 

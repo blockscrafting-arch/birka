@@ -1,6 +1,5 @@
 import { useRef, useEffect, useState } from "react";
 
-import { CompanySelect } from "../../components/shared/CompanySelect";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
@@ -8,11 +7,10 @@ import { Pagination } from "../../components/ui/Pagination";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { Toast } from "../../components/ui/Toast";
 import { Select } from "../../components/ui/Select";
-import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
-import { useDestinations } from "../../hooks/useDestinations";
 import {
   useFBOSupply,
+  useFBOCreate,
   useFBOImportBarcodes,
   useFBOSyncBarcodes,
   useFBOBoxStickers,
@@ -21,12 +19,12 @@ import {
   useOrdersReadyForShipping,
   useShipping,
 } from "../../hooks/useShipping";
-import type { FBOSupply, ShippingRequest } from "../../types";
+import { apiClient, downloadFile } from "../../services/api";
+import type { ShippingRequest } from "../../types";
 
 export function ShippingPage() {
   const { items: companies = [] } = useCompanies();
-  const { companyId, setCompanyId } = useActiveCompany();
-  const activeCompanyId = companyId ?? companies[0]?.id ?? null;
+  const activeCompanyId = companies[0]?.id ?? null;
   const [page, setPage] = useState(1);
   const limit = 20;
   const {
@@ -37,31 +35,34 @@ export function ShippingPage() {
     create,
     uploadSupplyBarcode,
     uploadBoxBarcodes,
+    linkFbo,
   } = useShipping(activeCompanyId ?? undefined, page, limit);
+  const createFboSupply = useFBOCreate();
   const { data: ordersReady = [], isLoading: ordersReadyLoading } =
     useOrdersReadyForShipping(activeCompanyId ?? undefined);
-  const { items: destinations = [] } = useDestinations(true);
-
   const [open, setOpen] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
   const [destinationType, setDestinationType] = useState("WB");
   const [orderId, setOrderId] = useState<string>("");
-  const [warehouseName, setWarehouseName] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
   const [comment, setComment] = useState("");
-  const [boxCount, setBoxCount] = useState<number | "">("");
   const [fboSupplyId, setFboSupplyId] = useState<number | null>(null);
+  const [createFboFor, setCreateFboFor] = useState<{
+    shipmentId: number;
+    orderId: number;
+    companyId: number;
+  } | null>(null);
+  const [createFboMarketplace, setCreateFboMarketplace] = useState<"wb" | "ozon">("wb");
 
   const supplyBarcodeInputRef = useRef<HTMLInputElement>(null);
   const boxBarcodesInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!companyId && companies.length > 0) {
-      setCompanyId(companies[0].id);
-    }
-  }, [companies, companyId, setCompanyId]);
+  const importFboInputRef = useRef<HTMLInputElement>(null);
+  const importFboOrderIdRef = useRef<number | null>(null);
+  const [importFboPending, setImportFboPending] = useState(false);
+  const [exportFboPendingId, setExportFboPendingId] = useState<number | null>(null);
+  const [downloadFboPendingId, setDownloadFboPendingId] = useState<number | null>(null);
 
   useEffect(() => {
     setPage(1);
@@ -95,14 +96,11 @@ export function ShippingPage() {
         order_id: Number(orderId),
         destination_type: destinationType,
         destination_comment: comment.trim() || undefined,
-        warehouse_name: warehouseName.trim() || undefined,
         delivery_date: deliveryDate || undefined,
-        box_count: boxCount === "" ? undefined : Number(boxCount),
       });
       setOpen(false);
       setComment("");
       setOrderId("");
-      setWarehouseName("");
       setDeliveryDate("");
       setPage(1);
       setToast({ message: "Заявка на отгрузку создана" });
@@ -139,13 +137,100 @@ export function ShippingPage() {
     e.target.value = "";
   };
 
+  const handleImportFboClick = (orderId: number) => {
+    importFboOrderIdRef.current = orderId;
+    importFboInputRef.current?.click();
+  };
+
+  const handleImportFboChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const orderId = importFboOrderIdRef.current;
+    e.target.value = "";
+    importFboOrderIdRef.current = null;
+    if (!file || !orderId) return;
+    setImportFboPending(true);
+    setPageError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await apiClient.apiForm<{ updated: number }>(
+        `/warehouse/orders/${orderId}/import-fbo`,
+        formData
+      );
+      setToast({ message: `Обновлено записей: ${res.updated ?? 0}` });
+    } catch (err) {
+      setToast({ message: err instanceof Error ? err.message : "Ошибка импорта FBO", variant: "error" });
+    } finally {
+      setImportFboPending(false);
+    }
+  };
+
+  const handleDownloadFbo = async (orderId: number) => {
+    setDownloadFboPendingId(orderId);
+    setToast(null);
+    try {
+      await downloadFile(
+        `/orders/${orderId}/export-fbo`,
+        `Отгрузка_FBO_заявка_${orderId}.xlsx`
+      );
+      setToast({ message: "Таблица скачана", variant: "success" });
+    } catch (err) {
+      setToast({ message: err instanceof Error ? err.message : "Ошибка скачивания", variant: "error" });
+    } finally {
+      setDownloadFboPendingId(null);
+    }
+  };
+
+  const handleExportFboSend = async (orderId: number) => {
+    setFormError(null);
+    setToast(null);
+    setExportFboPendingId(orderId);
+    try {
+      await apiClient.api(`/orders/${orderId}/export-fbo/send`, { method: "POST" });
+      setToast({ message: "Таблица отправлена вам в Telegram", variant: "success" });
+    } catch (err) {
+      setToast({ message: err instanceof Error ? err.message : "Ошибка отправки файла", variant: "error" });
+    } finally {
+      setExportFboPendingId(null);
+    }
+  };
+
+  const handleCreateFboAndLink = async () => {
+    if (!createFboFor || !activeCompanyId) return;
+    setPageError(null);
+    try {
+      const supply = await createFboSupply.mutateAsync({
+        company_id: createFboFor.companyId,
+        order_id: createFboFor.orderId,
+        marketplace: createFboMarketplace,
+      });
+      await linkFbo.mutateAsync({
+        requestId: createFboFor.shipmentId,
+        fbo_supply_id: supply.id,
+      });
+      setCreateFboFor(null);
+      setToast({ message: "FBO поставка создана и привязана к отгрузке" });
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : "Не удалось создать FBO поставку",
+        variant: "error",
+      });
+    }
+  };
+
   return (
     <div className="space-y-4">
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
-      <CompanySelect companies={companies} value={activeCompanyId} onChange={setCompanyId} />
       <div className="flex items-center justify-between gap-2">
         <Button onClick={() => setOpen(true)}>Создать отгрузку</Button>
         {pageError ? <div className="text-sm text-rose-500">{pageError}</div> : null}
+      </div>
+
+      <div className="rounded-xl border border-birka-200 bg-birka-50 p-3 text-sm text-slate-700 shadow-soft">
+        <div className="font-semibold text-slate-800">Таблица отгрузки (FBO)</div>
+        <p className="mt-1 text-xs text-slate-600">
+          Создайте отгрузку → в карточке нажмите <strong>«Скачать таблицу»</strong> → заполните в файле столбцы <strong>«Баркод короба»</strong>, <strong>«Склад»</strong>, <strong>«Дата поставки»</strong> → нажмите <strong>«Загрузить таблицу»</strong>. После этого данные уйдут на склад.
+        </p>
       </div>
 
       {isLoading ? (
@@ -157,7 +242,7 @@ export function ShippingPage() {
       {error ? <div className="text-sm text-rose-500">Не удалось загрузить отгрузки</div> : null}
       {!isLoading && items.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-soft">
-          Пока нет заявок на отгрузку.
+          Пока нет заявок на отгрузку. Нажмите «Создать отгрузку» — в каждой карточке появится блок «Таблица отгрузки» (скачать → заполнить → загрузить).
         </div>
       ) : null}
 
@@ -166,9 +251,36 @@ export function ShippingPage() {
           <ShipmentCard
             key={shipment.id}
             shipment={shipment}
+            onDownloadFbo={
+              shipment.order_id ? () => handleDownloadFbo(shipment.order_id!) : undefined
+            }
+            onExportFboSend={
+              shipment.order_id
+                ? () => handleExportFboSend(shipment.order_id!)
+                : undefined
+            }
+            downloadFboPending={downloadFboPendingId === shipment.order_id}
+            exportFboPending={exportFboPendingId === shipment.order_id}
+            onImportFBO={
+              shipment.order_id
+                ? () => handleImportFboClick(shipment.order_id!)
+                : undefined
+            }
+            importFboPending={importFboPending}
             onOpenFBO={
               shipment.fbo_supply_id ? () => setFboSupplyId(shipment.fbo_supply_id!) : undefined
             }
+            onCreateFBO={
+              shipment.order_id && !shipment.fbo_supply_id && activeCompanyId
+                ? () =>
+                    setCreateFboFor({
+                      shipmentId: shipment.id,
+                      orderId: shipment.order_id!,
+                      companyId: activeCompanyId,
+                    })
+                : undefined
+            }
+            onCreateFboPending={createFboSupply.isPending || linkFbo.isPending}
             onUploadSupplyBarcode={(id) => {
               supplyBarcodeInputRef.current?.setAttribute("data-shipment-id", String(id));
               supplyBarcodeInputRef.current?.click();
@@ -204,8 +316,40 @@ export function ShippingPage() {
         accept=".pdf,image/*,.xlsx,.xls"
         onChange={handleBoxBarcodesChange}
       />
+      <input
+        ref={importFboInputRef}
+        type="file"
+        className="hidden"
+        accept=".xlsx,.xls"
+        onChange={handleImportFboChange}
+      />
 
       <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+
+      <Modal
+        title="Создать FBO поставку"
+        open={createFboFor != null}
+        onClose={() => setCreateFboFor(null)}
+      >
+        {createFboFor ? (
+          <div className="space-y-3">
+            <Select
+              label="Маркетплейс"
+              value={createFboMarketplace}
+              onChange={(e) => setCreateFboMarketplace(e.target.value as "wb" | "ozon")}
+            >
+              <option value="wb">WB</option>
+              <option value="ozon">Ozon</option>
+            </Select>
+            <Button
+              onClick={handleCreateFboAndLink}
+              disabled={createFboSupply.isPending || linkFbo.isPending}
+            >
+              {createFboSupply.isPending || linkFbo.isPending ? "Создаю..." : "Создать и привязать"}
+            </Button>
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal title="Новая отгрузка" open={open} onClose={() => { setOpen(false); setFormError(null); }}>
         <div className="space-y-3">
@@ -241,38 +385,6 @@ export function ShippingPage() {
             <option value="Другое">Другое</option>
           </Select>
 
-          {(destinationType === "WB" || destinationType === "OZON") ? (
-            <Input
-              label="Число коробов (WB: авто-создание поставки и коробов)"
-              type="number"
-              min={0}
-              placeholder="0 = не создавать в маркетплейсе"
-              value={boxCount === "" ? "" : String(boxCount)}
-              onChange={(e) => setBoxCount(e.target.value === "" ? "" : parseInt(e.target.value, 10) || 0)}
-            />
-          ) : null}
-
-          {destinationType === "Другое" ? (
-            <Input
-              label="Склад назначения (или куда отгружаем)"
-              value={warehouseName}
-              onChange={(e) => setWarehouseName(e.target.value)}
-            />
-          ) : (
-            <Select
-              label="Склад назначения"
-              value={warehouseName}
-              onChange={(e) => setWarehouseName(e.target.value)}
-            >
-              <option value="">— Выберите склад —</option>
-              {destinations.map((d) => (
-                <option key={d.id} value={d.name}>
-                  {d.name}
-                </option>
-              ))}
-            </Select>
-          )}
-
           <Input
             label="Дата поставки"
             type="date"
@@ -300,14 +412,30 @@ export function ShippingPage() {
 
 function ShipmentCard({
   shipment,
+  onDownloadFbo,
+  onExportFboSend,
+  downloadFboPending,
+  exportFboPending,
+  onImportFBO,
+  importFboPending,
   onOpenFBO,
+  onCreateFBO,
+  onCreateFboPending,
   onUploadSupplyBarcode,
   onUploadBoxBarcodes,
   uploadSupplyPending,
   uploadBoxPending,
 }: {
   shipment: ShippingRequest;
+  onDownloadFbo?: () => void;
+  onExportFboSend?: () => void;
+  downloadFboPending?: boolean;
+  exportFboPending?: boolean;
+  onImportFBO?: () => void;
+  importFboPending?: boolean;
   onOpenFBO?: () => void;
+  onCreateFBO?: () => void;
+  onCreateFboPending?: boolean;
   onUploadSupplyBarcode: (id: number) => void;
   onUploadBoxBarcodes: (id: number) => void;
   uploadSupplyPending: boolean;
@@ -315,22 +443,12 @@ function ShipmentCard({
 }) {
   const formatDate = (s: string | null) =>
     s ? new Date(s).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }) : null;
+  const hasOrder = Boolean(shipment.order_id);
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
       <div className="text-sm font-semibold text-slate-900">Отгрузка: {shipment.destination_type}</div>
       {shipment.order_number ? (
         <div className="text-xs text-slate-600">Заявка: {shipment.order_number}</div>
-      ) : null}
-      {onOpenFBO ? (
-        <div className="mt-1">
-          <button
-            type="button"
-            className="text-xs text-birka-600 underline"
-            onClick={onOpenFBO}
-          >
-            FBO поставка
-          </button>
-        </div>
       ) : null}
       {shipment.warehouse_name ? (
         <div className="text-xs text-slate-600">Склад: {shipment.warehouse_name}</div>
@@ -342,6 +460,87 @@ function ShipmentCard({
       {shipment.destination_comment ? (
         <div className="mt-1 text-xs text-slate-500">Комментарий: {shipment.destination_comment}</div>
       ) : null}
+
+      {hasOrder ? (
+        <div className="mt-3 rounded-lg border border-birka-200 bg-birka-50 p-3">
+          <div className="text-xs font-semibold text-slate-800">Таблица отгрузки</div>
+          <p className="mt-1.5 text-xs text-slate-600">
+            ① Скачайте таблицу с данными упаковки.
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            {onDownloadFbo ? (
+              <Button
+                type="button"
+                variant="primary"
+                className="text-xs py-1.5 px-2"
+                onClick={onDownloadFbo}
+                disabled={downloadFboPending}
+              >
+                {downloadFboPending ? "Скачиваю…" : "Скачать таблицу"}
+              </Button>
+            ) : null}
+            {onExportFboSend ? (
+              <button
+                type="button"
+                className="text-xs text-birka-600 underline hover:no-underline"
+                onClick={onExportFboSend}
+                disabled={exportFboPending}
+              >
+                {exportFboPending ? "Отправляю…" : "Отправить в Telegram"}
+              </button>
+            ) : null}
+          </div>
+          <p className="mt-2 text-xs text-slate-600">
+            ② Заполните столбцы: <strong>«Баркод короба»</strong>, <strong>«Склад»</strong>, <strong>«Дата поставки»</strong> — и сохраните файл.
+          </p>
+          <p className="mt-1.5 text-xs text-slate-600">
+            ③ Загрузите заполненную таблицу обратно.
+          </p>
+          {onImportFBO ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="mt-1.5 text-xs py-1.5 px-2"
+              onClick={onImportFBO}
+              disabled={importFboPending}
+            >
+              {importFboPending ? "Загружаю…" : "Загрузить таблицу"}
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2">
+          <p className="text-xs text-slate-500">Заявка не привязана — привяжите заявку к отгрузке для работы с таблицей.</p>
+        </div>
+      )}
+
+      <div className="mt-3 rounded-lg border border-slate-200 bg-amber-50/80 p-2">
+        <div className="text-xs font-semibold text-slate-700">FBO поставка (WB/Ozon)</div>
+        <p className="mt-0.5 text-xs text-slate-500">Для синхронизации штрихкодов коробов с маркетплейсом (по желанию).</p>
+        <div className="mt-1.5 flex flex-wrap gap-2">
+          {onOpenFBO ? (
+            <button
+              type="button"
+              className="text-xs text-birka-600 underline"
+              onClick={onOpenFBO}
+            >
+              Открыть
+            </button>
+          ) : null}
+          {onCreateFBO ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="text-xs py-1.5 px-2"
+              onClick={onCreateFBO}
+              disabled={onCreateFboPending}
+            >
+              {onCreateFboPending ? "…" : "Создать"}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
       <div className="mt-3 flex flex-wrap gap-2">
         {shipment.supply_barcode_url ? (
           <a
@@ -395,7 +594,7 @@ function FBOSupplyDetailModal({
   supplyId: number;
   onClose: () => void;
 }) {
-  const { data: supply, isLoading } = useFBOSupply(supplyId);
+  const { data: supply, isLoading, refetch } = useFBOSupply(supplyId);
   const sync = useFBOSyncBarcodes(supplyId);
   const importBarcodes = useFBOImportBarcodes(supplyId);
   const boxStickers = useFBOBoxStickers(supplyId);
@@ -403,6 +602,42 @@ function FBOSupplyDetailModal({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [stickersDataUrl, setStickersDataUrl] = useState<string[] | null>(null);
+  const [exportPending, setExportPending] = useState(false);
+  const [importExcelPending, setImportExcelPending] = useState(false);
+  const importExcelInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadExcel = async () => {
+    setActionError(null);
+    setExportPending(true);
+    try {
+      await downloadFile(`/fbo/supplies/${supplyId}/export`, "FBO_поставка_короба.xlsx");
+      setActionSuccess("Файл скачан");
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Ошибка скачивания");
+    } finally {
+      setExportPending(false);
+    }
+  };
+
+  const handleImportExcelChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setActionError(null);
+    setActionSuccess(null);
+    setImportExcelPending(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      await apiClient.apiForm<unknown>(`/fbo/supplies/${supplyId}/import`, formData);
+      await refetch();
+      setActionSuccess("Короба обновлены из файла");
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Ошибка загрузки файла");
+    } finally {
+      setImportExcelPending(false);
+    }
+  };
 
   const handleGetStickers = () => {
     setActionError(null);
@@ -459,6 +694,41 @@ function FBOSupplyDetailModal({
           <div className="text-sm text-slate-500">Загрузка...</div>
         ) : supply ? (
           <>
+            <div className="rounded-lg border border-birka-200 bg-birka-50 p-2 text-xs text-slate-700">
+              <div className="font-semibold text-slate-800">Ручной режим (без API)</div>
+              <ol className="mt-1 list-inside list-decimal space-y-0.5">
+                <li>Скачайте Excel с текущими коробами.</li>
+                <li>Заполните столбец «Штрихкод» и при необходимости добавьте строки.</li>
+                <li>Загрузите файл обратно — короба обновятся.</li>
+              </ol>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="text-xs py-1.5 px-2"
+                  disabled={exportPending}
+                  onClick={handleDownloadExcel}
+                >
+                  {exportPending ? "Скачиваю..." : "Скачать Excel"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="text-xs py-1.5 px-2"
+                  disabled={importExcelPending}
+                  onClick={() => importExcelInputRef.current?.click()}
+                >
+                  {importExcelPending ? "Загружаю..." : "Загрузить Excel"}
+                </Button>
+                <input
+                  ref={importExcelInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleImportExcelChange}
+                />
+              </div>
+            </div>
             <div className="text-sm text-slate-700">
               Маркетплейс: {supply.marketplace.toUpperCase()} · Статус: {supply.status}
               {supply.external_supply_id ? ` · ID: ${supply.external_supply_id}` : null}

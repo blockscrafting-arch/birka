@@ -7,7 +7,7 @@ import { Toast } from "../../components/ui/Toast";
 import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
 import { useProducts } from "../../hooks/useProducts";
-import { apiClient, downloadFile } from "../../services/api";
+import { apiClient } from "../../services/api";
 
 export function PrintPage() {
   const { items: companies = [] } = useCompanies();

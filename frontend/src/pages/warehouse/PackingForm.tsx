@@ -12,6 +12,7 @@ export type PackingRow = {
   pallet_number?: string;
   box_number?: string;
   quantity: number;
+  warehouse?: string;
 };
 
 type PackingFormPayload = {
@@ -39,7 +40,6 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
   const [rows, setRows] = useState<PackingRow[]>([
     { rowId: Date.now(), order_item_id: 0, quantity: 1 },
   ]);
-  const [warehouse, setWarehouse] = useState("");
   const [materials, setMaterials] = useState("");
   const [time, setTime] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +48,6 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
   useEffect(() => {
     if (resetKey == null) return;
     setRows([{ rowId: Date.now(), order_item_id: 0, quantity: 1 }]);
-    setWarehouse("");
     setMaterials("");
     setTime("");
     setError(null);
@@ -77,6 +76,7 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
           pallet_number: last.pallet_number,
           box_number: last.box_number,
           quantity: last.quantity,
+          warehouse: last.warehouse,
         },
       ];
     });
@@ -117,7 +117,7 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
             quantity: row.quantity,
             pallet_number: toOptionalInt(row.pallet_number),
             box_number: toOptionalInt(row.box_number),
-            warehouse: warehouse.trim() || undefined,
+            warehouse: (row.warehouse ?? "").trim() || undefined,
             materials_used: materials.trim() || undefined,
             time_spent_minutes: time ? Number(time) : undefined,
           });
@@ -198,6 +198,18 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
                     onChange={(e) => updateRow(index, { quantity: Number(e.target.value) || 0 })}
                   />
                 </div>
+                <Select
+                  label="Склад назначения"
+                  value={row.warehouse ?? ""}
+                  onChange={(e) => updateRow(index, { warehouse: e.target.value })}
+                >
+                  <option value="">Не выбрано</option>
+                  {destinations.map((d) => (
+                    <option key={d.id} value={d.name}>
+                      {d.name}
+                    </option>
+                  ))}
+                </Select>
               </div>
             );
           })}
@@ -217,18 +229,6 @@ export function PackingForm({ items, isSubmitting, onSubmit, resetKey }: Packing
         </>
       )}
 
-      <Select
-        label="Склад назначения (необязательно)"
-        value={warehouse}
-        onChange={(e) => setWarehouse(e.target.value)}
-      >
-        <option value="">Не выбрано</option>
-        {destinations.map((d) => (
-          <option key={d.id} value={d.name}>
-            {d.name}
-          </option>
-        ))}
-      </Select>
       <Input label="Использованные материалы" value={materials} onChange={(e) => setMaterials(e.target.value)} />
       <Input label="Время упаковки (мин)" value={time} onChange={(e) => setTime(e.target.value)} />
 

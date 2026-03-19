@@ -13,6 +13,9 @@ from app.db.session import get_db
 from app.schemas.ai import AIChatHistoryOut, AIChatRequest, AIChatResponse, ChatMessageOut
 from app.services.openai_service import OpenAIService
 from app.services.rag import build_rag_context_async
+from app.services.rag_intent import FIXED_RESPONSE_INTENTS, detect_rag_intent
+
+FIXED_RESPONSE_TEXT = "В загруженной документации нет информации по этому вопросу."
 
 router = APIRouter()
 
@@ -66,6 +69,25 @@ async def chat(
     current_user: User = Depends(get_current_user),
 ) -> AIChatResponse:
     """Chat with AI assistant. History loaded from and saved to DB; RAG when document_chunks populated."""
+    intent = detect_rag_intent(payload.message)
+    if intent in FIXED_RESPONSE_INTENTS:
+        user_msg = ChatMessage(
+            user_id=current_user.id,
+            company_id=payload.company_id,
+            role="user",
+            text=payload.message,
+        )
+        assistant_msg = ChatMessage(
+            user_id=current_user.id,
+            company_id=payload.company_id,
+            role="assistant",
+            text=FIXED_RESPONSE_TEXT,
+        )
+        db.add(user_msg)
+        db.add(assistant_msg)
+        await db.commit()
+        return AIChatResponse(answer=FIXED_RESPONSE_TEXT)
+
     ai_row = await db.get(AISettings, 1)
     if ai_row:
         service = OpenAIService(
@@ -126,15 +148,31 @@ async def chat(
 - Обращайся на «вы».
 - Не используй эмодзи.
 - Отвечай только на русском языке.
+- Отвечай СТРОГО только на последнее сообщение пользователя. Один запрос — один тематический блок в ответе: не добавляй блоки про обувь, зеркала, посуду, габариты, этикетку и т.д., если пользователь спросил что-то одно (например, на вопрос про габариты — только габариты, без блока «Для упаковки посуды…»; на вопрос про этикетку Ozon — только ответ про этикетку, без блока про обувь на ВБ). Не упоминай предыдущие сообщения из чата.
 
 ## Ограничения
 - Не отвечай на вопросы, не связанные с фулфилментом, складом или услугами «Бирки».
-- Если вопрос не по теме — вежливо перенаправь: «Я помогаю с вопросами о заявках, товарах и услугах фулфилмента. Чем могу помочь?»
+- На запросы не по теме (анекдот, погода, привет, как дела и т.п.) отвечай ТОЛЬКО одной фразой: «Я помогаю с вопросами о заявках, товарах и услугах фулфилмента. Чем могу помочь?» Без другого контента.
+- По Ozon: в загруженной документации нет конкретики (размер этикетки в мм, красный скотч, правила упаковки зеркал/опасных грузов). На вопрос «какой размер этикетки для Ozon» или «этикетка Ozon FBS» отвечай ТОЛЬКО: «В загруженной документации нет информации по этому вопросу.» Запрещено называть размеры 58×40, 120×75 и любые другие в мм.
 """
     openai_messages = [{"role": "system", "content": AI_SYSTEM_INSTRUCTION}]
     rag_system, user_content = await build_rag_context_async(db, payload.message)
     if rag_system:
         openai_messages.append({"role": "system", "content": rag_system})
+    else:
+        # Контекст по запросу не найден — по упаковке/WB/Ozon не придумывать ответ из головы
+        openai_messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Контекст из документации по этому запросу не найден. "
+                    "По вопросам упаковки и требований WB/Ozon отвечай только: "
+                    "«В загруженной документации нет информации по этому вопросу.» "
+                    "Не придумывай ответ из общих знаний. Для Ozon: вопрос про размер этикетки — ответь ТОЛЬКО «В загруженной документации нет информации по этому вопросу.» Не пиши 58×40, 120×75 и никакие размеры в мм. Не называй цвет скотча, правила по зеркалам — этого нет в документации. "
+                    "Один запрос — один ответ: не добавляй блоки про другие темы (посуда, обувь, зеркала, этикетка и т.д.). Отвечай только на текущий вопрос."
+                ),
+            }
+        )
     openai_messages.extend([{"role": m.role, "content": m.text} for m in history_rows])
     openai_messages.append({"role": "user", "content": user_content})
 

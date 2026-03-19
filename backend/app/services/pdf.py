@@ -127,7 +127,7 @@ def _apply_contract_template(template_html: str, context: dict[str, str]) -> str
     return html_content
 
 
-def _render_barcode_base64(barcode_value: str, module_width: float = 0.35, module_height: float = 12) -> str:
+def _render_barcode_base64(barcode_value: str, module_width: float = 0.35, module_height: float = 28) -> str:
     """Generate Code128 barcode as base64 PNG for embedding in HTML (58x40 label)."""
     if not barcode_value or not barcode_value.strip():
         return ""
@@ -156,12 +156,12 @@ def render_label_pdf(label: LabelData) -> bytes:
         article = html.escape(label.article or "")
         supplier = html.escape(label.supplier or "")
         barcode_value = html.escape(label.barcode_value or "")
-        barcode_b64 = _render_barcode_base64(label.barcode_value or "", module_width=0.5, module_height=20)
+        barcode_b64 = _render_barcode_base64(label.barcode_value or "", module_width=0.68, module_height=34)
         barcode_img = ""
         if barcode_b64:
             barcode_img = (
                 f'<img src="data:image/png;base64,{barcode_b64}" alt="" '
-                'style="display:block;margin:0 auto;max-width:54mm;max-height:16mm;height:auto;" />'
+                'style="display:block;margin:0 auto;max-width:56mm;max-height:24mm;height:auto;" />'
             )
         html_content = f"""
         <!DOCTYPE html>
@@ -174,9 +174,8 @@ def render_label_pdf(label: LabelData) -> bytes:
               .label {{ padding: 2mm; width: 56mm; min-height: 38mm; max-height: 40mm; box-sizing: border-box; overflow: hidden; page-break-inside: avoid; break-inside: avoid; }}
               .label-title {{ font-weight: bold; font-size: 9pt; line-height: 1.2; margin-bottom: 1mm; word-break: break-word; overflow: hidden; text-overflow: ellipsis; }}
               .label-meta {{ font-size: 7pt; line-height: 1.35; margin-bottom: 0.5mm; }}
-              .label-barcode {{ text-align: center; margin: 1mm 0; min-height: 14mm; max-height: 16mm; display: flex; align-items: center; justify-content: center; }}
-              .label-barcode img {{ max-width: 54mm; max-height: 16mm; height: auto; }}
-              .label-footer {{ font-size: 8pt; text-align: center; margin-top: 1mm; letter-spacing: 0.5px; }}
+              .label-barcode {{ text-align: center; margin: 1mm 0; min-height: 20mm; max-height: 24mm; display: flex; align-items: center; justify-content: center; }}
+              .label-barcode img {{ max-width: 56mm; max-height: 24mm; height: auto; }}
             </style>
           </head>
           <body>
@@ -185,7 +184,6 @@ def render_label_pdf(label: LabelData) -> bytes:
               <div class="label-meta">Артикул {article}</div>
               <div class="label-meta">Поставщик {supplier}</div>
               <div class="label-barcode">{barcode_img}</div>
-              <div class="label-footer">{barcode_value}</div>
             </div>
           </body>
         </html>

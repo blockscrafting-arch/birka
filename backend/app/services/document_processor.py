@@ -1,4 +1,5 @@
 """Document processing for RAG: DOCX/TXT parsing, chunking, indexing."""
+import json
 import re
 from datetime import datetime, timezone
 from io import BytesIO
@@ -7,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
+from app.core.config import settings
 from app.core.logging import logger
 from app.db.models.document_chunk import DocumentChunk
 from app.services.rag import get_embedding
@@ -54,6 +56,105 @@ def parse_docx(content: bytes) -> str:
     except Exception as exc:
         logger.exception("docx_parse_failed", error=str(exc))
         raise
+
+
+# Section title (from DOCX) -> section key for RAG filter (fallback if config empty)
+DOCX_SECTION_HEADING_TO_KEY: dict[str, str] = {
+    "Обувь": "obuv",
+    "Зеркала": "zerkala",
+    "Посуда": "posuda",
+    "Упаковка хрупких товаров": "hrupkie",
+    "Сантехника": "santehnika",
+    "Автомобильные масла": "avto_masla",
+    "Автомобильные аккумуляторы": "avto_akkum",
+    "Мебель": "mebel",
+    "Матрасы и топперы": "matrasy",
+    "Одежда и аксессуары": "odezhda",
+    "Одежда, обувь, аксессуары": "odezhda",
+}
+
+
+def get_docx_section_heading_to_key() -> dict[str, str]:
+    """Маппинг заголовок -> section. Из конфига RAG_DOCX_SECTION_HEADINGS_JSON или дефолт из кода."""
+    raw = getattr(settings, "RAG_DOCX_SECTION_HEADINGS_JSON", "") or ""
+    if not raw.strip():
+        return DOCX_SECTION_HEADING_TO_KEY.copy()
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in data.items()):
+            return data
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return DOCX_SECTION_HEADING_TO_KEY.copy()
+
+
+def _normalize_heading(text: str) -> str:
+    return (text or "").strip()
+
+
+def parse_docx_with_sections(content: bytes) -> list[tuple[str, str | None]]:
+    """
+    Parse DOCX into chunks with section keys. Uses paragraph styles (Heading 1/2) or
+    fallback to known titles. Each chunk is (text, section_key). section_key None for intro/unknown.
+    """
+    try:
+        from docx import Document
+
+        doc = Document(BytesIO(content))
+    except Exception as exc:
+        logger.exception("docx_parse_failed", error=str(exc))
+        raise
+
+    mapping = get_docx_section_heading_to_key()
+    result: list[tuple[str, str | None]] = []
+    current_section: str | None = None
+    current_text: list[str] = []
+    chunk_size = 900
+    overlap = 150
+
+    def flush_section() -> None:
+        nonlocal current_text
+        if not current_text:
+            return
+        full = "\n\n".join(current_text).strip()
+        if not full:
+            return
+        sub_chunks = split_into_chunks(full, chunk_size=chunk_size, overlap=overlap)
+        for sub in sub_chunks:
+            if sub:
+                result.append((sub, current_section))
+        current_text = []
+
+    for p in doc.paragraphs:
+        text = _normalize_heading(p.text)
+        style_name = getattr(p.style, "name", None) or ""
+        is_heading = isinstance(style_name, str) and style_name.startswith("Heading")
+
+        # Heading by style or by exact match with known section title (fallback when no Heading style)
+        known_section = mapping.get(text)
+        if known_section is None and text and is_heading:
+            for title, key in mapping.items():
+                if title in text or text in title:
+                    known_section = key
+                    break
+        is_section_header = (is_heading and text) or (bool(text) and text in mapping)
+
+        if is_section_header:
+            flush_section()
+            current_section = mapping.get(text) if text in mapping else known_section
+            current_text = [text]
+        elif text:
+            current_text.append(text)
+
+    flush_section()
+
+    if not result:
+        fallback_text = parse_docx(content)
+        if fallback_text:
+            for chunk in split_into_chunks(fallback_text, chunk_size=1000, overlap=200):
+                if chunk:
+                    result.append((chunk, None))
+    return result
 
 
 def parse_rtf(content: bytes) -> str:
@@ -150,6 +251,16 @@ def split_into_chunks(
     return chunks
 
 
+def _section_for_source_file(source_file: str) -> str | None:
+    """Infer section for txt/rtf by filename (wb -> wb_common, ozon -> ozon_common)."""
+    lower = (source_file or "").lower()
+    if "wb" in lower or "wildberries" in lower:
+        return "wb_common"
+    if "ozon" in lower:
+        return "ozon_common"
+    return None
+
+
 async def index_document(
     db: AsyncSession,
     file_name: str,
@@ -159,6 +270,7 @@ async def index_document(
     """
     Parse document, chunk, generate embeddings, store in DB.
     Replaces existing chunks for the same source_file (versioning: next version).
+    For DOCX uses section-aware parsing; for txt/rtf assigns wb_common/ozon_common by filename.
     Returns number of chunks added.
     """
     source_file = (file_name or "document").strip() or "document"
@@ -169,26 +281,28 @@ async def index_document(
             f"Файл слишком большой (макс. {MAX_DOCUMENT_SIZE_BYTES // (1024*1024)} MB)"
         )
 
-    if document_type == "txt":
-        text = parse_txt(content)
-    elif document_type == "rtf":
-        text = parse_rtf(content)
+    chunks_with_section: list[tuple[str, str | None]]
+    if document_type == "docx":
+        chunks_with_section = parse_docx_with_sections(content)
     else:
-        text = parse_docx(content)
+        if document_type == "txt":
+            text = parse_txt(content)
+        else:
+            text = parse_rtf(content)
+        if not text:
+            return 0
+        chunks_text = split_into_chunks(text, chunk_size=1000, overlap=200)
+        section = _section_for_source_file(source_file)
+        chunks_with_section = [(c, section) for c in chunks_text if c]
 
-    if not text:
+    if not chunks_with_section:
         return 0
-
-    chunks_text = split_into_chunks(text, chunk_size=1000, overlap=200)
-    if not chunks_text:
-        return 0
-    if len(chunks_text) > MAX_CHUNKS_PER_DOCUMENT:
+    if len(chunks_with_section) > MAX_CHUNKS_PER_DOCUMENT:
         raise ValueError(
-            f"Слишком много фрагментов ({len(chunks_text)}). "
+            f"Слишком много фрагментов ({len(chunks_with_section)}). "
             f"Максимум {MAX_CHUNKS_PER_DOCUMENT}. Уменьшите размер документа."
         )
 
-    # Next version for this source_file
     version_result = await db.execute(
         select(func.coalesce(func.max(DocumentChunk.version), 0)).where(
             DocumentChunk.source_file == source_file
@@ -200,7 +314,7 @@ async def index_document(
 
     now = datetime.now(timezone.utc)
     count = 0
-    for i, chunk_content in enumerate(chunks_text):
+    for i, (chunk_content, section) in enumerate(chunks_with_section):
         embedding = await get_embedding(chunk_content)
         if not embedding:
             continue
@@ -212,6 +326,7 @@ async def index_document(
             created_at=now,
             document_type=document_type,
             version=next_version,
+            section=section,
         )
         db.add(chunk)
         count += 1

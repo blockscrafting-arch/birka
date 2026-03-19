@@ -7,7 +7,7 @@
 - Приложение создаётся в `create_app()`: CORS, лимитер (slowapi), обработчики исключений, health-check `/health` (проверка БД).
 - **Старт (lifespan):**
   - `sync_roles_on_startup()` — выставляет роль admin пользователям из `ADMIN_TELEGRAM_IDS`; роль warehouse задаётся только вручную в админке.
-  - Запуск фоновой задачи **shipment scheduler** — периодическая проверка просроченных отгрузок (интервал задаётся `SHIPMENT_SCHEDULER_INTERVAL_SECONDS`).
+- **Периодическое автозакрытие отгрузок** выполняется **Celery Beat** (не lifespan): задача `app.tasks.shipment_tasks.auto_close_expired_shipments_task` по расписанию из [backend/app/celery_app.py](../backend/app/celery_app.py) (интервал `SHIPMENT_SCHEDULER_INTERVAL_SECONDS`). Запускать отдельно процесс `celery -A app.celery_app worker` и `celery -A app.celery_app beat`.
 
 ## Маршруты
 
@@ -54,9 +54,10 @@
 
 - **Auth:** `ADMIN_TELEGRAM_IDS`, `TELEGRAM_BOT_TOKEN`
 - **AI:** `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_PROVIDER` (openai | openrouter), `AI_MODEL` (например gpt-4o-mini или openai/gpt-4o для OpenRouter)
-- **БД:** `POSTGRES_DSN`
-- **Redis:** `REDIS_DSN` (опционально) — для кэша и Celery (worker, beat). В production с docker-compose задать `redis://redis:6379/0`; в [docker-compose.prod.yml](../docker-compose.prod.yml) для celery_worker и celery_beat переменная переопределена через `environment`, чтобы не зависеть от .env. При пустом REDIS_DSN в логах Celery выводится предупреждение и используется fallback localhost (для локальной разработки).
-- **Shipment scheduler:** `SHIPMENT_SCHEDULER_INTERVAL_SECONDS` (интервал проверки просроченных отгрузок, по умолчанию 600)
+- **БД:** `POSTGRES_DSN`. Пул соединений: `DB_POOL_SIZE` (по умолчанию 10), `DB_MAX_OVERFLOW` (20), `DB_POOL_RECYCLE_SEC` (900), `DB_POOL_TIMEOUT_SEC` (30). При нескольких репликах backend суммарное число соединений не должно превышать `max_connections` PostgreSQL.
+- **Redis:** `REDIS_DSN` (опционально) — для кэша, хранилища rate limit и Celery (worker, beat). В production с docker-compose задать `redis://redis:6379/0`; в [docker-compose.prod.yml](../docker-compose.prod.yml) для celery_worker и celery_beat переменная переопределена через `environment`, чтобы не зависеть от .env. При пустом REDIS_DSN лимиты считаются in-memory (на один инстанс); при падении Redis используется in-memory fallback.
+- **Rate limit:** лимитер (slowapi) считает по пользователю/сессии при наличии заголовка `X-Session-Token` или `X-Telegram-Init-Data` (в ключ попадает только хэш, не сырые данные); при отсутствии — по IP. Хранилище лимитов: при заданном `REDIS_DSN` — Redis, иначе in-memory.
+- **Shipment scheduler:** `SHIPMENT_SCHEDULER_INTERVAL_SECONDS` (интервал проверки просроченных отгрузок в Celery beat, по умолчанию 600)
 - **CORS:** `CORS_ORIGINS`
 - **Загрузки:** `MAX_UPLOAD_SIZE_BYTES`
 - **Шифрование API-ключей:** `ENCRYPTION_KEY` (Fernet, base64 url-safe)
@@ -64,6 +65,12 @@
 - **S3:** `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`, `S3_BUCKET_NAME`, `FILE_PUBLIC_BASE_URL`
 
 Секреты хранить только в env, не в репозитории.
+
+## Операционный контур
+
+- **API (FastAPI):** один или несколько процессов (uvicorn/gunicorn), обрабатывают HTTP, подключаются к БД и (при наличии) Redis. Не выполняют периодические задачи.
+- **Celery worker:** отдельный процесс для фоновых задач (например конвертация документов). Подключается к Redis как broker/backend.
+- **Celery beat:** один процесс на окружение, запускает по расписанию задачу автозакрытия просроченных отгрузок. В production не запускать несколько инстансов beat на одну очередь.
 
 ## Даты и время
 

@@ -17,15 +17,25 @@ type OrderCreate = {
   services?: { service_id: number; quantity: number }[];
 };
 
-export function useOrders(companyId?: number, page = 1, limit = 20, status?: string) {
+export function useOrders(
+  companyId?: number,
+  page = 1,
+  limit = 20,
+  status?: string,
+  search?: string
+) {
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: ["orders", companyId, page, limit, status],
+    queryKey: ["orders", companyId, page, limit, status, search],
     queryFn: () => {
-      const statusParam = status ? `&status=${encodeURIComponent(status)}` : "";
-      const companyParam = companyId != null ? `company_id=${companyId}&` : "";
-      return apiClient.api<Paginated<Order>>(`/orders?${companyParam}page=${page}&limit=${limit}${statusParam}`);
+      const params = new URLSearchParams();
+      if (companyId != null) params.set("company_id", String(companyId));
+      params.set("page", String(page));
+      params.set("limit", String(limit));
+      if (status) params.set("status", status);
+      if (search && search.trim()) params.set("search", search.trim());
+      return apiClient.api<Paginated<Order>>(`/orders?${params.toString()}`);
     },
     enabled: true,
   });

@@ -46,11 +46,12 @@ export function useWarehouse() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["order-items"] });
+      queryClient.invalidateQueries({ queryKey: ["order-packing-records"] });
     },
   });
 
   const validateBarcode = useMutation({
-    mutationFn: (payload: { barcode: string }) =>
+    mutationFn: (payload: { barcode: string; company_id?: number; order_id?: number }) =>
       apiClient.api<{
         valid: boolean;
         message: string;

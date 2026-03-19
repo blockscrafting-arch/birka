@@ -9,6 +9,8 @@ COPY frontend/package.json /app/package.json
 RUN npm install
 
 COPY frontend /app
+# Ограничение памяти Node при сборке (защита от OOM на VPS; при 2 ГБ RAM можно 768)
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 RUN npm run build
 
 FROM nginx:1.27-alpine

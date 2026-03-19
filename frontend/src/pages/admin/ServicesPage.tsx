@@ -42,7 +42,6 @@ function SortableServiceRow({
   onPriceCancel,
   isEditingPrice,
   editingPriceValue,
-  isActive,
   isUpdating,
 }: {
   service: Service;

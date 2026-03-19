@@ -4,6 +4,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -98,15 +99,25 @@ async def create_company(
         contract_data=company_data,
     )
     db.add(company)
-    await db.commit()
-    await db.refresh(company)
-    return company
+    try:
+        await db.commit()
+        await db.refresh(company)
+        return company
+    except IntegrityError as e:
+        await db.rollback()
+        err_msg = str(e.orig) if hasattr(e, "orig") and e.orig else str(e)
+        if "inn" in err_msg.lower() or "companies_inn" in err_msg or "unique" in err_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Компания с таким ИНН уже существует.",
+            ) from e
+        raise
 
 
 @router.get("", response_model=CompanyList)
 async def list_companies(
     page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> CompanyList:

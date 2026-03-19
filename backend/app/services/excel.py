@@ -2,6 +2,8 @@
 from io import BytesIO
 
 import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 from app.core.logging import logger
 from app.db.models.order import OrderItem
@@ -45,6 +47,8 @@ FBO_COLUMNS = [
     "Кол-во",
     "Склад",
     "Баркод короба",
+    "Дата поставки",
+    "packing_id",
 ]
 
 ORDER_IMPORT_COLUMNS = [
@@ -60,6 +64,28 @@ ORDER_IMPORT_COLUMNS = [
     "Количество",
 ]
 ORDER_IMPORT_REQUIRED = {"Название", "Количество"}
+
+# Column widths (character units) for each export, in same order as column list.
+ORDER_IMPORT_WIDTHS = [35, 18, 12, 12, 18, 16, 45, 25, 20, 12]
+EXPORT_WIDTHS = [35, 18, 12, 12, 18, 16, 45, 25, 20, 10]
+RECEIVING_WIDTHS = [18, 35, 14, 12, 12, 12, 30]
+FBO_WIDTHS = [14, 14, 14, 18, 35, 8, 20, 22, 14, 12]
+FBO_SUPPLY_BOX_WIDTHS = [14, 22]
+SERVICES_WIDTHS = [18, 30, 10, 8, 35, 8]
+
+
+def _set_excel_column_widths(buffer: BytesIO, widths: list[int]) -> BytesIO:
+    """Set column widths on the first sheet. Returns new BytesIO with updated workbook."""
+    buffer.seek(0)
+    wb = load_workbook(buffer, read_only=False)
+    ws = wb.active
+    if ws is not None:
+        for i, w in enumerate(widths):
+            ws.column_dimensions[get_column_letter(i + 1)].width = min(max(w, 8), 55)
+    out = BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return out
 
 
 def export_order_items(order_items: list[OrderItem]) -> BytesIO:
@@ -84,9 +110,9 @@ def export_order_items(order_items: list[OrderItem]) -> BytesIO:
             )
         df = pd.DataFrame(rows, columns=ORDER_IMPORT_COLUMNS)
         buffer = BytesIO()
-        df.to_excel(buffer, index=False)
+        df.to_excel(buffer, index=False, engine="openpyxl")
         buffer.seek(0)
-        return buffer
+        return _set_excel_column_widths(buffer, ORDER_IMPORT_WIDTHS)
     except Exception as exc:
         logger.exception("excel_export_order_items_failed", error=str(exc))
         raise
@@ -95,9 +121,9 @@ def export_order_items(order_items: list[OrderItem]) -> BytesIO:
 def export_order_items_template() -> BytesIO:
     """Export empty order items template."""
     buffer = BytesIO()
-    pd.DataFrame(columns=ORDER_IMPORT_COLUMNS).to_excel(buffer, index=False)
+    pd.DataFrame(columns=ORDER_IMPORT_COLUMNS).to_excel(buffer, index=False, engine="openpyxl")
     buffer.seek(0)
-    return buffer
+    return _set_excel_column_widths(buffer, ORDER_IMPORT_WIDTHS)
 
 
 def parse_orders_excel(file_bytes: bytes) -> list[dict]:
@@ -141,9 +167,9 @@ def parse_orders_excel(file_bytes: bytes) -> list[dict]:
 def export_products_template() -> BytesIO:
     """Export empty Excel template with required columns."""
     buffer = BytesIO()
-    pd.DataFrame(columns=EXPORT_COLUMNS).to_excel(buffer, index=False)
+    pd.DataFrame(columns=EXPORT_COLUMNS).to_excel(buffer, index=False, engine="openpyxl")
     buffer.seek(0)
-    return buffer
+    return _set_excel_column_widths(buffer, EXPORT_WIDTHS)
 
 
 def export_products(products: list[Product]) -> BytesIO:
@@ -167,9 +193,9 @@ def export_products(products: list[Product]) -> BytesIO:
             )
         df = pd.DataFrame(rows, columns=EXPORT_COLUMNS)
         buffer = BytesIO()
-        df.to_excel(buffer, index=False)
+        df.to_excel(buffer, index=False, engine="openpyxl")
         buffer.seek(0)
-        return buffer
+        return _set_excel_column_widths(buffer, EXPORT_WIDTHS)
     except Exception as exc:
         logger.exception("excel_export_failed", error=str(exc))
         raise
@@ -196,16 +222,19 @@ def export_receiving(order_items: list[OrderItem]) -> BytesIO:
             )
         df = pd.DataFrame(rows, columns=RECEIVING_COLUMNS)
         buffer = BytesIO()
-        df.to_excel(buffer, index=False)
+        df.to_excel(buffer, index=False, engine="openpyxl")
         buffer.seek(0)
-        return buffer
+        return _set_excel_column_widths(buffer, RECEIVING_WIDTHS)
     except Exception as exc:
         logger.exception("excel_export_receiving_failed", error=str(exc))
         raise
 
 
-def export_fbo_shipping(packing_records: list[PackingRecord]) -> BytesIO:
-    """Export FBO shipping (packing records) to Excel."""
+def export_fbo_shipping(
+    packing_records: list[PackingRecord],
+    delivery_date: str | None = None,
+) -> BytesIO:
+    """Export FBO shipping (packing records) to Excel. delivery_date optional (e.g. from shipment)."""
     try:
         sorted_records = sorted(
             packing_records,
@@ -228,15 +257,97 @@ def export_fbo_shipping(packing_records: list[PackingRecord]) -> BytesIO:
                     "Кол-во": rec.quantity or 0,
                     "Склад": rec.warehouse or "",
                     "Баркод короба": rec.box_barcode or "",
+                    "Дата поставки": delivery_date or "",
+                    "packing_id": rec.id,
                 }
             )
         df = pd.DataFrame(rows, columns=FBO_COLUMNS)
         buffer = BytesIO()
-        df.to_excel(buffer, index=False)
+        df.to_excel(buffer, index=False, engine="openpyxl")
         buffer.seek(0)
-        return buffer
+        return _set_excel_column_widths(buffer, FBO_WIDTHS)
     except Exception as exc:
         logger.exception("excel_export_fbo_failed", error=str(exc))
+        raise
+
+
+def parse_fbo_excel(file_bytes: bytes) -> list[dict]:
+    """Parse FBO Excel (packing_id, Баркод короба, Склад, Дата поставки)."""
+    try:
+        df = pd.read_excel(BytesIO(file_bytes))
+        df = df.fillna("")
+        if "packing_id" not in df.columns:
+            raise ValueError("В файле должен быть столбец packing_id")
+        result = []
+        for _, row in df.iterrows():
+            pid_val = row.get("packing_id", "")
+            try:
+                packing_id = int(pid_val) if pid_val != "" else None
+            except (TypeError, ValueError):
+                packing_id = None
+            if packing_id is None:
+                continue
+
+            box_barcode = str(row.get("Баркод короба", "")).strip() or None
+            warehouse = str(row.get("Склад", "")).strip() or None
+
+            delivery_date = row.get("Дата поставки", "")
+            if isinstance(delivery_date, pd.Timestamp):
+                delivery_date = delivery_date.strftime("%Y-%m-%d")
+            else:
+                delivery_date = str(delivery_date).strip() or None
+
+            result.append({
+                "packing_id": packing_id,
+                "box_barcode": box_barcode,
+                "warehouse": warehouse,
+                "delivery_date": delivery_date,
+            })
+        return result
+    except Exception as exc:
+        logger.exception("excel_parse_fbo_failed", error=str(exc))
+        raise
+
+
+FBO_SUPPLY_BOX_COLUMNS = ["Номер короба", "Штрихкод"]
+
+
+def export_fbo_supply_boxes(boxes: list) -> BytesIO:
+    """Export FBO supply boxes to Excel for manual edit/import. Each box: box_number, external_barcode."""
+    try:
+        rows = []
+        for b in sorted(boxes, key=lambda x: getattr(x, "box_number", x.get("box_number", 0))):
+            box_number = getattr(b, "box_number", b.get("box_number", 0))
+            barcode = getattr(b, "external_barcode", None) or b.get("external_barcode") or b.get("Штрихкод") or ""
+            rows.append({"Номер короба": box_number, "Штрихкод": barcode or ""})
+        df = pd.DataFrame(rows, columns=FBO_SUPPLY_BOX_COLUMNS)
+        buffer = BytesIO()
+        df.to_excel(buffer, index=False, engine="openpyxl")
+        buffer.seek(0)
+        return _set_excel_column_widths(buffer, FBO_SUPPLY_BOX_WIDTHS)
+    except Exception as exc:
+        logger.exception("excel_export_fbo_supply_boxes_failed", error=str(exc))
+        raise
+
+
+def parse_fbo_supply_excel(file_bytes: bytes) -> list[dict]:
+    """Parse FBO supply Excel (Номер короба, Штрихкод). Returns list of {box_number, barcode}."""
+    try:
+        df = pd.read_excel(BytesIO(file_bytes))
+        df = df.fillna("")
+        if "Номер короба" not in df.columns or "Штрихкод" not in df.columns:
+            raise ValueError("В файле должны быть столбцы «Номер короба» и «Штрихкод»")
+        result = []
+        for _, row in df.iterrows():
+            try:
+                num = int(row.get("Номер короба", 0))
+            except (TypeError, ValueError):
+                continue
+            barcode = str(row.get("Штрихкод", "")).strip() or None
+            result.append({"box_number": num, "barcode": barcode})
+        return result
+    except Exception as exc:
+        logger.exception("excel_parse_fbo_supply_failed", error=str(exc))
         raise
 
 
@@ -286,9 +397,9 @@ def export_services(services: list[Service]) -> BytesIO:
             )
         df = pd.DataFrame(rows, columns=SERVICES_COLUMNS)
         buffer = BytesIO()
-        df.to_excel(buffer, index=False)
+        df.to_excel(buffer, index=False, engine="openpyxl")
         buffer.seek(0)
-        return buffer
+        return _set_excel_column_widths(buffer, SERVICES_WIDTHS)
     except Exception as exc:
         logger.exception("excel_export_services_failed", error=str(exc))
         raise

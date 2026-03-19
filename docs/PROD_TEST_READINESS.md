@@ -38,7 +38,7 @@
 - [ ] Backend: `cd backend && pytest tests/ -v` — тесты проходят (локально или в CI). Рекомендуется ориентироваться на зелёный статус GitHub Actions.
 - [ ] Frontend: `cd frontend && npm run build` — сборка без ошибок; при необходимости `npm run lint` и `npm test`.
 - [ ] CI: [.github/workflows/ci.yml](../.github/workflows/ci.yml) — зелёный статус на текущем main (или ветке деплоя).
-- [ ] Health: `GET /health` возвращает `{"status": "ok", "db": "connected"}`. После деплоя: `curl https://ffbirka.ru/api/v1/health` или через внутренний URL бэкенда (например `curl http://backend:8000/health` из хоста с доступом к контейнеру).
+- [ ] Health: `GET /health` возвращает `{"status": "ok", "db": "connected"}`. После деплоя: `curl -s https://ffbirka.ru/health` (в nginx проброшен `location = /health`) или через внутренний URL бэкенда (например `curl http://backend:8000/health` из хоста с доступом к контейнеру).
 
 ---
 

@@ -142,6 +142,9 @@ export function CompanyForm({ initial, isSubmitting, submitLabel, onSubmit }: Co
         onChange={(event) => setInn(event.target.value)}
       />
       <Input label="Название компании" value={name} onChange={(event) => setName(event.target.value)} />
+      <p className="text-xs text-slate-500">
+        При ручном вводе названия оно сохраняется; при пустом поле подставится название из базы по ИНН.
+      </p>
 
       {hasReadOnlyRequisites && (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">

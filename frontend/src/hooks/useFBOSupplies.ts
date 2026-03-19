@@ -6,7 +6,6 @@ import type { FBOSupply } from "../types";
 type Paginated<T> = { items: T[]; total: number; page: number; limit: number };
 
 export function useFBOSupplies(companyId?: number, page = 1, limit = 20) {
-  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["fbo", "supplies", companyId, page, limit],
     queryFn: () =>
@@ -39,7 +38,7 @@ export type FBOSupplyCreatePayload = {
   box_count?: number;
 };
 
-export function useFBOCreate(companyId?: number) {
+export function useFBOCreate() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: FBOSupplyCreatePayload) =>

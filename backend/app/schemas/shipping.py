@@ -43,6 +43,12 @@ class ShipmentRequestStatusUpdate(BaseModel):
     status: str
 
 
+class ShipmentRequestFboLink(BaseModel):
+    """Link an FBO supply to a shipment request."""
+
+    fbo_supply_id: int
+
+
 class ShipmentRequestList(BaseModel):
     """Paginated shipment request list."""
 

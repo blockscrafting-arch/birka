@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
+import { PhotoUpload } from "../../components/shared/PhotoUpload";
 import { Select } from "../../components/ui/Select";
 import { OrderItem } from "../../types";
 
 type ReceivingFormProps = {
   items: OrderItem[];
+  selectedItemId?: number | null;
   defectPhotosByProduct?: Record<number, number>;
   isSubmitting?: boolean;
   onSubmit: (payload: {
@@ -17,14 +19,17 @@ type ReceivingFormProps = {
     adjustment_note?: string;
   }) => void;
   onSelectItem?: (itemId: number | null) => void;
+  onUploadDefectPhoto?: (file: File) => void;
 };
 
 export function ReceivingForm({
   items,
+  selectedItemId,
   defectPhotosByProduct = {},
   isSubmitting,
   onSubmit,
   onSelectItem,
+  onUploadDefectPhoto,
 }: ReceivingFormProps) {
   const [itemId, setItemId] = useState("");
   const [received, setReceived] = useState("0");
@@ -35,6 +40,22 @@ export function ReceivingForm({
   const [showDetails, setShowDetails] = useState(false);
 
   const selected = items.find((item) => item.id === Number(itemId));
+
+  useEffect(() => {
+    if (selectedItemId != null) {
+      const v = String(selectedItemId);
+      setItemId(v);
+      const it = items.find((i) => i.id === selectedItemId);
+      if (it) {
+        setReceived(String(it.received_qty ?? 0));
+        setDefect(String(it.defect_qty ?? 0));
+        setAdjustment(String(it.adjustment_qty ?? 0));
+        setAdjustmentNote(it.adjustment_note ?? "");
+      }
+    } else {
+      setItemId("");
+    }
+  }, [selectedItemId, items]);
 
   return (
     <form
@@ -119,15 +140,20 @@ export function ReceivingForm({
         </div>
       ) : null}
 
-      <div className="space-y-1">
-        <Input
-          label="Фактическое количество"
-          inputMode="numeric"
-          value={received}
-          onChange={(e) => setReceived(e.target.value)}
-        />
-      </div>
-      <Input label="Брак" inputMode="numeric" value={defect} onChange={(e) => setDefect(e.target.value)} />
+      <Input
+        label="Фактическое количество"
+        inputMode="numeric"
+        value={received}
+        onChange={(e) => setReceived(e.target.value)}
+        placeholder="Введите принятое количество"
+      />
+      <Input
+        label="Брак"
+        inputMode="numeric"
+        value={defect}
+        onChange={(e) => setDefect(e.target.value)}
+        placeholder="Кол-во брака (при необходимости загрузите фото ниже)"
+      />
       {selected && Number(defect) > 0 ? (
         (() => {
           const count = defectPhotosByProduct[selected.product_id] ?? 0;
@@ -140,16 +166,21 @@ export function ReceivingForm({
           );
         })()
       ) : null}
+      {onUploadDefectPhoto ? (
+        <PhotoUpload label="Фото брака" onFileChange={onUploadDefectPhoto} />
+      ) : null}
       <Input
         label="Списание (фотосессия и др.)"
         inputMode="numeric"
         value={adjustment}
         onChange={(e) => setAdjustment(e.target.value)}
+        placeholder="Кол-во на списание"
       />
       <Input
         label="Комментарий к списанию"
         value={adjustmentNote}
         onChange={(e) => setAdjustmentNote(e.target.value)}
+        placeholder="Необязательно"
       />
       {error ? <div className="text-sm text-rose-500">{error}</div> : null}
       {(() => {
@@ -161,12 +192,15 @@ export function ReceivingForm({
           defectQty > 0 &&
           defectPhotoCount < defectQty;
         return (
-          <Button
-            type="submit"
-            disabled={isSubmitting || items.length === 0 || needDefectPhoto}
-          >
-            Сохранить товар
-          </Button>
+          <div className="space-y-1">
+            <Button
+              type="submit"
+              disabled={isSubmitting || items.length === 0 || needDefectPhoto}
+            >
+              Принять товар
+            </Button>
+            <div className="text-xs text-slate-500">перейти к следующему</div>
+          </div>
         );
       })()}
     </form>

@@ -10,7 +10,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.api.v1.deps import get_current_user, get_http_client
+from app.api.v1.deps import get_current_user, get_http_client, require_roles
+from app.core.db_utils import escape_ilike
 from app.core.limiter import limiter
 from app.db.models.company import Company
 from app.db.models.order import Order, OrderItem
@@ -23,11 +24,13 @@ from app.db.models.product import Product
 from app.db.session import get_db
 from app.schemas.order import OrderCreate, OrderItemCreate, OrderItemOut, OrderList, OrderOut, OrderPhotoOut, OrderStatusUpdate
 from app.schemas.warehouse import PackingRecordOut
-from app.services.excel import export_order_items, export_order_items_template, export_receiving, parse_orders_excel
+from app.db.models.shipment_request import ShipmentRequest
+from app.services.excel import export_fbo_shipping, export_order_items, export_order_items_template, export_receiving, parse_orders_excel
 from app.services.files import content_disposition
 from app.services.s3 import S3Service
 from app.services.upload_validation import safe_open_image, sanitize_filename_for_storage, validate_image_signature
 from app.services.telegram import send_document, send_notification
+from app.services.order_status_flow import is_allowed_transition
 from app.core.config import settings
 from app.core.logging import logger
 from app.db.models.user import User
@@ -139,6 +142,7 @@ async def create_order(
 async def list_orders(
     company_id: int | None = Query(None, description="Company ID; for warehouse/admin optional (all companies)"),
     status: str | None = Query(None),
+    search: str | None = Query(None, description="Search by order number (partial match)"),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -163,6 +167,10 @@ async def list_orders(
         statuses = [value.strip() for value in status.split(",") if value.strip()]
         if statuses:
             base_query = base_query.where(Order.status.in_(statuses))
+    if search and search.strip():
+        term_escaped = escape_ilike(search.strip())
+        pattern = f"%{term_escaped}%"
+        base_query = base_query.where(Order.order_number.ilike(pattern, escape="\\"))
     total_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
     total = int(total_result.scalar_one())
     offset = (page - 1) * limit
@@ -173,6 +181,10 @@ async def list_orders(
         statuses = [value.strip() for value in status.split(",") if value.strip()]
         if statuses:
             conditions.append(Order.status.in_(statuses))
+    if search and search.strip():
+        term_escaped = escape_ilike(search.strip())
+        pattern = f"%{term_escaped}%"
+        conditions.append(Order.order_number.ilike(pattern, escape="\\"))
     q = (
         select(Order, func.count(OrderPhoto.id))
         .outerjoin(OrderPhoto, OrderPhoto.order_id == Order.id)
@@ -258,12 +270,18 @@ async def import_order_from_excel(
     products_created = 0
     for row in rows:
         barcode = (row.get("barcode") or "").strip() or None
+        name_raw = (row.get("name") or "").strip()
         product = None
         if barcode:
             prod_result = await db.execute(
                 select(Product).where(Product.company_id == company_id, Product.barcode == barcode)
             )
             product = prod_result.scalar_one_or_none()
+        if not product and name_raw:
+            name_result = await db.execute(
+                select(Product).where(Product.company_id == company_id, Product.name == name_raw)
+            )
+            product = name_result.scalar_one_or_none()
         if not product:
             product = Product(
                 company_id=company_id,
@@ -343,29 +361,27 @@ async def update_order_status(
     order_id: int,
     payload: OrderStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles("warehouse", "admin")),
 ) -> OrderOut:
-    """Update order status."""
+    """Update order status (only warehouse/admin; allowed transitions enforced)."""
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    if current_user.role in {"warehouse", "admin"}:
-        company_result = await db.execute(
-            select(Company).where(Company.id == order.company_id).options(joinedload(Company.user))
-        )
-    else:
-        company_result = await db.execute(
-            select(Company)
-            .where(Company.id == order.company_id, Company.user_id == current_user.id)
-            .options(joinedload(Company.user))
-        )
+    company_result = await db.execute(
+        select(Company).where(Company.id == order.company_id).options(joinedload(Company.user))
+    )
     company = company_result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail="Компания не найдена")
+    new_status = payload.status
+    if not is_allowed_transition(order.status, new_status):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Недопустимый переход статуса: с «{order.status}» на «{new_status}».",
+        )
     telegram_id = company.user.telegram_id if company.user else None
     order_number = order.order_number
-    new_status = payload.status
     order.status = new_status
     await db.commit()
     await db.refresh(order)
@@ -674,4 +690,100 @@ async def send_export_receiving_to_telegram(
     sent = await send_document(telegram_id, file_bytes, filename, caption="Экспорт приемки")
     if not sent:
         raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}
+
+
+@router.get("/{order_id}/export-fbo")
+async def export_fbo_excel_client(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Export FBO shipping (packing records) to Excel for client download."""
+    order_result = await db.execute(select(Order).where(Order.id == order_id))
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == order.company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
+        )
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    result = await db.execute(
+        select(PackingRecord)
+        .options(
+            joinedload(PackingRecord.product),
+            joinedload(PackingRecord.employee),
+        )
+        .where(PackingRecord.order_id == order_id)
+    )
+    records = list(result.unique().scalars().all())
+    if not records:
+        raise HTTPException(status_code=400, detail="Нет записей упаковки для выгрузки (заявка ещё не упакована)")
+    sr_result = await db.execute(
+        select(ShipmentRequest).where(ShipmentRequest.order_id == order_id).limit(1)
+    )
+    sr = sr_result.scalar_one_or_none()
+    delivery_date_str = sr.delivery_date.isoformat() if sr and sr.delivery_date else None
+    buffer = export_fbo_shipping(records, delivery_date_str)
+    filename = f"Отгрузка_FBO_заявка_{order.order_number}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": content_disposition(filename)},
+    )
+
+
+@router.post("/{order_id}/export-fbo/send")
+async def send_export_fbo_to_telegram_client(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Export full FBO (packing records) and send to current user in Telegram."""
+    order_result = await db.execute(select(Order).where(Order.id == order_id))
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+
+    if current_user.role not in ("warehouse", "admin"):
+        company_result = await db.execute(
+            select(Company).where(Company.id == order.company_id, Company.user_id == current_user.id)
+        )
+        if not company_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Заявка не найдена")
+
+    telegram_id = getattr(current_user, "telegram_id", None)
+    if not telegram_id:
+        raise HTTPException(status_code=400, detail="Telegram не привязан к вашему аккаунту")
+
+    result = await db.execute(
+        select(PackingRecord)
+        .options(
+            joinedload(PackingRecord.product),
+            joinedload(PackingRecord.employee),
+        )
+        .where(PackingRecord.order_id == order_id)
+    )
+    records = list(result.unique().scalars().all())
+    if not records:
+        raise HTTPException(status_code=400, detail="Нет записей упаковки для выгрузки (заявка ещё не упакована)")
+
+    sr_result = await db.execute(
+        select(ShipmentRequest).where(ShipmentRequest.order_id == order_id).limit(1)
+    )
+    sr = sr_result.scalar_one_or_none()
+    delivery_date_str = sr.delivery_date.isoformat() if sr and sr.delivery_date else None
+
+    buffer = export_fbo_shipping(records, delivery_date_str)
+    file_bytes = buffer.getvalue()
+    filename = f"Отгрузка_FBO_заявка_{order.order_number}.xlsx"
+
+    sent = await send_document(telegram_id, file_bytes, filename, caption="Отгрузка FBO (заполните штрихкоды коробов, склад и дату)")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+
     return {"sent": True}

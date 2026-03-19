@@ -15,14 +15,14 @@ async def test_fbo_create_wb_with_box_count_without_keys_returns_400(client, aut
     assert "API" in create_resp.json().get("detail", "") or "ключ" in create_resp.json().get("detail", "").lower()
 
 
-async def test_fbo_create_ozon_without_keys_returns_400(client, auth_headers, unique_inn):
-    """Create Ozon supply without API keys returns 400."""
+async def test_fbo_create_ozon_with_box_count_without_keys_returns_400(client, auth_headers, unique_inn):
+    """Create Ozon supply with box_count > 0 without API keys returns 400."""
     company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
     assert company_resp.status_code in (200, 201)
     company_id = company_resp.json()["id"]
     create_resp = await client.post(
         "/api/v1/fbo/supplies",
-        json={"company_id": company_id, "marketplace": "ozon"},
+        json={"company_id": company_id, "marketplace": "ozon", "box_count": 1},
         headers=auth_headers,
     )
     assert create_resp.status_code == 400
@@ -127,6 +127,68 @@ async def test_fbo_import_barcodes_validation(client, auth_headers, unique_inn):
         headers=auth_headers,
     )
     assert import_resp.status_code == 422
+
+
+async def test_fbo_import_barcodes_append_box_numbering(client, auth_headers, unique_inn):
+    """Append import continues box_number from existing boxes (no duplicate box_number)."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+
+    create_resp = await client.post(
+        "/api/v1/fbo/supplies",
+        json={"company_id": company_id, "marketplace": "wb"},
+        headers=auth_headers,
+    )
+    assert create_resp.status_code == 200
+    supply_id = create_resp.json()["id"]
+
+    await client.post(
+        f"/api/v1/fbo/supplies/{supply_id}/import-barcodes",
+        json={"barcodes": ["A1", "A2", "A3"]},
+        headers=auth_headers,
+    )
+    append_resp = await client.post(
+        f"/api/v1/fbo/supplies/{supply_id}/import-barcodes",
+        json={"barcodes": ["A4", "A5"]},
+        headers=auth_headers,
+    )
+    assert append_resp.status_code == 200
+    new_boxes = append_resp.json()["boxes"]
+    assert len(new_boxes) == 2
+    numbers = sorted(b["box_number"] for b in new_boxes)
+    assert numbers == [4, 5], "Append must continue from max(existing box_number)"
+
+    get_resp = await client.get(f"/api/v1/fbo/supplies/{supply_id}", headers=auth_headers)
+    assert get_resp.status_code == 200
+    all_boxes = sorted(get_resp.json()["boxes"], key=lambda b: b["box_number"])
+    assert len(all_boxes) == 5
+    assert [b["box_number"] for b in all_boxes] == [1, 2, 3, 4, 5]
+    assert [b["external_barcode"] for b in all_boxes] == ["A1", "A2", "A3", "A4", "A5"]
+
+
+async def test_fbo_import_barcodes_skips_duplicate_in_payload(client, auth_headers, unique_inn):
+    """Import with duplicate barcodes in payload adds only one box per unique barcode."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+
+    create_resp = await client.post(
+        "/api/v1/fbo/supplies",
+        json={"company_id": company_id, "marketplace": "wb"},
+        headers=auth_headers,
+    )
+    supply_id = create_resp.json()["id"]
+
+    import_resp = await client.post(
+        f"/api/v1/fbo/supplies/{supply_id}/import-barcodes",
+        json={"barcodes": ["DUP", "DUP", "DUP"]},
+        headers=auth_headers,
+    )
+    assert import_resp.status_code == 200
+    assert len(import_resp.json()["boxes"]) == 1
+    assert import_resp.json()["boxes"][0]["external_barcode"] == "DUP"
+    assert import_resp.json()["boxes"][0]["box_number"] == 1
 
 
 async def test_fbo_sync_requires_external_id(client, auth_headers, unique_inn):

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { CompanySelect } from "../../components/shared/CompanySelect";
 import { OrderCard } from "../../components/shared/OrderCard";
 import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
@@ -9,7 +8,6 @@ import { Select } from "../../components/ui/Select";
 import { Pagination } from "../../components/ui/Pagination";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { Toast } from "../../components/ui/Toast";
-import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
 import { useDestinations } from "../../hooks/useDestinations";
 import { useOrders } from "../../hooks/useOrders";
@@ -17,18 +15,11 @@ import { useProducts } from "../../hooks/useProducts";
 import { apiClient } from "../../services/api";
 import { OrderForm } from "./OrderForm";
 
-type OrderFormPayload = {
-  destination?: string;
-  items: { product_id: number; planned_qty: number }[];
-  services?: { service_id: number; quantity: number }[];
-};
-
 export function OrdersPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { items: companies = [] } = useCompanies();
-  const { companyId, setCompanyId } = useActiveCompany();
-  const activeCompanyId = companyId ?? companies[0]?.id ?? null;
+  const activeCompanyId = companies[0]?.id ?? null;
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const limit = 20;
@@ -52,12 +43,6 @@ export function OrdersPage() {
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.state, location.pathname, navigate]);
-
-  useEffect(() => {
-    if (!companyId && companies.length > 0) {
-      setCompanyId(companies[0].id);
-    }
-  }, [companies, companyId, setCompanyId]);
 
   useEffect(() => {
     setPage(1);
@@ -110,41 +95,69 @@ export function OrdersPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
-      <CompanySelect companies={companies} value={activeCompanyId} onChange={setCompanyId} />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Select
-            value={statusFilter ?? ""}
-            onChange={(e) => {
-              setStatusFilter(e.target.value || undefined);
-              setPage(1);
-            }}
-          >
-            <option value="">Все статусы</option>
-            <option value="На приемке">На приемке</option>
-            <option value="Принято">Принято</option>
-            <option value="Упаковка">Упаковка</option>
-            <option value="Готово к отгрузке">Готово к отгрузке</option>
-            <option value="Завершено">Завершено</option>
-          </Select>
-          <Button onClick={() => setOpen(true)}>Создать заявку</Button>
+      <div className="flex shrink-0 flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={statusFilter ?? ""}
+              onChange={(e) => {
+                setStatusFilter(e.target.value || undefined);
+                setPage(1);
+              }}
+              className="min-w-0 max-w-[140px]"
+            >
+              <option value="">Все статусы</option>
+              <option value="На приемке">На приемке</option>
+              <option value="Принято">Принято</option>
+              <option value="Упаковка">Упаковка</option>
+              <option value="Готово к отгрузке">Готово к отгрузке</option>
+              <option value="Завершено">Завершено</option>
+            </Select>
+            <Button onClick={() => setOpen(true)}>Создать заявку</Button>
+          </div>
+          {pageError ? <div className="text-sm text-rose-500 shrink-0">{pageError}</div> : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="secondary"
+            className="py-1.5 text-xs"
             onClick={() => importRef.current?.click()}
             disabled={importExcel.isPending}
           >
             {importExcel.isPending ? "Импортирую..." : "Импорт Excel"}
           </Button>
           <Button
+            variant="secondary"
+            className="py-1.5 text-xs"
+            onClick={async () => {
+              setPageError(null);
+              try {
+                const { blob } = await apiClient.apiFile("/orders/import/template");
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "Шаблон_заявки.xlsx";
+                a.click();
+                URL.revokeObjectURL(url);
+                setToast({ message: "Шаблон загружен" });
+              } catch (err) {
+                setToast({ message: err instanceof Error ? err.message : "Ошибка загрузки", variant: "error" });
+              }
+            }}
+          >
+            Скачать шаблон
+          </Button>
+          <Button
             variant="ghost"
+            className="py-1.5 text-xs"
             disabled={templateSending}
             onClick={async () => {
               setTemplateSending(true);
               try {
                 await apiClient.api("/orders/import/template/send", { method: "POST" });
-                setToast({ message: "Файл отправлен вам в Telegram" });
+                setToast({ message: "Шаблон отправлен в Telegram" });
               } catch (err) {
                 setToast({
                   message: err instanceof Error ? err.message : "Не удалось отправить шаблон",
@@ -155,24 +168,23 @@ export function OrdersPage() {
               }
             }}
           >
-            {templateSending ? "Отправляю..." : "Отправить шаблон в Telegram"}
+            {templateSending ? "Отправляю..." : "Шаблон в Telegram"}
           </Button>
-          <input
-            ref={importRef}
-            type="file"
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                handleImport(file);
-                e.target.value = "";
-              }
-            }}
-          />
         </div>
-        {pageError ? <div className="text-sm text-rose-500">{pageError}</div> : null}
       </div>
+      <input
+        ref={importRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            handleImport(file);
+            e.target.value = "";
+          }
+        }}
+      />
 
       {isLoading ? (
         <div className="space-y-2">
@@ -182,13 +194,13 @@ export function OrdersPage() {
       ) : null}
       {error ? <div className="text-sm text-rose-500">Не удалось загрузить заявки</div> : null}
       {!isLoading && orders.length === 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-soft">
+        <div className="shrink-0 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-soft">
           <p className="mb-4 text-sm text-slate-600">Пока нет заявок. Создайте первую заявку.</p>
           <Button onClick={() => setOpen(true)}>Создать заявку</Button>
         </div>
       ) : null}
 
-      <div className="space-y-3">
+      <div className="space-y-3 pb-24">
         {orders.map((order) => (
           <OrderCard
             key={order.id}
@@ -200,7 +212,9 @@ export function OrdersPage() {
           />
         ))}
       </div>
-      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+      <div className="shrink-0">
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+      </div>
 
       <Modal
         title="Новая заявка"

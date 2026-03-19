@@ -1,17 +1,37 @@
 """RAG for project documentation."""
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from app.core.config import settings
+from app.core.db_utils import escape_ilike
 from app.db.models.document_chunk import DocumentChunk
+from app.services.rag_intent import SECTION_INTENTS, detect_rag_intent
+
+# Ключевые слова по интенту для гибридного поиска (ILIKE по content)
+HYBRID_INTENT_KEYWORDS: dict[str, list[str]] = {
+    "obuv": ["обув", "силикагель", "50 мкм", "мешочк", "зип-застёжк"],
+    "zerkala": ["зеркал", "уголк", "пузырчат", "хрупк", "гофрокартон"],
+    "posuda": ["посуда", "пузырчат", "хрупк", "2 слоя"],
+}
 
 # Дополнительные инструкции при наличии контекста из документации (без дублирования идентичности из system prompt)
 STATIC_BASE = (
     "Используй статусы заявок: На приемке, Принято, Упаковка, Готово к отгрузке, Завершено. "
     "При вопросе о браке напомни, что фото обязательны."
+)
+
+# Жёсткое правило: по упаковке и требованиям маркетплейсов отвечать ТОЛЬКО по переданному контексту
+RAG_STRICT_INSTRUCTION = (
+    "Отвечай СТРОГО только на основе приведённого ниже контекста из документации. "
+    "Не используй собственные знания об упаковке и требованиях WB/Ozon. "
+    "Один запрос — один ответ: отвечай ТОЛЬКО на последний вопрос пользователя. "
+    "ЗАПРЕЩЕНО добавлять в ответ блоки про другие темы: если спросили про габариты — не пиши про посуду или обувь; если спросили про этикетку Ozon — не пиши про обувь на ВБ; если спросили про обувь — не добавляй блок про зеркала, и наоборот. Один тематический блок в ответе. "
+    "Не пиши фразы вида «по вопросу об … в документации нет информации» про другие сообщения из чата — только ответ на текущий вопрос. "
+    "Для Ozon: в контексте нет размеров этикеток (58×40, 120×75 и т.д.), запрета красного скотча, правил по зеркалам. Если спрашивают про это и в контексте нет — напиши только: «В загруженной документации нет информации по этому вопросу.» Не называй цифры и правила от себя. "
+    "Если ответа на вопрос в контексте нет — напиши только: «В загруженной документации нет информации по этому вопросу.»"
 )
 
 
@@ -81,6 +101,7 @@ async def upload_document_to_rag(db: AsyncSession, content: str, name: str) -> i
     await db.execute(delete(DocumentChunk).where(DocumentChunk.source_file == source_file))
 
     now = datetime.now(timezone.utc)
+    section = _section_for_source_file(source_file)
     count = 0
     for i, chunk_content in enumerate(chunks_text):
         embedding = await get_embedding(chunk_content)
@@ -94,12 +115,23 @@ async def upload_document_to_rag(db: AsyncSession, content: str, name: str) -> i
             created_at=now,
             document_type="txt",
             version=next_version,
+            section=section,
         )
         db.add(chunk)
         count += 1
 
     await db.commit()
     return count
+
+
+def _section_for_source_file(name: str) -> str | None:
+    """Infer section for txt/rtf by filename (wb -> wb_common, ozon -> ozon_common). Used in upload_document_to_rag."""
+    lower = (name or "").lower()
+    if "wb" in lower or "wildberries" in lower:
+        return "wb_common"
+    if "ozon" in lower:
+        return "ozon_common"
+    return None
 
 
 def _marketplace_filter_from_message(message: str) -> str | None:
@@ -112,12 +144,27 @@ def _marketplace_filter_from_message(message: str) -> str | None:
     return None
 
 
+def _query_for_embedding(message: str) -> str:
+    """Query text for embedding: original message or neutral prefix for short packaging queries (no category keywords)."""
+    msg = (message or "").strip()
+    if not msg:
+        return msg
+    lower = msg.lower()
+    if len(msg) < 50 and any(w in lower for w in ("упаковк", "вб", "wb", "озон", "ozon")):
+        if "вб" in lower or "wb" in lower or "wildberries" in lower:
+            return f"Требования упаковки. {msg} Wildberries."
+        if "озон" in lower or "ozon" in lower:
+            return f"Требования упаковки. {msg} Ozon."
+        return f"Требования упаковки. {msg}"
+    return msg
+
+
 async def build_rag_context_async(db: AsyncSession, message: str) -> tuple[str | None, str]:
     """Build RAG context: use document chunks if available.
     Returns (rag_system_content, user_message). rag_system_content is None when no chunks;
     then user_message is the raw message. When chunks exist, rag_system_content is the doc context
     to add as a separate system message; user_message is the raw message.
-    When message mentions a marketplace (WB/Ozon), prefer chunks from that marketplace's docs (source_file).
+    Uses intent to filter by section (obuv/zerkala/posuda for WB DOCX) and marketplace (source_file).
     """
     if not settings.OPENAI_API_KEY:
         return (None, message)
@@ -127,27 +174,92 @@ async def build_rag_context_async(db: AsyncSession, message: str) -> tuple[str |
             return (None, message)
     except Exception:
         return (None, message)
-    embedding = await get_embedding(message)
+    query_for_embedding = _query_for_embedding(message)
+    embedding = await get_embedding(query_for_embedding)
     if not embedding:
         return (None, message)
+    intent = detect_rag_intent(message)
+    mf = _marketplace_filter_from_message(message)
     try:
         base_q = select(DocumentChunk).order_by(DocumentChunk.embedding.cosine_distance(embedding))
-        mf = _marketplace_filter_from_message(message)
         if mf == "wb":
-            base_q = base_q.where(DocumentChunk.source_file.ilike("%wb%"))
+            base_q = base_q.where(
+                or_(
+                    DocumentChunk.source_file.ilike("%wb%"),
+                    DocumentChunk.source_file.ilike("%разные_виды%"),
+                )
+            )
+            if intent in ("obuv", "zerkala", "posuda"):
+                base_q = base_q.where(DocumentChunk.section == intent)
+            elif intent in ("gabarity_wb", "strejch_skotch_wb"):
+                base_q = base_q.where(
+                    or_(
+                        DocumentChunk.section == "wb_common",
+                        DocumentChunk.section.is_(None),
+                    )
+                )
         elif mf == "ozon":
             base_q = base_q.where(DocumentChunk.source_file.ilike("%ozon%"))
-        result = await db.execute(base_q.limit(3))
+        limit = max(1, settings.RAG_CHUNKS_LIMIT)
+        result = await db.execute(base_q.limit(limit))
         chunks = list(result.scalars().all())
-        if not chunks and mf:
-            result = await db.execute(
-                select(DocumentChunk).order_by(DocumentChunk.embedding.cosine_distance(embedding)).limit(3)
+        if not chunks and mf and intent and intent in SECTION_INTENTS:
+            base_q_fallback = (
+                select(DocumentChunk)
+                .order_by(DocumentChunk.embedding.cosine_distance(embedding))
+                .where(
+                    or_(
+                        DocumentChunk.source_file.ilike("%wb%"),
+                        DocumentChunk.source_file.ilike("%разные_виды%"),
+                    )
+                    if mf == "wb"
+                    else DocumentChunk.source_file.ilike("%ozon%")
+                )
             )
+            result = await db.execute(base_q_fallback.limit(limit))
             chunks = list(result.scalars().all())
         if not chunks:
             return (None, message)
+        # Гибрид: добираем чанки по ключевым словам (obuv/zerkala/posuda), которых ещё нет в выборке
+        if (
+            settings.RAG_HYBRID_KEYWORD_BOOST
+            and intent in ("obuv", "zerkala", "posuda")
+            and mf == "wb"
+            and intent in HYBRID_INTENT_KEYWORDS
+        ):
+            hybrid_max = settings.RAG_HYBRID_KEYWORD_CHUNKS_MAX
+            if hybrid_max > 0:
+                kw_list = HYBRID_INTENT_KEYWORDS[intent]
+                keyword_conditions = or_(
+                    *[
+                        DocumentChunk.content.ilike(f"%{escape_ilike(kw)}%", escape="\\")
+                        for kw in kw_list
+                    ]
+                )
+                hybrid_q = (
+                    select(DocumentChunk)
+                    .where(
+                        or_(
+                            DocumentChunk.source_file.ilike("%wb%"),
+                            DocumentChunk.source_file.ilike("%разные_виды%"),
+                        )
+                    )
+                    .where(DocumentChunk.section == intent)
+                    .where(keyword_conditions)
+                )
+                existing_ids = [c.id for c in chunks]
+                if existing_ids:
+                    hybrid_q = hybrid_q.where(DocumentChunk.id.notin_(existing_ids))
+                hybrid_q = hybrid_q.limit(hybrid_max)
+                hybrid_result = await db.execute(hybrid_q)
+                extra_chunks = list(hybrid_result.scalars().all())
+                chunks = chunks + extra_chunks
+        chunks = chunks[:limit]
         context = "\n\n".join(c.content for c in chunks)
-        rag_system = f"{STATIC_BASE}\n\nКонтекст из документации:\n{context}"
+        rag_system = (
+            f"{STATIC_BASE}\n\n{RAG_STRICT_INSTRUCTION}\n\n"
+            f"Контекст из документации:\n{context}"
+        )
         return (rag_system, message)
     except Exception:
         return (None, message)

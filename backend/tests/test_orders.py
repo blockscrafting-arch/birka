@@ -148,3 +148,91 @@ async def test_send_import_template_no_telegram_returns_400(client):
         app.dependency_overrides.pop(get_current_user, None)
     assert response.status_code == 400
     assert "Telegram" in response.json().get("detail", "")
+
+
+async def test_update_order_status_client_forbidden(client, auth_headers, unique_inn):
+    """Client cannot PATCH order status; only warehouse/admin can."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+    product_resp = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар"},
+        headers=auth_headers,
+    )
+    assert product_resp.status_code in (200, 201)
+    product_id = product_resp.json()["id"]
+    order_resp = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 5}]},
+        headers=auth_headers,
+    )
+    assert order_resp.status_code == 200
+    order_id = order_resp.json()["id"]
+
+    response = await client.patch(
+        f"/api/v1/orders/{order_id}/status",
+        json={"status": "Принято"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 403
+    assert "Доступ запрещён" in response.json().get("detail", "") or "forbidden" in response.json().get("detail", "").lower()
+
+
+async def test_update_order_status_invalid_transition(client, auth_headers, warehouse_headers, unique_inn):
+    """PATCH with disallowed transition (e.g. На приемке -> Завершено) returns 400."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+    product_resp = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар"},
+        headers=auth_headers,
+    )
+    assert product_resp.status_code in (200, 201)
+    product_id = product_resp.json()["id"]
+    order_resp = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 5}]},
+        headers=auth_headers,
+    )
+    assert order_resp.status_code == 200
+    order_id = order_resp.json()["id"]
+    assert order_resp.json()["status"] == "На приемке"
+
+    response = await client.patch(
+        f"/api/v1/orders/{order_id}/status",
+        json={"status": "Завершено"},
+        headers=warehouse_headers,
+    )
+    assert response.status_code == 400
+    assert "Недопустимый переход" in response.json().get("detail", "") or "статус" in response.json().get("detail", "").lower()
+
+
+async def test_update_order_status_allowed_transition(client, auth_headers, warehouse_headers, unique_inn):
+    """Warehouse can PATCH status when transition is allowed (e.g. На приемке -> Принято)."""
+    company_resp = await client.post("/api/v1/companies", json={"inn": unique_inn}, headers=auth_headers)
+    assert company_resp.status_code in (200, 201)
+    company_id = company_resp.json()["id"]
+    product_resp = await client.post(
+        "/api/v1/products",
+        json={"company_id": company_id, "name": "Товар"},
+        headers=auth_headers,
+    )
+    assert product_resp.status_code in (200, 201)
+    product_id = product_resp.json()["id"]
+    order_resp = await client.post(
+        "/api/v1/orders",
+        json={"company_id": company_id, "items": [{"product_id": product_id, "planned_qty": 5}]},
+        headers=auth_headers,
+    )
+    assert order_resp.status_code == 200
+    order_id = order_resp.json()["id"]
+
+    response = await client.patch(
+        f"/api/v1/orders/{order_id}/status",
+        json={"status": "Принято"},
+        headers=warehouse_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "Принято"

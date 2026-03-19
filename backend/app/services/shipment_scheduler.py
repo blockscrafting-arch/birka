@@ -10,8 +10,8 @@ from app.core.logging import logger
 from app.db.models.company import Company
 from app.db.models.order import Order
 from app.db.models.shipment_request import ShipmentRequest
-from app.db.session import AsyncSessionLocal
-from app.services.telegram import send_notification
+from app.db.session import AsyncSessionLocal, SyncSessionLocal
+from app.services.telegram import send_notification, send_notification_sync
 
 SHIPPED_STATUS = "Отгружено"
 ORDER_COMPLETED_STATUS = "Завершено"
@@ -82,6 +82,76 @@ async def auto_close_expired_shipments() -> int:
                     )
                     try:
                         await send_notification(order.company.user.telegram_id, msg)
+                    except Exception as exc:
+                        logger.warning(
+                            "shipment_auto_complete_notification_failed",
+                            order_id=order.id,
+                            error=str(exc),
+                        )
+
+        return len(requests)
+
+
+def auto_close_expired_shipments_sync() -> int:
+    """Синхронная версия для Celery: закрыть просроченные отгрузки через psycopg2.
+
+    Отдельная сессия на каждый вызов, без async — избегает asyncpg «another operation in progress».
+    """
+    today = date.today()
+    with SyncSessionLocal() as db:
+        result = db.execute(
+            select(ShipmentRequest).where(
+                ShipmentRequest.delivery_date.isnot(None),
+                ShipmentRequest.delivery_date <= today,
+                ShipmentRequest.status != SHIPPED_STATUS,
+            )
+        )
+        requests = list(result.scalars().all())
+        if not requests:
+            return 0
+
+        order_ids_to_complete: set[int] = set()
+        for req in requests:
+            req.status = SHIPPED_STATUS
+            if req.order_id is not None:
+                order_ids_to_complete.add(req.order_id)
+            logger.info(
+                "shipment_auto_closed",
+                shipment_request_id=req.id,
+                delivery_date=str(req.delivery_date),
+            )
+
+        if order_ids_to_complete:
+            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.execute(
+                update(Order).where(
+                    Order.id.in_(order_ids_to_complete),
+                    Order.status != ORDER_COMPLETED_STATUS,
+                ).values(
+                    status=ORDER_COMPLETED_STATUS,
+                    completed_at=now_utc,
+                    updated_at=now_utc,
+                )
+            )
+            for oid in order_ids_to_complete:
+                logger.info("order_auto_completed_by_shipment", order_id=oid)
+
+        db.commit()
+
+        if order_ids_to_complete:
+            orders_result = db.execute(
+                select(Order)
+                .where(Order.id.in_(order_ids_to_complete))
+                .options(joinedload(Order.company).joinedload(Company.user))
+            )
+            for order in orders_result.unique().scalars().all():
+                if order.company and order.company.user and order.company.user.telegram_id:
+                    msg = (
+                        f"Заявка {order.order_number}: Завершено (автоматически по дате отгрузки). "
+                        f"Упаковано всего {order.packed_qty} шт."
+                    )
+                    try:
+                        send_notification_sync(order.company.user.telegram_id, msg)
                     except Exception as exc:
                         logger.warning(
                             "shipment_auto_complete_notification_failed",

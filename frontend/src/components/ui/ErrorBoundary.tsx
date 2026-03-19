@@ -24,6 +24,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- required by React ErrorBoundary API
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     if (typeof window !== "undefined" && window.Telegram?.WebApp?.showAlert) {
       window.Telegram.WebApp.showAlert("Произошла ошибка. Попробуйте обновить приложение.");

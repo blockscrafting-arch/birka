@@ -40,7 +40,7 @@ export function BarcodeScanner({ onScan, onError, compact = false, active = true
     scanner
       .start(
         { facingMode: "environment" },
-        { fps: 10, qrbox },
+        { fps: 5, qrbox },
         (decodedText) => onScanRef.current(decodedText),
         (error) => onErrorRef.current?.(String(error))
       )

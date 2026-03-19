@@ -7,9 +7,13 @@ import { useActiveCompany } from "../../hooks/useActiveCompany";
 import { useCompanies } from "../../hooks/useCompanies";
 import { useOrders } from "../../hooks/useOrders";
 import { useWarehouse } from "../../hooks/useWarehouse";
+import { getCameraErrorMessage, isScanFrameError } from "../../constants/scanner";
 
-const DEBOUNCE_MS = 2000;
+const THROTTLE_MS = 800;
+const DEBOUNCE_MS = 15000;
 const MAX_HISTORY = 50;
+/** Сколько секунд держать зелёную подсветку области сканера после успешного скана (библиотека мигает только на кадр). */
+const SUCCESS_HIGHLIGHT_SEC = 5;
 
 export function ScannerPage() {
   const { companyId } = useActiveCompany();
@@ -43,38 +47,79 @@ export function ScannerPage() {
     external_barcode?: string | null;
   } | null>(null);
   const [scanHistory, setScanHistory] = useState<string[]>([]);
+  const [showSuccessHighlight, setShowSuccessHighlight] = useState(false);
+  const [readabilityOk, setReadabilityOk] = useState(false);
+  const [noScanTimeout, setNoScanTimeout] = useState(false);
   const lastScannedRef = useRef<string>("");
   const lastScanTimeRef = useRef<number>(0);
+  const lastAcceptedScanTimeRef = useRef<number>(0);
+  const successHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noScanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const NO_SCAN_HINT_SEC = 8;
 
   const handleError = useCallback((msg: string) => {
+    if (isScanFrameError(msg)) return;
     setCameraError(getCameraErrorMessage(msg));
   }, []);
 
   useEffect(() => {
-    if (!active) setCameraError(null);
+    if (!active) {
+      setCameraError(null);
+      setNoScanTimeout(false);
+      setReadabilityOk(false);
+      if (noScanTimeoutRef.current) {
+        clearTimeout(noScanTimeoutRef.current);
+        noScanTimeoutRef.current = null;
+      }
+      return;
+    }
+    setReadabilityOk(false);
+    setNoScanTimeout(false);
+    noScanTimeoutRef.current = setTimeout(() => {
+      setNoScanTimeout(true);
+      noScanTimeoutRef.current = null;
+    }, NO_SCAN_HINT_SEC * 1000);
+    return () => {
+      if (noScanTimeoutRef.current) {
+        clearTimeout(noScanTimeoutRef.current);
+        noScanTimeoutRef.current = null;
+      }
+    };
   }, [active]);
 
   const handleScan = useCallback(
     async (text: string) => {
       const now = Date.now();
-      if (text === lastScannedRef.current && now - lastScanTimeRef.current < DEBOUNCE_MS) {
-        return;
+      const normalized = (text ?? "").trim();
+      if (normalized === "") return;
+      if (noScanTimeoutRef.current) {
+        clearTimeout(noScanTimeoutRef.current);
+        noScanTimeoutRef.current = null;
       }
-      lastScannedRef.current = text;
+      setNoScanTimeout(false);
+      setReadabilityOk(true);
+      if (now - lastAcceptedScanTimeRef.current < THROTTLE_MS) return;
+      if (normalized === lastScannedRef.current && now - lastScanTimeRef.current < DEBOUNCE_MS) return;
+      lastScannedRef.current = normalized;
       lastScanTimeRef.current = now;
+      lastAcceptedScanTimeRef.current = now;
       setCameraError(null);
       setOrderContextMessage(null);
       setOrderContextFound(null);
-      setResult(text);
+      setResult(normalized);
       setStatus(null);
       setProduct(null);
       setBox(null);
+      setShowSuccessHighlight(false);
 
-      setScanHistory((prev) => [...prev.slice(-(MAX_HISTORY - 1)), text]);
+      setScanHistory((prev) => [...prev.slice(-(MAX_HISTORY - 1)), normalized]);
 
       if (orderId) {
         try {
-          const inOrder = await validateBarcodeInOrder.mutateAsync({ barcode: text, order_id: orderId });
+          const inOrder = await validateBarcodeInOrder.mutateAsync({
+            barcode: normalized,
+            order_id: orderId,
+          });
           setOrderContextFound(inOrder.found);
           setOrderContextMessage(inOrder.message);
         } catch {
@@ -84,18 +129,36 @@ export function ScannerPage() {
       }
 
       try {
-        const response = await validateBarcode.mutateAsync({ barcode: text });
+        const response = await validateBarcode.mutateAsync({
+          barcode: normalized,
+          company_id: activeCompanyId ?? undefined,
+          order_id: orderId ?? undefined,
+        });
         setMessage(response.message);
         setStatus(response.valid ? "ok" : "error");
         setProduct(response.product ?? null);
         setBox(response.box ?? null);
+        if (response.valid) {
+          if (successHighlightTimeoutRef.current) clearTimeout(successHighlightTimeoutRef.current);
+          setShowSuccessHighlight(true);
+          successHighlightTimeoutRef.current = setTimeout(() => {
+            setShowSuccessHighlight(false);
+            successHighlightTimeoutRef.current = null;
+          }, SUCCESS_HIGHLIGHT_SEC * 1000);
+        }
       } catch {
         setMessage("Ошибка проверки штрихкода");
         setStatus("error");
       }
     },
-    [orderId, validateBarcode, validateBarcodeInOrder]
+    [orderId, activeCompanyId, validateBarcode, validateBarcodeInOrder]
   );
+
+  useEffect(() => {
+    return () => {
+      if (successHighlightTimeoutRef.current) clearTimeout(successHighlightTimeoutRef.current);
+    };
+  }, []);
 
   const historyStats = useMemo(() => {
     const total = scanHistory.length;
@@ -109,6 +172,10 @@ export function ScannerPage() {
 
   return (
     <div className="space-y-3">
+      <style>{`
+        #qr-shaded-region > div { display: none !important; }
+        #qr-shaded-region { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.5) !important; }
+      `}</style>
       {activeCompanyId && orders.length > 0 ? (
         <Select
           label="Заявка (для проверки ШК)"
@@ -129,7 +196,34 @@ export function ScannerPage() {
       </Button>
       {active ? (
         <>
-          <BarcodeScanner active={active} onScan={handleScan} onError={handleError} />
+          <p className="text-sm text-slate-600">
+            Наведите на штрихкод. Если ШК не сканируется — проверьте печать и освещение.
+          </p>
+          {noScanTimeout ? (
+            <div
+              className="rounded-lg border-2 border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+              role="status"
+            >
+              ШК не распознаётся. Проверьте качество печати и освещение.
+            </div>
+          ) : null}
+          <div className="relative rounded-lg">
+            <div
+              className={
+                showSuccessHighlight
+                  ? "relative z-0 rounded-lg ring-4 ring-emerald-500 ring-offset-2 transition-all duration-200"
+                  : "relative z-0 rounded-lg ring-4 ring-transparent ring-offset-2 transition-all duration-200"
+              }
+            >
+              <BarcodeScanner active={active} onScan={handleScan} onError={handleError} />
+            </div>
+            {showSuccessHighlight ? (
+              <div
+                className="absolute inset-0 z-10 rounded-lg border-4 border-emerald-500 bg-emerald-500/15 pointer-events-none"
+                aria-hidden
+              />
+            ) : null}
+          </div>
           {cameraError ? (
             <div
               className="rounded-lg border-2 border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
@@ -163,6 +257,11 @@ export function ScannerPage() {
         </div>
       ) : null}
 
+      {readabilityOk && result ? (
+        <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800" role="status">
+          ШК читается
+        </div>
+      ) : null}
       {result ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
           <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Отсканировано</div>

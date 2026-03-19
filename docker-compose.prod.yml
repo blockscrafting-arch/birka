@@ -2,6 +2,8 @@
 # Production config для Beget VPS
 # Использует внешнюю БД PostgreSQL (Beget Cloud Database)
 # Redis и Celery worker/beat — в этом compose
+# Лимиты памяти под 4 ГБ RAM (сервер 3/4).
+# После up проверить применение: docker stats --no-stream
 # ===========================================
 
 services:
@@ -10,6 +12,10 @@ services:
     restart: unless-stopped
     volumes:
       - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   backend:
     build:
@@ -23,6 +29,10 @@ services:
     depends_on:
       - redis
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   celery_worker:
     build:
@@ -42,6 +52,10 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   celery_beat:
     build:
@@ -58,6 +72,10 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   frontend:
     build:
@@ -68,6 +86,10 @@ services:
     expose:
       - "80"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   nginx:
     image: nginx:1.27-alpine
@@ -82,6 +104,10 @@ services:
       - backend
       - frontend
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   # Certbot для SSL (опционально, запускается вручную)
   certbot:

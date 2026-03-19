@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
-import { PhotoGallery } from "../../components/shared/PhotoGallery";
 import { PhotoUpload } from "../../components/shared/PhotoUpload";
 import { Button } from "../../components/ui/Button";
 import { Loader } from "../../components/ui/Loader";
@@ -10,18 +10,20 @@ import { useOrderItems } from "../../hooks/useOrderItems";
 import { useOrders } from "../../hooks/useOrders";
 import { useWarehouse } from "../../hooks/useWarehouse";
 import { useOrderPhotos } from "../../hooks/useOrderPhotos";
+import { apiClient } from "../../services/api";
+import { OrderItem } from "../../types";
 import { ReceivingForm } from "./ReceivingForm";
 
 export function ReceivingPage() {
   const { items: orders = [], isLoading } = useOrders(undefined, 1, 100, "На приемке");
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
   const { data: items = [], isLoading: itemsLoading } = useOrderItems(activeOrderId ?? undefined);
+  const queryClient = useQueryClient();
   const { completeReceiving } = useWarehouse();
   const { data: photos = [], upload } = useOrderPhotos(activeOrderId ?? undefined);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string } | null>(null);
-  const [remainingFromSubmit, setRemainingFromSubmit] = useState<number | null>(null);
   const defectPhotosByProduct = useMemo(() => {
     const counts: Record<number, number> = {};
     for (const photo of photos) {
@@ -36,7 +38,6 @@ export function ReceivingPage() {
   useEffect(() => {
     if (!activeOrderId) {
       setSelectedItemId(null);
-      setRemainingFromSubmit(null);
     }
   }, [activeOrderId]);
 
@@ -50,20 +51,46 @@ export function ReceivingPage() {
     if (!activeOrderId) return;
     setPageError(null);
     try {
-      const result = await completeReceiving.mutateAsync({
+      await completeReceiving.mutateAsync({
         order_id: activeOrderId,
         items: [payload],
       });
-      const data = result as { status?: string; remaining?: number };
-      if (data.status === "partial" && data.remaining != null) {
-        setRemainingFromSubmit(data.remaining);
-        setToast({ message: `Товар принят. Осталось: ${data.remaining}` });
+      await queryClient.invalidateQueries({ queryKey: ["order-items", activeOrderId] });
+      const nextItems: OrderItem[] =
+        (await queryClient.fetchQuery({
+          queryKey: ["order-items", activeOrderId],
+          queryFn: () => apiClient.api<OrderItem[]>(`/orders/${activeOrderId}/items`),
+        })) ?? [];
+      const remaining = nextItems.filter((i) => (i.received_qty ?? 0) < (i.planned_qty ?? 0));
+      const nextIncomplete = nextItems.find((i) => (i.received_qty ?? 0) < (i.planned_qty ?? 0));
+      if (remaining.length > 0 && nextIncomplete) {
+        setToast({ message: `Товар принят. Осталось позиций: ${remaining.length}` });
+        setSelectedItemId(nextIncomplete.id);
       } else {
-        setRemainingFromSubmit(null);
         setActiveOrderId(null);
         setSelectedItemId(null);
         setToast({ message: "Приёмка завершена" });
       }
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : "Не удалось завершить приёмку");
+    }
+  };
+
+  const handleFillZeros = async () => {
+    if (!activeOrderId || items.length === 0) return;
+    setPageError(null);
+    try {
+      const fullItems = items.map((i) => ({
+        order_item_id: i.id,
+        received_qty: i.received_qty ?? 0,
+        defect_qty: i.defect_qty ?? 0,
+        adjustment_qty: i.adjustment_qty ?? 0,
+        adjustment_note: i.adjustment_note ?? undefined,
+      }));
+      await completeReceiving.mutateAsync({ order_id: activeOrderId, items: fullItems });
+      setActiveOrderId(null);
+      setSelectedItemId(null);
+      setToast({ message: "Приёмка завершена (недопоставка отмечена нулями)" });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : "Не удалось завершить приёмку");
     }
@@ -99,30 +126,48 @@ export function ReceivingPage() {
           <div className="space-y-4">
             <ReceivingForm
               items={items}
+              selectedItemId={selectedItemId}
               defectPhotosByProduct={defectPhotosByProduct}
               isSubmitting={completeReceiving.isPending}
               onSubmit={handleSubmit}
               onSelectItem={(itemId) => setSelectedItemId(itemId)}
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={remainingFromSubmit !== null && remainingFromSubmit > 0}
-              onClick={() => {
-                setActiveOrderId(null);
-                setRemainingFromSubmit(null);
+              onUploadDefectPhoto={(file) => {
+                if (!activeOrderId) return;
+                const selectedItem = items.find((item) => item.id === selectedItemId);
+                upload.mutate({
+                  orderId: activeOrderId,
+                  file,
+                  photo_type: "defect",
+                  product_id: selectedItem?.product_id,
+                });
               }}
-            >
-              Завершить приёмку
-            </Button>
+            />
+            <div className="text-sm text-slate-500">
+              «Завершить приёмку» отправит текущие количества (по непринятым позициям — нули) и закроет окно.
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={items.length === 0 || completeReceiving.isPending}
+                onClick={handleFillZeros}
+              >
+                Завершить приёмку
+              </Button>
+              {items.some((i) => (i.received_qty ?? 0) === 0) ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={completeReceiving.isPending}
+                  onClick={handleFillZeros}
+                >
+                  Проставить 0 для оставшихся
+                </Button>
+              ) : null}
+            </div>
             <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-soft">
-              <div className="text-sm font-semibold text-slate-900">Фото заявки</div>
-              <div className="mt-2">
-                <PhotoGallery photos={photos.map((photo) => photo.url)} />
-              </div>
-              <div className="mt-3">
-                <PhotoUpload
-                  label="Фото груза"
+              <PhotoUpload
+                label="Фото груза"
                   onFileChange={(file) => {
                     if (!activeOrderId) return;
                     const selectedItem = items.find((item) => item.id === selectedItemId);
@@ -134,22 +179,6 @@ export function ReceivingPage() {
                     });
                   }}
                 />
-                <div className="mt-3">
-                  <PhotoUpload
-                    label="Фото брака"
-                    onFileChange={(file) => {
-                      if (!activeOrderId) return;
-                      const selectedItem = items.find((item) => item.id === selectedItemId);
-                      upload.mutate({
-                        orderId: activeOrderId,
-                        file,
-                        photo_type: "defect",
-                        product_id: selectedItem?.product_id,
-                      });
-                    }}
-                  />
-                </div>
-              </div>
             </div>
           </div>
         )}

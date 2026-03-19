@@ -1,4 +1,6 @@
 """Product schemas."""
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -47,6 +49,7 @@ class ProductOut(BaseModel):
     supplier_name: str | None
     stock_quantity: int
     defect_quantity: int
+    created_at: datetime | None = None
 
     class Config:
         from_attributes = True

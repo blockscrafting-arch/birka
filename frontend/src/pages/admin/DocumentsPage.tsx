@@ -1,9 +1,8 @@
 /** Страница админки: документы в RAG для AI. Загрузки идут через store и не сбрасываются при смене вкладок. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "../../components/ui/Button";
-import { Page } from "../../components/layout/Page";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { apiClient } from "../../services/api";
 import { useUploadStore } from "../../stores/uploadStore";
@@ -93,9 +92,16 @@ export function DocumentsPage() {
     }
   };
 
+  useEffect(() => {
+    const prev = document.title;
+    document.title = "Документы для AI";
+    return () => {
+      document.title = prev;
+    };
+  }, []);
+
   return (
-    <Page title="Документы для AI">
-      <div className="space-y-4">
+    <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-lg font-semibold text-slate-900">Документы в RAG</div>
           <div className="flex flex-wrap items-center gap-2">
@@ -211,7 +217,6 @@ export function DocumentsPage() {
             ))}
           </ul>
         )}
-      </div>
-    </Page>
+    </div>
   );
 }

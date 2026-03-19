@@ -19,7 +19,7 @@ export function PackingPage() {
     undefined,
     1,
     100,
-    "Принято,Упаковка,Готово к отгрузке"
+    "Принято,Упаковка"
   );
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
   const [formResetKey, setFormResetKey] = useState(0);

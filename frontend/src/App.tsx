@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { useTelegram } from "./hooks/useTelegram";
 import { queryClient } from "./queryClient";
@@ -19,6 +19,7 @@ import { AIPage } from "./pages/client/AIPage";
 import { PricingPage } from "./pages/client/PricingPage";
 import { ShippingPage } from "./pages/client/ShippingPage";
 import { AdminPage } from "./pages/admin/AdminPage";
+import { AdminOrdersPage } from "./pages/admin/AdminOrdersPage";
 import { UsersPage } from "./pages/admin/UsersPage";
 import { DestinationsPage } from "./pages/admin/DestinationsPage";
 import { ContractTemplatesPage } from "./pages/admin/ContractTemplatesPage";
@@ -29,6 +30,7 @@ import { PrintPage } from "./pages/warehouse/PrintPage";
 import { ReceivingPage } from "./pages/warehouse/ReceivingPage";
 import { PackingPage } from "./pages/warehouse/PackingPage";
 import { ScannerPage } from "./pages/warehouse/ScannerPage";
+import { ReadyPage } from "./pages/warehouse/ReadyPage";
 import { ShippingPage as WarehouseShippingPage } from "./pages/warehouse/ShippingPage";
 
 function AppRoutes() {
@@ -71,10 +73,18 @@ function AppRoutes() {
         element={canWarehouse ? <ScannerPage /> : <Navigate to="/client/company" replace />}
       />
       <Route
+        path="/warehouse/ready"
+        element={canWarehouse ? <ReadyPage /> : <Navigate to="/client/company" replace />}
+      />
+      <Route
         path="/warehouse/shipping"
         element={canWarehouse ? <WarehouseShippingPage /> : <Navigate to="/client/company" replace />}
       />
       <Route path="/admin" element={canAdmin ? <AdminPage /> : <Navigate to="/client/company" replace />} />
+      <Route
+        path="/admin/orders"
+        element={canAdmin ? <AdminOrdersPage /> : <Navigate to="/client/company" replace />}
+      />
       <Route
         path="/admin/users"
         element={canAdmin ? <UsersPage /> : <Navigate to="/client/company" replace />}
@@ -100,6 +110,31 @@ function AppRoutes() {
         element={canAdmin ? <AISettingsPage /> : <Navigate to="/client/company" replace />}
       />
     </Routes>
+  );
+}
+
+function AppLayout() {
+  const location = useLocation();
+  const isAI = location.pathname === "/client/ai";
+
+  return (
+    <Page noPadding={isAI}>
+      <div className={isAI ? "shrink-0 px-4 pt-4" : "shrink-0"}>
+        <Header title="Бирка — фулфилмент" />
+        <TabBar />
+      </div>
+      <main
+        className={
+          isAI
+            ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+            : "flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-20"
+        }
+      >
+        <div className={`min-w-0 flex-col relative ${isAI ? "flex min-h-0 flex-1 flex-col" : ""}`}>
+          <AppRoutes />
+        </div>
+      </main>
+    </Page>
   );
 }
 
@@ -144,13 +179,7 @@ export default function App() {
       <UserProvider>
         <OfflineBanner />
         <UploadManager />
-        <Page>
-          <Header title="Бирка — фулфилмент" />
-          <TabBar />
-          <main className="min-h-0 flex-1">
-            <AppRoutes />
-          </main>
-        </Page>
+        <AppLayout />
       </UserProvider>
     </BrowserRouter>
   );

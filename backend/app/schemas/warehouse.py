@@ -58,9 +58,11 @@ class PackingRecordOut(BaseModel):
 
 
 class BarcodeValidateRequest(BaseModel):
-    """Validate barcode request."""
+    """Validate barcode request. Optional company_id/order_id for scan log context."""
 
     barcode: str
+    company_id: int | None = None
+    order_id: int | None = None
 
 
 class BarcodeValidateProduct(BaseModel):

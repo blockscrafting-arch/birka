@@ -1,5 +1,6 @@
 """Tests for RAG document processing: parse_txt, parse_docx, index_document validation."""
 from io import BytesIO
+from unittest.mock import patch
 
 import pytest
 from docx import Document
@@ -7,8 +8,11 @@ from docx import Document
 from app.services.document_processor import (
     MAX_CHUNKS_PER_DOCUMENT,
     MAX_DOCUMENT_SIZE_BYTES,
+    DOCX_SECTION_HEADING_TO_KEY,
+    get_docx_section_heading_to_key,
     index_document,
     parse_docx,
+    parse_docx_with_sections,
     parse_rtf,
     parse_txt,
     split_into_chunks,
@@ -60,6 +64,78 @@ def test_parse_docx_empty_paragraphs_stripped():
     buf = BytesIO()
     doc.save(buf)
     assert parse_docx(buf.getvalue()).strip() == "Только это"
+
+
+# ----- parse_docx_with_sections -----
+
+
+def test_parse_docx_with_sections_by_heading():
+    """DOCX с известными заголовками даёт чанки с section."""
+    doc = Document()
+    doc.add_paragraph("Введение без раздела")
+    doc.add_paragraph("Обувь")
+    doc.add_paragraph("Упаковать в коробку. Силикагель. Фиксация крышки.")
+    doc.add_paragraph("Зеркала")
+    doc.add_paragraph("Пузырчатая плёнка, уголки, знак Хрупкий груз.")
+    buf = BytesIO()
+    doc.save(buf)
+    chunks = parse_docx_with_sections(buf.getvalue())
+    assert len(chunks) >= 1
+    texts = [c[0] for c in chunks]
+    sections = [c[1] for c in chunks]
+    assert any("обув" in t.lower() or "коробк" in t.lower() or "силикагель" in t.lower() for t in texts)
+    assert "obuv" in sections or any(s == "obuv" for s in sections)
+    assert any(s == "zerkala" for s in sections) or any("зеркал" in t.lower() or "пузырчат" in t.lower() for t in texts)
+
+
+def test_parse_docx_with_sections_returns_pairs():
+    """parse_docx_with_sections возвращает list[tuple[str, str | None]]."""
+    doc = Document()
+    doc.add_paragraph("Обувь")
+    doc.add_paragraph("Текст раздела обувь.")
+    buf = BytesIO()
+    doc.save(buf)
+    result = parse_docx_with_sections(buf.getvalue())
+    assert isinstance(result, list)
+    for item in result:
+        assert isinstance(item, tuple)
+        assert len(item) == 2
+        assert isinstance(item[0], str)
+        assert item[1] is None or isinstance(item[1], str)
+
+
+def test_docx_section_heading_to_key():
+    """Маппинг заголовков DOCX в ключи разделов."""
+    assert DOCX_SECTION_HEADING_TO_KEY.get("Обувь") == "obuv"
+    assert DOCX_SECTION_HEADING_TO_KEY.get("Зеркала") == "zerkala"
+    assert DOCX_SECTION_HEADING_TO_KEY.get("Посуда") == "posuda"
+
+
+def test_get_docx_section_heading_to_key_default():
+    """Без конфига возвращается дефолтный маппинг из кода."""
+    with patch("app.services.document_processor.settings") as mock_s:
+        mock_s.RAG_DOCX_SECTION_HEADINGS_JSON = ""
+        m = get_docx_section_heading_to_key()
+    assert m.get("Обувь") == "obuv"
+    assert m.get("Зеркала") == "zerkala"
+
+
+def test_get_docx_section_heading_to_key_from_config():
+    """При валидном JSON в конфиге возвращается переопределённый маппинг."""
+    with patch("app.services.document_processor.settings") as mock_s:
+        mock_s.RAG_DOCX_SECTION_HEADINGS_JSON = '{"Новый раздел": "new_section", "Обувь": "shoes"}'
+        m = get_docx_section_heading_to_key()
+    assert m.get("Новый раздел") == "new_section"
+    assert m.get("Обувь") == "shoes"
+    assert len(m) == 2
+
+
+def test_get_docx_section_heading_to_key_invalid_json_fallback():
+    """При невалидном JSON возвращается дефолтный маппинг."""
+    with patch("app.services.document_processor.settings") as mock_s:
+        mock_s.RAG_DOCX_SECTION_HEADINGS_JSON = '{"broken": '
+        m = get_docx_section_heading_to_key()
+    assert m.get("Обувь") == "obuv"
 
 
 # ----- parse_rtf -----
