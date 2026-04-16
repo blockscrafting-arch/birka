@@ -15,6 +15,9 @@ ignore = [
     "SIM108",  # if-else-block-instead-of-ternary
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/conftest.py" = ["E402", "I001"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
