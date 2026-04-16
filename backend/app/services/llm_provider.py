@@ -1,8 +1,8 @@
 """LLM provider abstraction: OpenAI and OpenRouter (OpenAI-compatible API)."""
+
 from openai import AsyncOpenAI
 
 from app.core.config import settings
-
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 

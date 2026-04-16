@@ -1,4 +1,5 @@
 """OpenAI/OpenRouter integration with optional function calling."""
+
 import json
 from typing import Any
 
@@ -71,7 +72,11 @@ class OpenAIService:
             assistant_msg = {"role": "assistant", "content": msg.content or None, "tool_calls": []}
             for tc in msg.tool_calls:
                 assistant_msg["tool_calls"].append(
-                    {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    }
                 )
             messages.append(assistant_msg)
 

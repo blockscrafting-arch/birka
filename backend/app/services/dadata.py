@@ -1,4 +1,5 @@
 """DaData integration."""
+
 from typing import Any
 
 import httpx

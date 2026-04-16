@@ -38,7 +38,11 @@ def detect_rag_intent(message: str) -> str | None:
             return "zerkala"
         if any(x in lower for x in ("посуда", "посуду", "тарелк", "кастрюл", "сковород", "стеклянн")):
             return "posuda"
-        if "габарит" in lower or "лимит" in lower or ("короб" in lower and ("размер" in lower or "для" in lower or "вб" in lower or "wb" in lower)):
+        if (
+            "габарит" in lower
+            or "лимит" in lower
+            or ("короб" in lower and ("размер" in lower or "для" in lower or "вб" in lower or "wb" in lower))
+        ):
             return "gabarity_wb"
         if ("стрейч" in lower or "скотч" in lower) and has_wb:
             return "strejch_skotch_wb"

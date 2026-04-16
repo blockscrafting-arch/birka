@@ -1,4 +1,5 @@
 """Ozon Seller API client for FBO and warehouses."""
+
 import asyncio
 from typing import Any
 
@@ -120,9 +121,7 @@ class OzonClient:
                 logger.warning("ozon_draft_create_info_failed", error=str(exc))
                 return None
 
-    async def create_supply_from_draft(
-        self, draft_id: int, warehouse_id: int, timeslot: dict[str, str]
-    ) -> str | None:
+    async def create_supply_from_draft(self, draft_id: int, warehouse_id: int, timeslot: dict[str, str]) -> str | None:
         """Create supply from draft (POST /v1/draft/supply/create). Returns operation_id."""
         async with httpx.AsyncClient(timeout=30) as client:
             try:
@@ -175,9 +174,7 @@ class OzonClient:
                 logger.warning("ozon_supply_create_status_failed", error=str(exc))
                 return None
 
-    async def create_cargoes(
-        self, supply_id: int, cargoes: list[list[dict[str, Any]]]
-    ) -> str | None:
+    async def create_cargoes(self, supply_id: int, cargoes: list[list[dict[str, Any]]]) -> str | None:
         """Set cargo composition (POST /v1/cargoes/create). cargoes: list of boxes, each box = list of {offer_id, quantity}. Returns operation_id."""
         async with httpx.AsyncClient(timeout=30) as client:
             try:
@@ -253,7 +250,9 @@ class OzonClient:
             try:
                 payload = {
                     "supply_id": supply_id,
-                    "cargoes": [{"cargo_id": int(cid) if isinstance(cid, str) and cid.isdigit() else cid} for cid in cargo_ids],
+                    "cargoes": [
+                        {"cargo_id": int(cid) if isinstance(cid, str) and cid.isdigit() else cid} for cid in cargo_ids
+                    ],
                 }
                 r = await client.post(
                     f"{OZON_BASE}/v1/cargoes-label/create",

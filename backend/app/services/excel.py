@@ -1,4 +1,5 @@
 """Excel import/export helpers."""
+
 from io import BytesIO
 
 import pandas as pd
@@ -10,7 +11,6 @@ from app.db.models.order import OrderItem
 from app.db.models.packing_record import PackingRecord
 from app.db.models.product import Product
 from app.db.models.service import Service
-
 
 EXPORT_COLUMNS = [
     "Название",
@@ -297,12 +297,14 @@ def parse_fbo_excel(file_bytes: bytes) -> list[dict]:
             else:
                 delivery_date = str(delivery_date).strip() or None
 
-            result.append({
-                "packing_id": packing_id,
-                "box_barcode": box_barcode,
-                "warehouse": warehouse,
-                "delivery_date": delivery_date,
-            })
+            result.append(
+                {
+                    "packing_id": packing_id,
+                    "box_barcode": box_barcode,
+                    "warehouse": warehouse,
+                    "delivery_date": delivery_date,
+                }
+            )
         return result
     except Exception as exc:
         logger.exception("excel_parse_fbo_failed", error=str(exc))

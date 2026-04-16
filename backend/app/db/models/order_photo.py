@@ -1,4 +1,5 @@
 """Order photos."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, String
@@ -17,7 +18,9 @@ class OrderPhoto(Base):
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), index=True)
     s3_key: Mapped[str] = mapped_column(String(512))
     photo_type: Mapped[str | None] = mapped_column(String(64))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
 
     order = relationship("Order", back_populates="photos")
     product = relationship("Product")

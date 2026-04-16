@@ -1,12 +1,11 @@
 """Encryption helpers for sensitive values (e.g. API keys). Uses Fernet (AES)."""
-from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.logging import logger
 
 
-def _get_fernet(secret: str) -> Optional[Fernet]:
+def _get_fernet(secret: str) -> Fernet | None:
     """Build Fernet from ENCRYPTION_KEY (base64 url-safe, 44 chars)."""
     if not secret or not secret.strip():
         return None
@@ -18,7 +17,7 @@ def _get_fernet(secret: str) -> Optional[Fernet]:
         return None
 
 
-def encrypt_value(plain: Optional[str], secret: str) -> Optional[str]:
+def encrypt_value(plain: str | None, secret: str) -> str | None:
     """
     Encrypt string for storage. Returns None if plain is None or encryption unavailable.
     """
@@ -34,7 +33,7 @@ def encrypt_value(plain: Optional[str], secret: str) -> Optional[str]:
         return plain
 
 
-def decrypt_value(cipher: Optional[str], secret: str) -> Optional[str]:
+def decrypt_value(cipher: str | None, secret: str) -> str | None:
     """
     Decrypt stored value. If decryption fails (e.g. legacy plaintext), return as-is.
     """

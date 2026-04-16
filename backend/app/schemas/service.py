@@ -1,4 +1,5 @@
 """Service (pricing) schemas."""
+
 from datetime import datetime
 from decimal import Decimal
 

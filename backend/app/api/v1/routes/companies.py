@@ -1,22 +1,25 @@
 """Company endpoints."""
+
 import asyncio
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from app.api.v1.deps import get_current_user
+from app.core.config import settings
+from app.core.crypto import decrypt_value, encrypt_value
+from app.core.logging import logger
 from app.db.models.company import Company
+from app.db.models.company_api_keys import CompanyAPIKeys
 from app.db.models.contract_template import ContractTemplate
 from app.db.models.order import Order
-from app.db.session import get_db
-from fastapi.responses import StreamingResponse
-
-from app.api.v1.deps import get_current_user
-from app.db.models.company_api_keys import CompanyAPIKeys
 from app.db.models.user import User
+from app.db.session import get_db
 from app.schemas.company import (
     CompanyAPIKeysOut,
     CompanyAPIKeysUpdate,
@@ -24,17 +27,14 @@ from app.schemas.company import (
     CompanyList,
     CompanyOut,
     CompanyUpdate,
+    _mask_key,
 )
-from app.schemas.company import _mask_key
-from app.core.config import settings
-from app.core.crypto import decrypt_value, encrypt_value
-from app.core.logging import logger
+from app.services.api_keys_guide import API_KEYS_GUIDE_HTML
 from app.services.contract_template_service import render_contract_pdf_from_docx_template
 from app.services.dadata import fetch_bank_by_bik, fetch_company_by_inn
-from app.services.pdf import ContractData, render_contract_pdf
 from app.services.files import content_disposition
+from app.services.pdf import ContractData, render_contract_pdf
 from app.services.s3 import S3Service
-from app.services.api_keys_guide import API_KEYS_GUIDE_HTML
 from app.services.telegram import send_document, send_notification
 
 router = APIRouter()
@@ -77,9 +77,7 @@ async def create_company(
     legal_address = payload.legal_address or addr.get("unrestricted_value") or addr.get("value")
     okved = payload.okved or data.get("okved")
     okveds = data.get("okveds") or []
-    okved_name = payload.okved_name or next(
-        (o.get("name") for o in okveds if o.get("main")), None
-    )
+    okved_name = payload.okved_name or next((o.get("name") for o in okveds if o.get("main")), None)
 
     company = Company(
         user_id=current_user.id,
@@ -163,9 +161,7 @@ async def update_company(
     current_user: User = Depends(get_current_user),
 ) -> CompanyOut:
     """Update company details."""
-    result = await db.execute(
-        select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
-    )
+    result = await db.execute(select(Company).where(Company.id == company_id, Company.user_id == current_user.id))
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
@@ -184,15 +180,15 @@ async def delete_company(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Delete company if it belongs to current user and has no active orders."""
-    result = await db.execute(
-        select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
-    )
+    result = await db.execute(select(Company).where(Company.id == company_id, Company.user_id == current_user.id))
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
 
     active_orders_result = await db.execute(
-        select(func.count()).select_from(Order).where(
+        select(func.count())
+        .select_from(Order)
+        .where(
             Order.company_id == company_id,
             Order.status != "Завершено",
         )
@@ -215,9 +211,7 @@ async def generate_contract(
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """Generate a contract PDF."""
-    result = await db.execute(
-        select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
-    )
+    result = await db.execute(select(Company).where(Company.id == company_id, Company.user_id == current_user.id))
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
@@ -242,9 +236,7 @@ async def generate_contract(
         raise HTTPException(status_code=500, detail="Не удалось сформировать PDF договора")
 
 
-async def _generate_contract_pdf_bytes(
-    db: AsyncSession, company: Company
-) -> tuple[bytes, str]:
+async def _generate_contract_pdf_bytes(db: AsyncSession, company: Company) -> tuple[bytes, str]:
     """Generate contract PDF bytes and filename. Shared by GET contract and POST contract/send."""
     contract_date = date.today().strftime("%d.%m.%Y")
     contract_number = f"{company.id}-{date.today().strftime('%Y%m%d')}"
@@ -263,20 +255,23 @@ async def _generate_contract_pdf_bytes(
         bank_name=company.bank_name,
         bank_corr_account=company.bank_corr_account,
     )
-    template_result = await db.execute(
-        select(ContractTemplate).where(ContractTemplate.is_default.is_(True))
-    )
+    template_result = await db.execute(select(ContractTemplate).where(ContractTemplate.is_default.is_(True)))
     template = template_result.scalar_one_or_none()
     if template and template.file_key:
         s3 = S3Service()
         pdf_bytes = await asyncio.to_thread(
             render_contract_pdf_from_docx_template,
-            s3, template.file_key, template.file_type, template.docx_key, contract,
+            s3,
+            template.file_key,
+            template.file_type,
+            template.docx_key,
+            contract,
         )
     else:
         pdf_bytes = await asyncio.to_thread(
             render_contract_pdf,
-            contract, template.html_content if template else None,
+            contract,
+            template.html_content if template else None,
         )
     filename = f"Договор_{company.name}_{contract_date}.pdf"
     return pdf_bytes, filename
@@ -289,11 +284,7 @@ async def send_contract_to_telegram(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Generate contract PDF and send it to the user in the chat with the bot."""
-    result = await db.execute(
-        select(Company)
-        .options(joinedload(Company.user))
-        .where(Company.id == company_id)
-    )
+    result = await db.execute(select(Company).options(joinedload(Company.user)).where(Company.id == company_id))
     company = result.unique().scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
@@ -349,9 +340,7 @@ async def get_company_api_keys(
     if not _company_access(company, current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к компании")
 
-    result = await db.execute(
-        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == company_id)
-    )
+    result = await db.execute(select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == company_id))
     row = result.scalar_one_or_none()
     if not row:
         return CompanyAPIKeysOut(
@@ -384,9 +373,7 @@ async def update_company_api_keys(
     if not _company_access(company, current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к компании")
 
-    result = await db.execute(
-        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == company_id)
-    )
+    result = await db.execute(select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == company_id))
     row = result.scalar_one_or_none()
     data = payload.model_dump(exclude_unset=True)
     data = {k: (v if v else None) for k, v in data.items()}

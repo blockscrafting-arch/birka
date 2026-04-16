@@ -1,4 +1,5 @@
 """RAG for project documentation."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, or_, select
@@ -92,9 +93,7 @@ async def upload_document_to_rag(db: AsyncSession, content: str, name: str) -> i
         return 0
 
     version_result = await db.execute(
-        select(func.coalesce(func.max(DocumentChunk.version), 0)).where(
-            DocumentChunk.source_file == source_file
-        )
+        select(func.coalesce(func.max(DocumentChunk.version), 0)).where(DocumentChunk.source_file == source_file)
     )
     next_version = int(version_result.scalar_one() or 0) + 1
 
@@ -231,10 +230,7 @@ async def build_rag_context_async(db: AsyncSession, message: str) -> tuple[str |
             if hybrid_max > 0:
                 kw_list = HYBRID_INTENT_KEYWORDS[intent]
                 keyword_conditions = or_(
-                    *[
-                        DocumentChunk.content.ilike(f"%{escape_ilike(kw)}%", escape="\\")
-                        for kw in kw_list
-                    ]
+                    *[DocumentChunk.content.ilike(f"%{escape_ilike(kw)}%", escape="\\") for kw in kw_list]
                 )
                 hybrid_q = (
                     select(DocumentChunk)
@@ -256,10 +252,7 @@ async def build_rag_context_async(db: AsyncSession, message: str) -> tuple[str |
                 chunks = chunks + extra_chunks
         chunks = chunks[:limit]
         context = "\n\n".join(c.content for c in chunks)
-        rag_system = (
-            f"{STATIC_BASE}\n\n{RAG_STRICT_INSTRUCTION}\n\n"
-            f"Контекст из документации:\n{context}"
-        )
+        rag_system = f"{STATIC_BASE}\n\n{RAG_STRICT_INSTRUCTION}\n\nКонтекст из документации:\n{context}"
         return (rag_system, message)
     except Exception:
         return (None, message)

@@ -1,14 +1,15 @@
 """Periodic cleanup of orphaned S3 objects not referenced in DB."""
+
 from celery import shared_task
 from sqlalchemy import select
 
-from app.db.session import SyncSessionLocal
+from app.core.config import settings
+from app.core.logging import logger
+from app.db.models.contract_template import ContractTemplate
 from app.db.models.order_photo import OrderPhoto
 from app.db.models.product import ProductPhoto
-from app.db.models.contract_template import ContractTemplate
-from app.core.logging import logger
+from app.db.session import SyncSessionLocal
 from app.services.s3 import S3Service
-from app.core.config import settings
 
 
 @shared_task(
@@ -31,12 +32,8 @@ def cleanup_orphaned_s3_objects() -> int:
 
     with SyncSessionLocal() as db:
         # Collect all known S3 keys from DB
-        order_photo_keys = set(
-            row[0] for row in db.execute(select(OrderPhoto.s3_key)).all()
-        )
-        product_photo_keys = set(
-            row[0] for row in db.execute(select(ProductPhoto.s3_key)).all()
-        )
+        order_photo_keys = set(row[0] for row in db.execute(select(OrderPhoto.s3_key)).all())
+        product_photo_keys = set(row[0] for row in db.execute(select(ProductPhoto.s3_key)).all())
         template_keys = set()
         for row in db.execute(select(ContractTemplate.file_key, ContractTemplate.docx_key)).all():
             if row[0]:

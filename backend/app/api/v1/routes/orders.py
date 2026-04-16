@@ -1,4 +1,5 @@
 """Order endpoints."""
+
 import asyncio
 from datetime import date, datetime, timezone
 from io import BytesIO
@@ -11,29 +12,43 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.api.v1.deps import get_current_user, get_http_client, require_roles
+from app.core.config import settings
 from app.core.db_utils import escape_ilike
 from app.core.limiter import limiter
+from app.core.logging import logger
 from app.db.models.company import Company
 from app.db.models.order import Order, OrderItem
 from app.db.models.order_counter import OrderCounter
-from app.db.models.packing_record import PackingRecord
-from app.db.models.order_service import OrderService
-from app.db.models.service import Service
 from app.db.models.order_photo import OrderPhoto
+from app.db.models.order_service import OrderService
+from app.db.models.packing_record import PackingRecord
 from app.db.models.product import Product
-from app.db.session import get_db
-from app.schemas.order import OrderCreate, OrderItemCreate, OrderItemOut, OrderList, OrderOut, OrderPhotoOut, OrderStatusUpdate
-from app.schemas.warehouse import PackingRecordOut
+from app.db.models.service import Service
 from app.db.models.shipment_request import ShipmentRequest
-from app.services.excel import export_fbo_shipping, export_order_items, export_order_items_template, export_receiving, parse_orders_excel
-from app.services.files import content_disposition
-from app.services.s3 import S3Service
-from app.services.upload_validation import safe_open_image, sanitize_filename_for_storage, validate_image_signature
-from app.services.telegram import send_document, send_notification
-from app.services.order_status_flow import is_allowed_transition
-from app.core.config import settings
-from app.core.logging import logger
 from app.db.models.user import User
+from app.db.session import get_db
+from app.schemas.order import (
+    OrderCreate,
+    OrderItemCreate,
+    OrderItemOut,
+    OrderList,
+    OrderOut,
+    OrderPhotoOut,
+    OrderStatusUpdate,
+)
+from app.schemas.warehouse import PackingRecordOut
+from app.services.excel import (
+    export_fbo_shipping,
+    export_order_items,
+    export_order_items_template,
+    export_receiving,
+    parse_orders_excel,
+)
+from app.services.files import content_disposition
+from app.services.order_status_flow import is_allowed_transition
+from app.services.s3 import S3Service
+from app.services.telegram import send_document, send_notification
+from app.services.upload_validation import safe_open_image, sanitize_filename_for_storage, validate_image_signature
 
 router = APIRouter()
 
@@ -69,9 +84,7 @@ async def create_order(
         if any(s.quantity <= 0 for s in payload.services):
             raise HTTPException(status_code=400, detail="Количество услуги должно быть больше нуля")
         svc_ids = [s.service_id for s in payload.services]
-        svc_result = await db.execute(
-            select(Service).where(Service.id.in_(svc_ids), Service.is_active.is_(True))
-        )
+        svc_result = await db.execute(select(Service).where(Service.id.in_(svc_ids), Service.is_active.is_(True)))
         services_by_id = {s.id: s for s in svc_result.scalars().all()}
         if len(services_by_id) != len(svc_ids):
             raise HTTPException(status_code=400, detail="Одна или несколько услуг не найдены или неактивны")
@@ -595,9 +608,7 @@ async def export_order_items_excel(
     if not company_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Компания не найдена")
     result = await db.execute(
-        select(OrderItem)
-        .options(joinedload(OrderItem.product))
-        .where(OrderItem.order_id == order_id)
+        select(OrderItem).options(joinedload(OrderItem.product)).where(OrderItem.order_id == order_id)
     )
     items = list(result.unique().scalars().all())
     if not items:
@@ -636,9 +647,7 @@ async def send_export_order_items_to_telegram(
             detail="Не удалось отправить файл: пользователь не привязан к Telegram.",
         )
     result = await db.execute(
-        select(OrderItem)
-        .options(joinedload(OrderItem.product))
-        .where(OrderItem.order_id == order_id)
+        select(OrderItem).options(joinedload(OrderItem.product)).where(OrderItem.order_id == order_id)
     )
     items = list(result.unique().scalars().all())
     if not items:
@@ -723,9 +732,7 @@ async def export_fbo_excel_client(
     records = list(result.unique().scalars().all())
     if not records:
         raise HTTPException(status_code=400, detail="Нет записей упаковки для выгрузки (заявка ещё не упакована)")
-    sr_result = await db.execute(
-        select(ShipmentRequest).where(ShipmentRequest.order_id == order_id).limit(1)
-    )
+    sr_result = await db.execute(select(ShipmentRequest).where(ShipmentRequest.order_id == order_id).limit(1))
     sr = sr_result.scalar_one_or_none()
     delivery_date_str = sr.delivery_date.isoformat() if sr and sr.delivery_date else None
     buffer = export_fbo_shipping(records, delivery_date_str)
@@ -772,9 +779,7 @@ async def send_export_fbo_to_telegram_client(
     if not records:
         raise HTTPException(status_code=400, detail="Нет записей упаковки для выгрузки (заявка ещё не упакована)")
 
-    sr_result = await db.execute(
-        select(ShipmentRequest).where(ShipmentRequest.order_id == order_id).limit(1)
-    )
+    sr_result = await db.execute(select(ShipmentRequest).where(ShipmentRequest.order_id == order_id).limit(1))
     sr = sr_result.scalar_one_or_none()
     delivery_date_str = sr.delivery_date.isoformat() if sr and sr.delivery_date else None
 
@@ -782,7 +787,9 @@ async def send_export_fbo_to_telegram_client(
     file_bytes = buffer.getvalue()
     filename = f"Отгрузка_FBO_заявка_{order.order_number}.xlsx"
 
-    sent = await send_document(telegram_id, file_bytes, filename, caption="Отгрузка FBO (заполните штрихкоды коробов, склад и дату)")
+    sent = await send_document(
+        telegram_id, file_bytes, filename, caption="Отгрузка FBO (заполните штрихкоды коробов, склад и дату)"
+    )
     if not sent:
         raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
 

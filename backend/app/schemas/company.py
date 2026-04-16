@@ -1,4 +1,5 @@
 """Company schemas."""
+
 from pydantic import BaseModel, Field
 
 

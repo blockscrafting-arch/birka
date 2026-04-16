@@ -1,4 +1,5 @@
 """Session model."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, String
@@ -16,7 +17,8 @@ class Session(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        DateTime,
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime)
 

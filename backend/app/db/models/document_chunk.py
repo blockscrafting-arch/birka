@@ -1,9 +1,10 @@
 """Document chunk model for RAG."""
+
 from datetime import datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
-from pgvector.sqlalchemy import Vector
 
 from app.db.base import Base
 

@@ -1,4 +1,5 @@
 """Единая валидация загрузок: magic bytes, безопасные имена и безопасное открытие изображений."""
+
 from __future__ import annotations
 
 import re
@@ -50,11 +51,7 @@ def _is_gif(content: bytes) -> bool:
 
 
 def _is_webp(content: bytes) -> bool:
-    return (
-        len(content) >= 12
-        and content[:4] == WEBP_SIG
-        and content[8:12] == b"WEBP"
-    )
+    return len(content) >= 12 and content[:4] == WEBP_SIG and content[8:12] == b"WEBP"
 
 
 def _is_pdf(content: bytes) -> bool:

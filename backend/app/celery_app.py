@@ -1,4 +1,5 @@
 """Celery app for background tasks (e.g. document conversion in isolated worker)."""
+
 import logging
 
 from celery import Celery
@@ -8,9 +9,7 @@ from app.core.config import settings
 
 _redis_dsn = (settings.REDIS_DSN or "").strip()
 if not _redis_dsn:
-    logging.warning(
-        "REDIS_DSN is empty; using localhost fallback. Set REDIS_DSN in production."
-    )
+    logging.warning("REDIS_DSN is empty; using localhost fallback. Set REDIS_DSN in production.")
 broker = _redis_dsn or "redis://localhost:6379/0"
 backend = broker
 

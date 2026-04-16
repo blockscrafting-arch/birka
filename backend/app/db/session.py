@@ -1,10 +1,10 @@
 """Database session setup."""
+
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
-
 
 engine = create_async_engine(
     settings.POSTGRES_DSN,

@@ -1,4 +1,5 @@
 """Warehouse endpoints."""
+
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.api.v1.deps import get_current_user, require_roles
+from app.core.logging import logger
 from app.db.models.barcode_scan_log import BarcodeScanLog
 from app.db.models.company import Company
 from app.db.models.fbo_supply import FBOSupply, FBOSupplyBox
@@ -16,6 +18,7 @@ from app.db.models.order_photo import OrderPhoto
 from app.db.models.packing_record import PackingRecord
 from app.db.models.product import Product
 from app.db.models.shipment_request import ShipmentRequest
+from app.db.models.user import User
 from app.db.models.warehouse_employee import WarehouseEmployee
 from app.db.session import get_db
 from app.schemas.warehouse import (
@@ -29,8 +32,6 @@ from app.schemas.warehouse import (
 from app.services.excel import export_fbo_shipping, parse_fbo_excel
 from app.services.files import content_disposition
 from app.services.telegram import send_document, send_notification
-from app.core.logging import logger
-from app.db.models.user import User
 
 router = APIRouter()
 
@@ -177,7 +178,9 @@ async def create_packing_record(
         if not order:
             raise HTTPException(status_code=404, detail="Заявка не найдена")
         # Разрешить упаковку, если приёмка завершена (статус уже после приёмки) или есть принятое кол-во
-        reception_done = order.status in ("Принято", "Упаковка", "Готово к отгрузке", "Завершено") or order.received_qty > 0
+        reception_done = (
+            order.status in ("Принято", "Упаковка", "Готово к отгрузке", "Завершено") or order.received_qty > 0
+        )
         if not reception_done:
             raise HTTPException(
                 status_code=400,
@@ -207,11 +210,10 @@ async def create_packing_record(
                 detail=f"Перепаковка: по позиции доступно к упаковке {remainder} шт., указано {payload.quantity}.",
             )
 
-        items_result = await db.execute(select(OrderItem).where(OrderItem.order_id == payload.order_id))
-        order_items_list = items_result.scalars().all()
-        total_defect = sum(i.defect_qty for i in order_items_list)
-        effective_plan = order.received_qty - total_defect
-        if payload.quantity > 0 and (order_item.received_qty - order_item.defect_qty - order_item.packed_qty) < payload.quantity:
+        if (
+            payload.quantity > 0
+            and (order_item.received_qty - order_item.defect_qty - order_item.packed_qty) < payload.quantity
+        ):
             logger.warning(
                 "packing_exceeds_effective_plan",
                 order_id=payload.order_id,
@@ -296,15 +298,11 @@ async def validate_barcode(
             log_product_id = product.id
             log_fbo_supply_box_id = None
         else:
-            box_result = await db.execute(
-                select(FBOSupplyBox).where(FBOSupplyBox.external_barcode == barcode)
-            )
+            box_result = await db.execute(select(FBOSupplyBox).where(FBOSupplyBox.external_barcode == barcode))
             box = box_result.scalar_one_or_none()
             if box:
                 logger.info("barcode_validate_box_ok", box_id=box.id, supply_id=box.supply_id)
-                supply_result = await db.execute(
-                    select(FBOSupply).where(FBOSupply.id == box.supply_id)
-                )
+                supply_result = await db.execute(select(FBOSupply).where(FBOSupply.id == box.supply_id))
                 supply = supply_result.scalar_one_or_none()
                 log_company_id = supply.company_id if supply else payload.company_id
                 response = BarcodeValidateResponse(
@@ -465,9 +463,7 @@ async def export_fbo_excel(
     records = list(result.unique().scalars().all())
     if not records:
         raise HTTPException(status_code=400, detail="Нет записей упаковки для выгрузки")
-    sr_result = await db.execute(
-        select(ShipmentRequest).where(ShipmentRequest.order_id == order_id).limit(1)
-    )
+    sr_result = await db.execute(select(ShipmentRequest).where(ShipmentRequest.order_id == order_id).limit(1))
     sr = sr_result.scalar_one_or_none()
     delivery_date_str = sr.delivery_date.isoformat() if sr and sr.delivery_date else None
     buffer = export_fbo_shipping(records, delivery_date_str)
@@ -504,9 +500,7 @@ async def send_export_fbo_to_telegram(
     records = list(result.unique().scalars().all())
     if not records:
         raise HTTPException(status_code=400, detail="Нет записей упаковки для выгрузки")
-    sr_result = await db.execute(
-        select(ShipmentRequest).where(ShipmentRequest.order_id == order_id).limit(1)
-    )
+    sr_result = await db.execute(select(ShipmentRequest).where(ShipmentRequest.order_id == order_id).limit(1))
     sr = sr_result.scalar_one_or_none()
     delivery_date_str = sr.delivery_date.isoformat() if sr and sr.delivery_date else None
     buffer = export_fbo_shipping(records, delivery_date_str)

@@ -99,13 +99,19 @@ class WildberriesAPI:
                 return [str(i) for i in ids]
         except httpx.HTTPStatusError as e:
             logger.warning(
-                "wb_api_create_boxes_failed", supply_id=supply_id, amount=amount,
-                status=e.response.status_code, error=str(e),
+                "wb_api_create_boxes_failed",
+                supply_id=supply_id,
+                amount=amount,
+                status=e.response.status_code,
+                error=str(e),
             )
             return []
         except (httpx.RequestError, httpx.TimeoutException) as e:
             logger.warning(
-                "wb_api_create_boxes_failed", supply_id=supply_id, amount=amount, error=str(e),
+                "wb_api_create_boxes_failed",
+                supply_id=supply_id,
+                amount=amount,
+                error=str(e),
             )
             return []
 
@@ -158,9 +164,7 @@ class WildberriesAPI:
             return [str(x) for x in raw if x]
         return []
 
-    async def get_box_stickers(
-        self, supply_id: str, trbx_ids: list[str], fmt: str = "png"
-    ) -> list[dict]:
+    async def get_box_stickers(self, supply_id: str, trbx_ids: list[str], fmt: str = "png") -> list[dict]:
         """Get box stickers. POST /api/v3/supplies/{supplyId}/trbx/stickers."""
         if not trbx_ids:
             return []

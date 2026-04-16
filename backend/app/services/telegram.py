@@ -1,4 +1,5 @@
 """Telegram helpers."""
+
 import json
 from urllib.parse import parse_qsl
 

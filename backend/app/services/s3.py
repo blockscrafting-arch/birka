@@ -1,4 +1,5 @@
 """S3 storage service."""
+
 from io import BytesIO
 from typing import BinaryIO
 

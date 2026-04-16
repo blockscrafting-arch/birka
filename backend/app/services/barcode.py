@@ -1,4 +1,5 @@
 """Barcode generation."""
+
 from io import BytesIO
 
 import barcode

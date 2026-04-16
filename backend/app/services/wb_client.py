@@ -1,4 +1,5 @@
 """Wildberries API client for supplies and warehouses."""
+
 from typing import Any
 
 import httpx
@@ -64,9 +65,7 @@ class WBClient:
                 logger.warning("wb_create_supply_failed", error=str(exc))
                 return None
 
-    async def get_supply_barcode(
-        self, supply_id: str, fmt: str = "png"
-    ) -> tuple[bytes | None, str]:
+    async def get_supply_barcode(self, supply_id: str, fmt: str = "png") -> tuple[bytes | None, str]:
         """Get supply QR/barcode (GET /api/v3/supplies/{supplyId}/barcode). Returns (bytes, media_type) or (None, ''). Available after supply is transferred for delivery."""
         if not supply_id or not supply_id.strip():
             return None, ""

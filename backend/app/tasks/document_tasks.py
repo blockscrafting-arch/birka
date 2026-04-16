@@ -1,4 +1,5 @@
 """Document conversion tasks (run in Celery worker with LibreOffice)."""
+
 import base64
 
 from app.celery_app import celery_app

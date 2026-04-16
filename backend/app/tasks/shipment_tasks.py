@@ -1,4 +1,5 @@
 """Celery task для автоматического закрытия просроченных отгрузок (запускается по расписанию beat)."""
+
 from app.celery_app import celery_app
 from app.core.logging import logger
 from app.services.shipment_scheduler import auto_close_expired_shipments_sync

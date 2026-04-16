@@ -1,4 +1,5 @@
 """FBO supply endpoints (WB/Ozon)."""
+
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -15,13 +16,13 @@ from app.db.models.fbo_supply import FBOSupply, FBOSupplyBox
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.fbo import (
-    BoxStickersOut,
     BoxStickerOut,
+    BoxStickersOut,
+    FBOSupplyBoxOut,
     FBOSupplyCreate,
     FBOSupplyImportBarcodes,
     FBOSupplyList,
     FBOSupplyOut,
-    FBOSupplyBoxOut,
 )
 from app.services.excel import export_fbo_supply_boxes, parse_fbo_supply_excel
 from app.services.files import content_disposition
@@ -39,9 +40,7 @@ async def _get_company_or_404(db: AsyncSession, company_id: int, user: User) -> 
     if user.role in {"warehouse", "admin"}:
         r = await db.execute(select(Company).where(Company.id == company_id))
     else:
-        r = await db.execute(
-            select(Company).where(Company.id == company_id, Company.user_id == user.id)
-        )
+        r = await db.execute(select(Company).where(Company.id == company_id, Company.user_id == user.id))
     company = r.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
@@ -74,9 +73,7 @@ async def list_fbo_supplies(
     """List FBO supplies for company."""
     await _get_company_or_404(db, company_id, current_user)
 
-    count_q = await db.execute(
-        select(func.count()).select_from(FBOSupply).where(FBOSupply.company_id == company_id)
-    )
+    count_q = await db.execute(select(func.count()).select_from(FBOSupply).where(FBOSupply.company_id == company_id))
     total = count_q.scalar() or 0
     offset = (page - 1) * limit
     result = await db.execute(
@@ -99,11 +96,7 @@ async def get_fbo_supply(
     current_user: User = Depends(get_current_user),
 ) -> FBOSupplyOut:
     """Get FBO supply by id."""
-    result = await db.execute(
-        select(FBOSupply)
-        .where(FBOSupply.id == supply_id)
-        .options(joinedload(FBOSupply.boxes))
-    )
+    result = await db.execute(select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes)))
     supply = result.unique().scalar_one_or_none()
     if not supply:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Поставка не найдена")
@@ -118,11 +111,7 @@ async def export_fbo_supply_excel(
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """Download FBO supply boxes as Excel (Номер короба, Штрихкод) for manual fill and re-import."""
-    result = await db.execute(
-        select(FBOSupply)
-        .where(FBOSupply.id == supply_id)
-        .options(joinedload(FBOSupply.boxes))
-    )
+    result = await db.execute(select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes)))
     supply = result.unique().scalar_one_or_none()
     if not supply:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Поставка не найдена")
@@ -149,9 +138,7 @@ async def import_fbo_supply_excel(
     """Import FBO supply boxes from Excel (Номер короба, Штрихкод). Replaces existing boxes."""
     if not file.filename or not (file.filename.endswith(".xlsx") or file.filename.endswith(".xls")):
         raise HTTPException(status_code=400, detail="Загрузите файл Excel (.xlsx или .xls)")
-    result = await db.execute(
-        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
-    )
+    result = await db.execute(select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes)))
     supply = result.unique().scalar_one_or_none()
     if not supply:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Поставка не найдена")
@@ -174,9 +161,7 @@ async def import_fbo_supply_excel(
         db.add(box)
     await db.commit()
     await db.refresh(supply)
-    result2 = await db.execute(
-        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
-    )
+    result2 = await db.execute(select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes)))
     supply = result2.unique().scalar_one()
     return _supply_to_out(supply)
 
@@ -194,9 +179,7 @@ async def create_fbo_supply(
     if marketplace not in ("wb", "ozon"):
         raise HTTPException(status_code=400, detail="marketplace должен быть wb или ozon")
 
-    keys_r = await db.execute(
-        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id)
-    )
+    keys_r = await db.execute(select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id))
     keys = keys_r.scalar_one_or_none()
     secret = settings.ENCRYPTION_KEY or ""
     external_id: str | None = None
@@ -235,9 +218,7 @@ async def create_fbo_supply(
     db.add(supply)
     await db.commit()
     await db.refresh(supply)
-    result2 = await db.execute(
-        select(FBOSupply).where(FBOSupply.id == supply.id).options(joinedload(FBOSupply.boxes))
-    )
+    result2 = await db.execute(select(FBOSupply).where(FBOSupply.id == supply.id).options(joinedload(FBOSupply.boxes)))
     supply = result2.unique().scalar_one()
     return _supply_to_out(supply)
 
@@ -250,9 +231,7 @@ async def sync_fbo_supply_barcodes(
     http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> FBOSupplyOut:
     """Fetch box barcodes from WB/Ozon and update supply boxes."""
-    result = await db.execute(
-        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
-    )
+    result = await db.execute(select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes)))
     supply = result.unique().scalar_one_or_none()
     if not supply:
         raise HTTPException(status_code=404, detail="Поставка не найдена")
@@ -260,9 +239,7 @@ async def sync_fbo_supply_barcodes(
     if not supply.external_supply_id:
         raise HTTPException(status_code=400, detail="Нет внешнего ID поставки для синхронизации")
 
-    keys_r = await db.execute(
-        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == supply.company_id)
-    )
+    keys_r = await db.execute(select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == supply.company_id))
     keys = keys_r.scalar_one_or_none()
     secret = settings.ENCRYPTION_KEY or ""
     boxes_data: list[tuple[str | None, str]] = []  # (external_box_id, external_barcode)
@@ -334,9 +311,7 @@ async def get_fbo_box_stickers(
     """Get box stickers for WB supply (for print). Returns base64 images."""
     if fmt not in ("png", "svg", "zplv", "zplh"):
         raise HTTPException(status_code=400, detail="Формат стикера: png, svg, zplv или zplh")
-    result = await db.execute(
-        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
-    )
+    result = await db.execute(select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes)))
     supply = result.unique().scalar_one_or_none()
     if not supply:
         raise HTTPException(status_code=404, detail="Поставка не найдена")
@@ -349,9 +324,7 @@ async def get_fbo_box_stickers(
     trbx_ids = [b.external_box_id for b in supply.boxes if b.external_box_id]
     if not trbx_ids:
         return BoxStickersOut(stickers=[])
-    keys_r = await db.execute(
-        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == supply.company_id)
-    )
+    keys_r = await db.execute(select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == supply.company_id))
     keys = keys_r.scalar_one_or_none()
     if not keys or not keys.wb_api_key:
         raise HTTPException(status_code=400, detail="Укажите API-ключ WB для компании")
@@ -386,9 +359,7 @@ async def import_fbo_barcodes(
     current_user: User = Depends(get_current_user),
 ) -> FBOSupplyOut:
     """Import box barcodes manually (barcodes in order = box 1, 2, ...). Append mode: new boxes are added to existing ones; box_number continues from max(existing)."""
-    result = await db.execute(
-        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
-    )
+    result = await db.execute(select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes)))
     supply = result.unique().scalar_one_or_none()
     if not supply:
         raise HTTPException(status_code=404, detail="Поставка не найдена")

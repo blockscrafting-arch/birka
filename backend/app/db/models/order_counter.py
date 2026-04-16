@@ -1,4 +1,5 @@
 """Order counter model."""
+
 from datetime import date
 
 from sqlalchemy import Date, Integer

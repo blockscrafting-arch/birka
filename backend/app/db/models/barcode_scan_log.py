@@ -1,4 +1,5 @@
 """Barcode scan log: journal of every barcode validation (scanner)."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String
@@ -23,6 +24,4 @@ class BarcodeScanLog(Base):
     valid: Mapped[bool] = mapped_column(Boolean)
     result_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), index=True, nullable=True)
-    fbo_supply_box_id: Mapped[int | None] = mapped_column(
-        ForeignKey("fbo_supply_boxes.id"), index=True, nullable=True
-    )
+    fbo_supply_box_id: Mapped[int | None] = mapped_column(ForeignKey("fbo_supply_boxes.id"), index=True, nullable=True)

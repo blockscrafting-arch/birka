@@ -72,7 +72,9 @@ class OzonAPI:
                 r.raise_for_status()
                 return r.json().get("result")
         except httpx.HTTPStatusError as e:
-            logger.warning("ozon_api_supply_get_failed", supply_id=supply_id, status=e.response.status_code, error=str(e))
+            logger.warning(
+                "ozon_api_supply_get_failed", supply_id=supply_id, status=e.response.status_code, error=str(e)
+            )
             return None
         except (httpx.RequestError, httpx.TimeoutException) as e:
             logger.warning("ozon_api_supply_get_failed", supply_id=supply_id, error=str(e))

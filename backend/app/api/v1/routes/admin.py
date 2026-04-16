@@ -1,10 +1,11 @@
 """Admin endpoints."""
+
 import asyncio
 import os
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, status, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -21,13 +22,12 @@ from app.db.models.document_chunk import DocumentChunk
 from app.db.models.service import Service
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.admin import AdminUserList, AdminUserOut, AISettingsOut, AISettingsUpdate, RoleUpdate
+from app.schemas.admin import AdminUserList, AISettingsOut, AISettingsUpdate, RoleUpdate
 from app.schemas.contract_template import (
     ContractTemplateCreate,
     ContractTemplateOut,
     ContractTemplateUpdate,
 )
-from app.services.upload_validation import sanitize_filename_for_storage, validate_rag_document
 from app.services.contract_template_service import (
     delete_template_files,
     head_check_upload,
@@ -38,10 +38,11 @@ from app.services.document_processor import (
     MAX_DOCUMENT_SIZE_BYTES,
     index_document,
 )
-from app.services.rag import upload_document_to_rag
 from app.services.files import content_disposition
+from app.services.rag import upload_document_to_rag
 from app.services.s3 import S3Service
 from app.services.telegram import send_document
+from app.services.upload_validation import sanitize_filename_for_storage, validate_rag_document
 
 router = APIRouter()
 
@@ -160,9 +161,7 @@ async def upload_contract_template(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err)
     s3 = S3Service()
     try:
-        file_key, docx_key = await asyncio.to_thread(
-            upload_template_file, s3, content, filename, file_type
-        )
+        file_key, docx_key = await asyncio.to_thread(upload_template_file, s3, content, filename, file_type)
     except Exception as e:
         logger.exception("contract_template_upload_s3_failed", error=str(e))
         raise HTTPException(
@@ -272,9 +271,7 @@ async def send_contract_template_to_telegram(
         file_bytes = await asyncio.to_thread(s3.get_bytes, template.file_key)
     except Exception as e:
         logger.exception("contract_template_send_failed", template_id=template_id, error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Не удалось прочитать файл"
-        ) from e
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Не удалось прочитать файл") from e
 
     filename = template.file_name or "template"
     sent = await send_document(telegram_id, file_bytes, filename, caption="Шаблон договора")
@@ -390,7 +387,7 @@ async def upload_document(
     if len(content) > MAX_DOCUMENT_SIZE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Файл слишком большой. Максимум {MAX_DOCUMENT_SIZE_BYTES // (1024*1024)} MB",
+            detail=f"Файл слишком большой. Максимум {MAX_DOCUMENT_SIZE_BYTES // (1024 * 1024)} MB",
         )
     raw_name = (file.filename or "document").strip() or "document"
     name = sanitize_filename_for_storage(raw_name.replace("\\", "/").split("/")[-1] or "document")
@@ -491,9 +488,7 @@ async def rag_sync_services(
 ) -> dict:
     """Синхронизация прайса услуг в RAG: выгрузка активных услуг в текст и индексация."""
     result = await db.execute(
-        select(Service)
-        .where(Service.is_active.is_(True))
-        .order_by(Service.category, Service.sort_order, Service.id)
+        select(Service).where(Service.is_active.is_(True)).order_by(Service.category, Service.sort_order, Service.id)
     )
     services = list(result.scalars().all())
     lines = ["Прайс услуг Бирка (фулфилмент).", ""]

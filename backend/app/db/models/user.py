@@ -1,4 +1,5 @@
 """User model."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy import BigInteger, DateTime, String
@@ -18,7 +19,9 @@ class User(Base):
     first_name: Mapped[str | None] = mapped_column(String(128))
     last_name: Mapped[str | None] = mapped_column(String(128))
     role: Mapped[str] = mapped_column(String(32), default="client")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
 
     companies = relationship("Company", back_populates="user")
     warehouse_profile = relationship("WarehouseEmployee", back_populates="user", uselist=False)

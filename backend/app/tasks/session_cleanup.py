@@ -1,10 +1,11 @@
 """Periodic cleanup of expired sessions."""
+
 from celery import shared_task
 from sqlalchemy import delete, text
 
-from app.db.session import SyncSessionLocal
-from app.db.models.session import Session
 from app.core.logging import logger
+from app.db.models.session import Session
+from app.db.session import SyncSessionLocal
 
 
 @shared_task(
@@ -16,9 +17,7 @@ from app.core.logging import logger
 def cleanup_expired_sessions() -> int:
     """Delete sessions past their expires_at."""
     with SyncSessionLocal() as db:
-        result = db.execute(
-            delete(Session).where(Session.expires_at < text("NOW()"))
-        )
+        result = db.execute(delete(Session).where(Session.expires_at < text("NOW()")))
         db.commit()
         count = result.rowcount
         if count:

@@ -1,8 +1,9 @@
 """API router."""
+
 from fastapi import APIRouter
 
-from app.api.v1.routes.ai import router as ai_router
 from app.api.v1.routes.admin import router as admin_router
+from app.api.v1.routes.ai import router as ai_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.companies import router as companies_router
 from app.api.v1.routes.destinations import router as destinations_router

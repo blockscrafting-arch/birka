@@ -1,4 +1,5 @@
 """Document processing for RAG: DOCX/TXT parsing, chunking, indexing."""
+
 import json
 import re
 from datetime import datetime, timezone
@@ -277,9 +278,7 @@ async def index_document(
     if document_type not in ("docx", "txt", "rtf"):
         raise ValueError("document_type must be 'docx', 'txt' or 'rtf'")
     if len(content) > MAX_DOCUMENT_SIZE_BYTES:
-        raise ValueError(
-            f"Файл слишком большой (макс. {MAX_DOCUMENT_SIZE_BYTES // (1024*1024)} MB)"
-        )
+        raise ValueError(f"Файл слишком большой (макс. {MAX_DOCUMENT_SIZE_BYTES // (1024 * 1024)} MB)")
 
     chunks_with_section: list[tuple[str, str | None]]
     if document_type == "docx":
@@ -304,9 +303,7 @@ async def index_document(
         )
 
     version_result = await db.execute(
-        select(func.coalesce(func.max(DocumentChunk.version), 0)).where(
-            DocumentChunk.source_file == source_file
-        )
+        select(func.coalesce(func.max(DocumentChunk.version), 0)).where(DocumentChunk.source_file == source_file)
     )
     next_version = int(version_result.scalar_one() or 0) + 1
 

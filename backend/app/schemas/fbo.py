@@ -1,4 +1,5 @@
 """FBO supply schemas for WB/Ozon."""
+
 from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
@@ -6,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class FBOSupplyBoxOut(BaseModel):
     """FBO supply box in response."""
+
     id: int
     supply_id: int
     box_number: int
@@ -18,6 +20,7 @@ class FBOSupplyBoxOut(BaseModel):
 
 class FBOSupplyOut(BaseModel):
     """FBO supply response."""
+
     id: int
     order_id: int | None
     company_id: int
@@ -34,14 +37,18 @@ class FBOSupplyOut(BaseModel):
 
 class FBOSupplyCreate(BaseModel):
     """Create FBO supply draft."""
+
     company_id: int
     order_id: int | None = None
     marketplace: str = Field(..., pattern="^(wb|ozon)$", description="wb или ozon")
-    box_count: int | None = Field(None, ge=0, le=1000, description="Число коробов (WB: создаёт поставку и короба в API)")
+    box_count: int | None = Field(
+        None, ge=0, le=1000, description="Число коробов (WB: создаёт поставку и короба в API)"
+    )
 
 
 class FBOSupplyImportBarcodes(BaseModel):
     """Import box barcodes manually (max 500 items, each barcode max 128 chars)."""
+
     barcodes: list[str] = Field(..., max_length=500)
 
     @field_validator("barcodes")
@@ -55,6 +62,7 @@ class FBOSupplyImportBarcodes(BaseModel):
 
 class FBOSupplyList(BaseModel):
     """Paginated FBO supply list."""
+
     items: list[FBOSupplyOut]
     total: int
     page: int
@@ -63,6 +71,7 @@ class FBOSupplyList(BaseModel):
 
 class BoxStickerOut(BaseModel):
     """Single box sticker (WB)."""
+
     trbx_id: str
     barcode: str | None
     file_base64: str
@@ -71,4 +80,5 @@ class BoxStickerOut(BaseModel):
 
 class BoxStickersOut(BaseModel):
     """Box stickers response."""
+
     stickers: list[BoxStickerOut]

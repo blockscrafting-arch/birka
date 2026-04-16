@@ -1,8 +1,9 @@
 """PDF generation service."""
+
 import base64
+import html
 from dataclasses import dataclass
 from io import BytesIO
-import html
 
 import barcode
 from barcode.writer import ImageWriter
@@ -155,7 +156,6 @@ def render_label_pdf(label: LabelData) -> bytes:
         title = html.escape(label.title or "")
         article = html.escape(label.article or "")
         supplier = html.escape(label.supplier or "")
-        barcode_value = html.escape(label.barcode_value or "")
         barcode_b64 = _render_barcode_base64(label.barcode_value or "", module_width=0.68, module_height=34)
         barcode_img = ""
         if barcode_b64:

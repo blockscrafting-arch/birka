@@ -1,4 +1,5 @@
 """Chat message model for AI assistant history (per user, optional company)."""
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func

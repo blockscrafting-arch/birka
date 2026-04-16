@@ -1,7 +1,8 @@
 """Destination model (address/shipment lookup)."""
+
 from datetime import datetime
 
-from sqlalchemy import DateTime, Boolean, String, func
+from sqlalchemy import Boolean, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base

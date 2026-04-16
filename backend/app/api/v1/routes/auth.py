@@ -1,20 +1,21 @@
 """Auth endpoints."""
-from datetime import datetime, timedelta, timezone
+
 import secrets
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_current_user
+from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.logging import logger
 from app.core.security import validate_telegram_init_data
-from app.api.v1.deps import get_current_user
 from app.db.models.session import Session
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.auth import TelegramAuthRequest, TelegramAuthResponse, UserMe
-from app.core.config import settings
 from app.services.telegram import parse_init_data_user
 
 router = APIRouter()
@@ -33,7 +34,9 @@ async def telegram_auth(
 
     user_data = parse_init_data_user(payload.init_data)
     if not user_data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пользователь не найден в данных авторизации")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Пользователь не найден в данных авторизации"
+        )
 
     telegram_id = int(user_data["id"])
     result = await db.execute(select(User).where(User.telegram_id == telegram_id))

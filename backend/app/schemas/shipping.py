@@ -1,4 +1,5 @@
 """Shipment request schemas."""
+
 from datetime import date, datetime
 
 from pydantic import BaseModel

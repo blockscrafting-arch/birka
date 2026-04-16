@@ -5,7 +5,15 @@ src = ["app"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
-ignore = ["E501"]
+ignore = [
+    "E501",    # line too long (handled by formatter)
+    "B008",    # function-call-in-default-argument (FastAPI Depends pattern)
+    "B904",    # raise-without-from-inside-except
+    "UP017",   # datetime-timezone-utc (we use timezone.utc for 3.11 compat)
+    "UP028",   # yield-in-for-loop
+    "SIM105",  # suppressible-exception (try/except/pass is clearer)
+    "SIM108",  # if-else-block-instead-of-ternary
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

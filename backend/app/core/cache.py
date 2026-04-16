@@ -13,6 +13,7 @@ def _get_redis():
     if _redis_client is None:
         try:
             import redis.asyncio as redis
+
             _redis_client = redis.from_url(
                 settings.REDIS_DSN.strip(),
                 decode_responses=True,

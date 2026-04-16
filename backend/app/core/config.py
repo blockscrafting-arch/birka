@@ -1,17 +1,16 @@
 """Application settings from environment."""
-from typing import List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-def _parse_int_list(value: str) -> List[int]:
+def _parse_int_list(value: str) -> list[int]:
     """Parse comma-separated integers from env string."""
     if not value or not value.strip():
         return []
     return [int(x.strip()) for x in value.strip().split(",") if x.strip().isdigit()]
 
 
-def _parse_cors_origins(value: str) -> List[str]:
+def _parse_cors_origins(value: str) -> list[str]:
     """Parse comma-separated CORS origins from env string. '*' remains as single element."""
     if not value or not value.strip():
         return []
@@ -80,12 +79,12 @@ class Settings(BaseSettings):
     FILE_PUBLIC_BASE_URL: str = ""
 
     @property
-    def admin_telegram_ids(self) -> List[int]:
+    def admin_telegram_ids(self) -> list[int]:
         """Admin Telegram user IDs (parsed from ADMIN_TELEGRAM_IDS)."""
         return _parse_int_list(self.ADMIN_TELEGRAM_IDS)
 
     @property
-    def cors_origins_list(self) -> List[str]:
+    def cors_origins_list(self) -> list[str]:
         """CORS allowed origins (parsed from CORS_ORIGINS comma-separated string)."""
         return _parse_cors_origins(self.CORS_ORIGINS)
 

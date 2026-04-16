@@ -1,4 +1,5 @@
 """Destination schemas."""
+
 from pydantic import BaseModel
 
 

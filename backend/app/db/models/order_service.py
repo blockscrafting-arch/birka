@@ -1,4 +1,5 @@
 """Order-service link (selected services with price snapshot)."""
+
 from decimal import Decimal
 
 from sqlalchemy import ForeignKey, Numeric

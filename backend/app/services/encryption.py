@@ -1,4 +1,5 @@
 """Fernet encryption for sensitive data (e.g. API keys)."""
+
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.config import settings

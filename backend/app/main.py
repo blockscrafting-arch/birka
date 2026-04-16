@@ -1,10 +1,11 @@
 """FastAPI application entrypoint. See project docs in /docs."""
+
 from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import select, text
@@ -15,7 +16,7 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.logging import configure_logging, logger
 from app.db.models.user import User
-from app.db.session import get_db, AsyncSessionLocal
+from app.db.session import AsyncSessionLocal, get_db
 
 # Shared HTTP client for WB/Ozon/S3 HEAD checks (connection pooling, single timeout)
 HTTP_CLIENT_TIMEOUT = 30.0

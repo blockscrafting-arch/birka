@@ -1,4 +1,5 @@
 """Product endpoints."""
+
 import asyncio
 from datetime import date, datetime, timezone
 from io import BytesIO
@@ -11,22 +12,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.api.v1.deps import get_current_user, get_http_client
+from app.core.config import settings
 from app.core.db_utils import escape_ilike
 from app.core.limiter import limiter
+from app.core.logging import logger
 from app.db.models.company import Company
 from app.db.models.order_photo import OrderPhoto
 from app.db.models.product import Product, ProductPhoto
+from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.product import ImportResult, ImportSkipped, ProductCreate, ProductList, ProductOut, ProductUpdate
 from app.services.excel import export_products, export_products_template, parse_products_excel
 from app.services.files import content_disposition
 from app.services.pdf import LabelData, render_label_pdf
 from app.services.s3 import S3Service
-from app.services.upload_validation import safe_open_image, sanitize_filename_for_storage, validate_image_signature
 from app.services.telegram import send_document
-from app.core.config import settings
-from app.core.logging import logger
-from app.db.models.user import User
+from app.services.upload_validation import safe_open_image, sanitize_filename_for_storage, validate_image_signature
 
 router = APIRouter()
 
@@ -148,9 +149,7 @@ async def import_products(
                 continue
             barcode = (row.get("barcode") or "").strip() or None
             if barcode:
-                existing_result = await db.execute(
-                    select(Product).where(Product.barcode == barcode)
-                )
+                existing_result = await db.execute(select(Product).where(Product.barcode == barcode))
                 existing = existing_result.scalar_one_or_none()
                 if existing:
                     if existing.company_id == company_id:
@@ -199,9 +198,7 @@ async def export_products_excel(
     try:
         company = company_result.scalar_one_or_none()
         result = await db.execute(
-            select(Product)
-            .options(joinedload(Product.company))
-            .where(Product.company_id == company_id)
+            select(Product).options(joinedload(Product.company)).where(Product.company_id == company_id)
         )
         products = list(result.unique().scalars().all())
         if not products:

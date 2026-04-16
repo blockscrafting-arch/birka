@@ -1,4 +1,5 @@
 """Contract template service: file upload, PDF↔DOCX conversion, placeholder substitution, DOCX→PDF."""
+
 import base64
 import os
 import re
@@ -19,9 +20,7 @@ from app.services.s3 import S3Service
 
 # S3 prefix for contract template files
 CONTRACT_TEMPLATE_PREFIX = "contract-templates/"
-MAX_TEMPLATE_SIZE_BYTES = getattr(
-    settings, "MAX_UPLOAD_SIZE_BYTES", 10 * 1024 * 1024
-)  # 10 MB
+MAX_TEMPLATE_SIZE_BYTES = getattr(settings, "MAX_UPLOAD_SIZE_BYTES", 10 * 1024 * 1024)  # 10 MB
 ALLOWED_TEMPLATE_EXTENSIONS = (".docx", ".rtf")
 CONTENT_TYPE_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 CONTENT_TYPE_RTF = "application/rtf"
@@ -136,8 +135,10 @@ def rtf_to_docx_bytes(rtf_bytes: bytes) -> bytes:
                 [
                     cmd,
                     "--headless",
-                    "--convert-to", "docx",
-                    "--outdir", tmpdir,
+                    "--convert-to",
+                    "docx",
+                    "--outdir",
+                    tmpdir,
                     rtf_path,
                 ],
                 check=True,
@@ -186,9 +187,7 @@ HEAD_CHECK_RETRIES = 3
 HEAD_CHECK_BACKOFF_SEC = 0.15
 
 
-async def head_check_upload(
-    s3: S3Service, key: str, client: httpx.AsyncClient | None = None
-) -> bool:
+async def head_check_upload(s3: S3Service, key: str, client: httpx.AsyncClient | None = None) -> bool:
     """
     Verify uploaded file is reachable via public URL (HEAD).
     Retries up to HEAD_CHECK_RETRIES times with short backoff on failure.
@@ -275,8 +274,10 @@ def docx_to_pdf_bytes(docx_bytes: bytes) -> bytes:
                 [
                     cmd,
                     "--headless",
-                    "--convert-to", "pdf",
-                    "--outdir", tmpdir,
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    tmpdir,
                     docx_path,
                 ],
                 check=True,

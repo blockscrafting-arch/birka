@@ -1,4 +1,5 @@
 """AI assistant tools: function definitions and execution for OpenAI function calling."""
+
 import json
 
 from sqlalchemy import func, select
@@ -53,8 +54,15 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "status": {"type": "string", "description": "Фильтр по статусу заявки или синониму (отгружено, завершено, упаковка и т.д.)."},
-                    "statuses": {"type": "array", "items": {"type": "string"}, "description": "Несколько статусов для фильтра (опционально)."},
+                    "status": {
+                        "type": "string",
+                        "description": "Фильтр по статусу заявки или синониму (отгружено, завершено, упаковка и т.д.).",
+                    },
+                    "statuses": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Несколько статусов для фильтра (опционально).",
+                    },
                     "limit": {"type": "integer", "description": "Макс. число заявок в ответе (по умолчанию 20)."},
                     "offset": {"type": "integer", "description": "Смещение для пагинации (по умолчанию 0)."},
                 },
@@ -211,9 +219,7 @@ async def _ensure_company(db: AsyncSession, user: User, company_id: int | None) 
     if user.role in {"warehouse", "admin"}:
         result = await db.execute(select(Company).where(Company.id == company_id))
     else:
-        result = await db.execute(
-            select(Company).where(Company.id == company_id, Company.user_id == user.id)
-        )
+        result = await db.execute(select(Company).where(Company.id == company_id, Company.user_id == user.id))
     return result.scalar_one_or_none()
 
 
@@ -418,9 +424,9 @@ async def _execute_tool_impl(
         )
         orders_row = orders_result.one()
         defect_count_result = await db.execute(
-            select(func.count()).select_from(Product).where(
-                Product.company_id == company.id, Product.defect_quantity > 0
-            )
+            select(func.count())
+            .select_from(Product)
+            .where(Product.company_id == company.id, Product.defect_quantity > 0)
         )
         total_defect_items = int(defect_count_result.scalar_one())
         defect_result = await db.execute(
@@ -436,10 +442,7 @@ async def _execute_tool_impl(
             .order_by(Product.stock_quantity.desc())
             .limit(20)
         )
-        top_stock = [
-            {"name": n, "stock_quantity": q, "barcode": b}
-            for n, q, b in top_stock_result.all()
-        ]
+        top_stock = [{"name": n, "stock_quantity": q, "barcode": b} for n, q, b in top_stock_result.all()]
         out = {
             "total_products": count,
             "total_stock_quantity": total_stock,
@@ -488,10 +491,7 @@ async def _execute_tool_impl(
         q = base.order_by(Service.category, Service.sort_order, Service.name).offset(offset).limit(limit)
         result = await db.execute(q)
         services = result.scalars().all()
-        items = [
-            {"category": s.category, "name": s.name, "price": float(s.price), "unit": s.unit}
-            for s in services
-        ]
+        items = [{"category": s.category, "name": s.name, "price": float(s.price), "unit": s.unit} for s in services]
         out = {
             "items": items,
             "total": total,

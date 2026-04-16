@@ -1,4 +1,5 @@
 """Security helpers for Telegram WebApp."""
+
 import hashlib
 import hmac
 import time
@@ -28,8 +29,7 @@ def validate_telegram_init_data(init_data: str, max_age_seconds: int = 300) -> b
     ).digest()
 
     data_check_string = "\n".join(
-        f"{k}={v}" for k, v in sorted(parse_qsl(init_data, keep_blank_values=True))
-        if k != "hash"
+        f"{k}={v}" for k, v in sorted(parse_qsl(init_data, keep_blank_values=True)) if k != "hash"
     )
     provided_hash = parsed.get("hash", "")
 

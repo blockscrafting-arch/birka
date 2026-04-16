@@ -1,4 +1,5 @@
 """Фоновая задача: автоматическая смена статуса отгрузок по дате поставки."""
+
 import asyncio
 from datetime import date, datetime, timezone
 
@@ -53,10 +54,12 @@ async def auto_close_expired_shipments() -> int:
         if order_ids_to_complete:
             now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
             await db.execute(
-                update(Order).where(
+                update(Order)
+                .where(
                     Order.id.in_(order_ids_to_complete),
                     Order.status != ORDER_COMPLETED_STATUS,
-                ).values(
+                )
+                .values(
                     status=ORDER_COMPLETED_STATUS,
                     completed_at=now_utc,
                     updated_at=now_utc,
@@ -124,10 +127,12 @@ def auto_close_expired_shipments_sync() -> int:
         if order_ids_to_complete:
             now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
             db.execute(
-                update(Order).where(
+                update(Order)
+                .where(
                     Order.id.in_(order_ids_to_complete),
                     Order.status != ORDER_COMPLETED_STATUS,
-                ).values(
+                )
+                .values(
                     status=ORDER_COMPLETED_STATUS,
                     completed_at=now_utc,
                     updated_at=now_utc,
@@ -172,6 +177,7 @@ async def _try_acquire_scheduler_lock() -> bool:
         return True
     try:
         import redis.asyncio as redis
+
         r = redis.from_url(settings.REDIS_DSN.strip(), decode_responses=True)
         acquired = await r.set(SCHEDULER_LOCK_KEY, "1", nx=True, ex=SCHEDULER_LOCK_TTL)
         await r.aclose()
@@ -187,6 +193,7 @@ async def _release_scheduler_lock() -> None:
         return
     try:
         import redis.asyncio as redis
+
         r = redis.from_url(settings.REDIS_DSN.strip(), decode_responses=True)
         await r.delete(SCHEDULER_LOCK_KEY)
         await r.aclose()

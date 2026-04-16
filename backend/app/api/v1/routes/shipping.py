@@ -1,4 +1,6 @@
 """Shipment request endpoints."""
+
+import asyncio
 from datetime import datetime, timezone
 
 import httpx
@@ -9,8 +11,8 @@ from sqlalchemy.orm import joinedload
 
 from app.api.v1.deps import get_current_user, get_http_client
 from app.core.config import settings
-from app.core.limiter import limiter
 from app.core.crypto import decrypt_value
+from app.core.limiter import limiter
 from app.core.logging import logger
 from app.db.models.company import Company
 from app.db.models.company_api_keys import CompanyAPIKeys
@@ -20,8 +22,13 @@ from app.db.models.shipment_request import ShipmentRequest
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.order import OrderOut
-from app.schemas.shipping import ShipmentRequestCreate, ShipmentRequestList, ShipmentRequestOut
-from app.schemas.shipping import ShipmentRequestStatusUpdate, ShipmentRequestFboLink
+from app.schemas.shipping import (
+    ShipmentRequestCreate,
+    ShipmentRequestFboLink,
+    ShipmentRequestList,
+    ShipmentRequestOut,
+    ShipmentRequestStatusUpdate,
+)
 from app.services.ozon_api import OzonAPI
 from app.services.s3 import S3Service
 from app.services.upload_validation import sanitize_filename_for_storage, validate_image_or_pdf_signature
@@ -71,9 +78,7 @@ async def _validate_marketplace_keys(
     dest = (destination_type or "").strip().upper()
     if dest not in ("WB", "OZON"):
         return
-    result = await db.execute(
-        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == company_id)
-    )
+    result = await db.execute(select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == company_id))
     keys = result.scalar_one_or_none()
     secret = settings.ENCRYPTION_KEY or ""
     if dest == "WB":
@@ -124,10 +129,12 @@ async def get_orders_ready_for_shipping(
     if not company_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Компания не найдена")
     result = await db.execute(
-        select(Order).where(
+        select(Order)
+        .where(
             Order.company_id == company_id,
             Order.status == "Готово к отгрузке",
-        ).order_by(Order.created_at.desc())
+        )
+        .order_by(Order.created_at.desc())
     )
     orders = list(result.scalars().all())
     return [OrderOut.model_validate(o, from_attributes=True) for o in orders]
@@ -188,9 +195,7 @@ async def create_shipment_request(
         db.add(request)
         await db.flush()
         if dest in ("WB", "OZON"):
-            keys_r = await db.execute(
-                select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id)
-            )
+            keys_r = await db.execute(select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id))
             keys = keys_r.scalar_one_or_none()
             secret = settings.ENCRYPTION_KEY or ""
             external_id: str | None = None
@@ -367,9 +372,7 @@ async def upload_supply_barcode(
     http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> dict:
     """Upload supply barcode file (PDF or image) for shipment request."""
-    result = await db.execute(
-        select(ShipmentRequest).where(ShipmentRequest.id == request_id)
-    )
+    result = await db.execute(select(ShipmentRequest).where(ShipmentRequest.id == request_id))
     req = result.scalar_one_or_none()
     if not req:
         raise HTTPException(status_code=404, detail="Заявка на отгрузку не найдена")
@@ -414,9 +417,7 @@ async def upload_box_barcodes(
     http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> dict:
     """Upload box barcodes file (PDF or image) for shipment request."""
-    result = await db.execute(
-        select(ShipmentRequest).where(ShipmentRequest.id == request_id)
-    )
+    result = await db.execute(select(ShipmentRequest).where(ShipmentRequest.id == request_id))
     req = result.scalar_one_or_none()
     if not req:
         raise HTTPException(status_code=404, detail="Заявка на отгрузку не найдена")

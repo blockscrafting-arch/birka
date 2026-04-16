@@ -1,4 +1,5 @@
 """Factory for WB/Ozon API clients using company API keys."""
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

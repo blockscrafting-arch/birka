@@ -1,4 +1,5 @@
 """Company API keys schemas."""
+
 from pydantic import BaseModel, Field
 
 

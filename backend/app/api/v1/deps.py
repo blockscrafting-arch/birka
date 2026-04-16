@@ -1,5 +1,6 @@
 """API dependencies."""
-from datetime import datetime, timedelta, timezone
+
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import Depends, Header, HTTPException, Request, status

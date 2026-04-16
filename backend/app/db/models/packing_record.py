@@ -1,4 +1,5 @@
 """Packing record model."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
@@ -24,7 +25,9 @@ class PackingRecord(Base):
     box_barcode: Mapped[str | None] = mapped_column(String(128))
     materials_used: Mapped[str | None] = mapped_column(Text)
     time_spent_minutes: Mapped[int | None] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
 
     order = relationship("Order", back_populates="packing_records")
     product = relationship("Product")

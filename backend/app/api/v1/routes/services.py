@@ -1,4 +1,5 @@
 """Services (pricing) endpoints."""
+
 import json
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -18,9 +19,9 @@ from app.db.models.service_history import ServicePriceHistory
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.service import (
+    CalculateItemOut,
     CalculateRequest,
     CalculateResponse,
-    CalculateItemOut,
     ServiceCreate,
     ServiceOut,
     ServicePriceHistoryOut,
@@ -43,9 +44,7 @@ async def list_services(
     current_user: User = Depends(get_current_user),
 ) -> list[ServiceOut]:
     """List services, optionally filtered by category and search. Admins can pass include_inactive=True."""
-    query = select(Service).order_by(
-        Service.category.asc(), Service.sort_order.asc(), Service.name.asc()
-    )
+    query = select(Service).order_by(Service.category.asc(), Service.sort_order.asc(), Service.name.asc())
     if not include_inactive or current_user.role != "admin":
         query = query.where(Service.is_active.is_(True))
     if category and category.strip():
@@ -76,12 +75,7 @@ async def list_categories(
             return json.loads(cached)
         except (json.JSONDecodeError, TypeError):
             pass
-    query = (
-        select(Service.category)
-        .where(Service.is_active.is_(True))
-        .distinct()
-        .order_by(Service.category.asc())
-    )
+    query = select(Service.category).where(Service.is_active.is_(True)).distinct().order_by(Service.category.asc())
     result = await db.execute(query)
     categories = [row[0] for row in result.all()]
     await cache_set("services:categories", json.dumps(categories), ttl_seconds=60)
@@ -262,9 +256,7 @@ async def import_services(
         price = Decimal(str(row["price"]))
         unit = row.get("unit", "шт")
         comment = row.get("comment")
-        existing = await db.execute(
-            select(Service).where(Service.category == cat, Service.name == name)
-        )
+        existing = await db.execute(select(Service).where(Service.category == cat, Service.name == name))
         service = existing.scalar_one_or_none()
         if service:
             service.price = price

@@ -1,4 +1,5 @@
 """Service price history for audit."""
+
 from datetime import datetime
 from decimal import Decimal
 
@@ -14,9 +15,7 @@ class ServicePriceHistory(Base):
     __tablename__ = "service_price_history"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    service_id: Mapped[int] = mapped_column(
-        ForeignKey("services.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    service_id: Mapped[int] = mapped_column(ForeignKey("services.id", ondelete="CASCADE"), nullable=False, index=True)
     old_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     new_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     changed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)

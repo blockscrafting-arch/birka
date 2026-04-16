@@ -1,4 +1,5 @@
 """AI endpoints: chat with history persisted in DB."""
+
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
