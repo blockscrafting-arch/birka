@@ -44,3 +44,7 @@ README.md
 
 # Cursor
 .cursor/
+.cursorrules
+
+# Root package-lock (frontend has its own)
+/package-lock.json
