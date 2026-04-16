@@ -96,13 +96,18 @@ async def update_product(
     current_user: User = Depends(get_current_user),
 ) -> ProductOut:
     """Update product."""
-    query = select(Product).join(Company, Product.company_id == Company.id).where(Product.id == product_id)
-    if current_user.role not in {"warehouse", "admin"}:
-        query = query.where(Company.user_id == current_user.id)
-    result = await db.execute(query)
+    result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Товар не найден")
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == product.company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
+        )
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Компания не найдена")
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(product, key, value)
     await db.commit()

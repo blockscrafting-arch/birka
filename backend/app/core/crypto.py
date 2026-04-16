@@ -26,12 +26,11 @@ def encrypt_value(plain: Optional[str], secret: str) -> Optional[str]:
         return None
     f = _get_fernet(secret)
     if not f:
-        logger.error("crypto_no_encryption_key", action="encrypt_value", plaintext_fallback=True)
         return plain
     try:
         return f.encrypt(plain.encode()).decode()
     except Exception as e:
-        logger.error("crypto_encrypt_failed", error=str(e))
+        logger.warning("crypto_encrypt_failed", error=str(e))
         return plain
 
 

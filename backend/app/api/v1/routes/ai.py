@@ -1,11 +1,10 @@
 """AI endpoints: chat with history persisted in DB."""
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
 from app.core.config import settings
-from app.db.models.company import Company
 from app.core.limiter import limiter
 from app.db.models.ai_settings import AISettings
 from app.db.models.chat_message import ChatMessage
@@ -23,19 +22,6 @@ router = APIRouter()
 HISTORY_LIMIT = 50
 
 
-async def _validate_company_access(db: AsyncSession, user: User, company_id: int | None) -> None:
-    """Validate user has access to company_id. Warehouse/admin can access any."""
-    if company_id is None:
-        return
-    if user.role in {"warehouse", "admin"}:
-        return
-    result = await db.execute(
-        select(Company.id).where(Company.id == company_id, Company.user_id == user.id)
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="Нет доступа к этой компании")
-
-
 @router.get("/history", response_model=AIChatHistoryOut)
 async def get_history(
     company_id: int | None = Query(None),
@@ -43,7 +29,6 @@ async def get_history(
     current_user: User = Depends(get_current_user),
 ) -> AIChatHistoryOut:
     """Return last HISTORY_LIMIT messages for the current user (and company if specified)."""
-    await _validate_company_access(db, current_user, company_id)
     q = (
         select(ChatMessage)
         .where(ChatMessage.user_id == current_user.id)
@@ -65,7 +50,6 @@ async def delete_history(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Clear chat history for the current user (and company if specified)."""
-    await _validate_company_access(db, current_user, company_id)
     stmt = delete(ChatMessage).where(ChatMessage.user_id == current_user.id)
     if company_id is not None:
         stmt = stmt.where(ChatMessage.company_id == company_id)
@@ -85,7 +69,6 @@ async def chat(
     current_user: User = Depends(get_current_user),
 ) -> AIChatResponse:
     """Chat with AI assistant. History loaded from and saved to DB; RAG when document_chunks populated."""
-    await _validate_company_access(db, current_user, payload.company_id)
     intent = detect_rag_intent(payload.message)
     if intent in FIXED_RESPONSE_INTENTS:
         user_msg = ChatMessage(

@@ -2,7 +2,6 @@
 from contextlib import asynccontextmanager
 
 import httpx
-import sentry_sdk
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,18 +54,6 @@ async def lifespan(app: FastAPI):
             await sync_roles_on_startup()
         logger.info("app_initialized")
         yield
-
-
-if settings.SENTRY_DSN:
-    sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
-        environment=settings.ENVIRONMENT,
-        traces_sample_rate=0.1,
-        integrations=[
-            sentry_sdk.integrations.starlette.StarletteIntegration(transaction_style="endpoint"),
-            sentry_sdk.integrations.fastapi.FastApiIntegration(transaction_style="endpoint"),
-        ],
-    )
 
 
 def create_app() -> FastAPI:

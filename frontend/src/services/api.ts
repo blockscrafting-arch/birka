@@ -27,48 +27,17 @@ function buildAuthHeaders(): Record<string, string> {
   };
 }
 
-let isRefreshing = false;
-
-async function handleUnauthorized(): Promise<boolean> {
-  if (isRefreshing) return false;
-  const initData = window.Telegram?.WebApp?.initData;
-  if (!initData) {
-    localStorage.removeItem("birka_session_token");
-    window.Telegram?.WebApp?.showAlert?.("Сессия истекла. Откройте приложение заново.");
-    return false;
-  }
-  isRefreshing = true;
-  try {
-    const resp = await fetch(`${API_URL}/auth/telegram`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ init_data: initData }),
-    });
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data.session_token) {
-        localStorage.setItem("birka_session_token", data.session_token);
-        return true;
-      }
-    }
-  } catch {
-    // ignore
-  } finally {
-    isRefreshing = false;
-  }
+function handleUnauthorized(): void {
   localStorage.removeItem("birka_session_token");
-  window.Telegram?.WebApp?.showAlert?.("Сессия истекла. Откройте приложение заново.");
-  return false;
+  const message = "Сессия истекла. Откройте приложение заново.";
+  if (typeof window !== "undefined" && window.Telegram?.WebApp?.showAlert) {
+    window.Telegram.WebApp.showAlert(message);
+  }
 }
 
-async function handleJsonResponse<T>(response: Response, retryFn?: () => Promise<T>): Promise<T> {
+async function handleJsonResponse<T>(response: Response): Promise<T> {
   if (response.status === 401) {
-    if (retryFn) {
-      const refreshed = await handleUnauthorized();
-      if (refreshed) return retryFn();
-    } else {
-      await handleUnauthorized();
-    }
+    handleUnauthorized();
   }
   if (!response.ok) {
     let message = "Что-то пошло не так. Попробуйте позже.";
@@ -94,11 +63,14 @@ async function api<T>(path: string, options?: RequestInit, retriesLeft = RETRY_D
     },
     ...options,
   });
-  if (RETRYABLE_STATUSES.includes(response.status) && retriesLeft > 0) {
+  if (
+    RETRYABLE_STATUSES.includes(response.status) &&
+    retriesLeft > 0
+  ) {
     await delay(RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - retriesLeft]);
     return api(path, options, retriesLeft - 1);
   }
-  return handleJsonResponse<T>(response, () => api(path, options, retriesLeft));
+  return handleJsonResponse<T>(response);
 }
 
 /** POST FormData. Retry не используется: body потребляется после первого fetch. */

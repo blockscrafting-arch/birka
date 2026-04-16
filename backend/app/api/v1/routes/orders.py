@@ -6,7 +6,7 @@ from io import BytesIO
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -80,51 +80,52 @@ async def create_order(
         today = date.today()
         prefix = datetime.now(timezone.utc).strftime("Заявка %d/%m/%y")
         total_planned = sum(item.planned_qty for item in payload.items)
-        # Atomic upsert: INSERT ... ON CONFLICT — безопасно при параллельных запросах
-        upsert_result = await db.execute(
-            text(
-                "INSERT INTO order_counters (counter_date, value) VALUES (:d, 1) "
-                "ON CONFLICT (counter_date) DO UPDATE SET value = order_counters.value + 1 "
-                "RETURNING value"
-            ),
-            {"d": today},
-        )
-        counter_value = upsert_result.scalar_one()
-        order_number = f"{prefix} №{counter_value}"
-
-        order = Order(
-            company_id=payload.company_id,
-            order_number=order_number,
-            status="На приемке",
-            destination=payload.destination,
-            planned_qty=total_planned,
-        )
-        db.add(order)
-        await db.flush()
-
-        for item in payload.items:
-            dest = (item.destination or "").strip() or None
-            if dest and len(dest) > 64:
-                raise HTTPException(status_code=400, detail=f"Пункт назначения слишком длинный (макс. 64 символа)")
-            db.add(
-                OrderItem(
-                    order_id=order.id,
-                    product_id=item.product_id,
-                    planned_qty=item.planned_qty,
-                    destination=dest,
-                )
+        transaction = db.begin_nested() if db.in_transaction() else db.begin()
+        async with transaction:
+            counter_result = await db.execute(
+                select(OrderCounter).where(OrderCounter.counter_date == today).with_for_update()
             )
+            counter = counter_result.scalar_one_or_none()
+            if not counter:
+                counter = OrderCounter(counter_date=today, value=0)
+                db.add(counter)
+                await db.flush()
+            counter.value += 1
+            order_number = f"{prefix} №{counter.value}"
 
-        for svc in payload.services or []:
-            service = services_by_id[svc.service_id]
-            db.add(
-                OrderService(
-                    order_id=order.id,
-                    service_id=svc.service_id,
-                    quantity=svc.quantity,
-                    price_at_order=service.price,
-                )
+            order = Order(
+                company_id=payload.company_id,
+                order_number=order_number,
+                status="На приемке",
+                destination=payload.destination,
+                planned_qty=total_planned,
             )
+            db.add(order)
+            await db.flush()
+
+            for item in payload.items:
+                dest = (item.destination or "").strip() or None
+                if dest and len(dest) > 64:
+                    dest = dest[:64]
+                db.add(
+                    OrderItem(
+                        order_id=order.id,
+                        product_id=item.product_id,
+                        planned_qty=item.planned_qty,
+                        destination=dest,
+                    )
+                )
+
+            for svc in payload.services or []:
+                service = services_by_id[svc.service_id]
+                db.add(
+                    OrderService(
+                        order_id=order.id,
+                        service_id=svc.service_id,
+                        quantity=svc.quantity,
+                        price_at_order=service.price,
+                    )
+                )
 
         await db.commit()
         await db.refresh(order)

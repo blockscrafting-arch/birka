@@ -3,18 +3,9 @@ from io import BytesIO
 from typing import BinaryIO
 
 import boto3
-from botocore.exceptions import BotoCoreError, ClientError
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
-from app.core.logging import logger
-
-_s3_retry = retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
-    reraise=True,
-)
 
 
 class S3Service:
@@ -35,9 +26,8 @@ class S3Service:
             )
         return self._client
 
-    @_s3_retry
     def upload_bytes(self, key: str, data: bytes, content_type: str) -> str:
-        """Upload bytes without multipart (non-chunked). Retries on transient errors."""
+        """Upload bytes without multipart (non-chunked)."""
         stream: BinaryIO = BytesIO(data)
         self._get_client().put_object(
             Bucket=settings.S3_BUCKET_NAME,
@@ -47,9 +37,8 @@ class S3Service:
         )
         return key
 
-    @_s3_retry
     def get_bytes(self, key: str) -> bytes:
-        """Download object from S3 and return bytes. Retries on transient errors."""
+        """Download object from S3 and return bytes."""
         response = self._get_client().get_object(Bucket=settings.S3_BUCKET_NAME, Key=key)
         return response["Body"].read()
 
@@ -63,9 +52,8 @@ class S3Service:
         for chunk in iter(lambda: body.read(chunk_size), b""):
             yield chunk
 
-    @_s3_retry
     def delete_object(self, key: str) -> None:
-        """Delete object from S3 by key. Retries on transient errors."""
+        """Delete object from S3 by key."""
         self._get_client().delete_object(Bucket=settings.S3_BUCKET_NAME, Key=key)
 
     def build_public_url(self, key: str) -> str:

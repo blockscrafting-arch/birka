@@ -1,7 +1,6 @@
 """Optional Redis cache. When REDIS_DSN is set, get/set use Redis; otherwise get returns None."""
 
 from app.core.config import settings
-from app.core.logging import logger
 
 _redis_client = None
 
@@ -18,8 +17,7 @@ def _get_redis():
                 settings.REDIS_DSN.strip(),
                 decode_responses=True,
             )
-        except Exception as exc:
-            logger.warning("redis_connect_failed", error=str(exc))
+        except Exception:
             _redis_client = False  # mark as failed so we don't retry every time
     return _redis_client if _redis_client is not False else None
 
@@ -31,8 +29,7 @@ async def cache_get(key: str) -> str | None:
         return None
     try:
         return await client.get(key)
-    except Exception as exc:
-        logger.warning("redis_get_failed", key=key, error=str(exc))
+    except Exception:
         return None
 
 
@@ -43,5 +40,5 @@ async def cache_set(key: str, value: str, ttl_seconds: int = 300) -> None:
         return
     try:
         await client.setex(key, ttl_seconds, value)
-    except Exception as exc:
-        logger.warning("redis_set_failed", key=key, error=str(exc))
+    except Exception:
+        pass

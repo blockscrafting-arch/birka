@@ -134,13 +134,10 @@ async def complete_receiving(
         order_number = order.order_number
         await db.commit()
         if telegram_id:
-            try:
-                await send_notification(
-                    telegram_id,
-                    f"Заявка {order_number} принята на склад.",
-                )
-            except Exception as notif_exc:
-                logger.warning("receiving_notification_failed", order_id=payload.order_id, error=str(notif_exc))
+            await send_notification(
+                telegram_id,
+                f"Заявка {order_number} принята на склад.",
+            )
         return {"received": total_received, "defects": total_defect}
     except HTTPException:
         raise
@@ -203,12 +200,26 @@ async def create_packing_record(
                 status_code=400,
                 detail="Товар заявки не найден или не совпадает с заказом и товаром.",
             )
-        # Доступно к упаковке = принято − дефект − уже упаковано
-        remainder = order_item.received_qty - order_item.defect_qty - order_item.packed_qty
+        remainder = order_item.received_qty - order_item.packed_qty
         if payload.quantity > remainder:
             raise HTTPException(
                 status_code=400,
-                detail=f"Доступно к упаковке {remainder} шт. (принято {order_item.received_qty}, брак {order_item.defect_qty}, упаковано {order_item.packed_qty}), указано {payload.quantity}.",
+                detail=f"Перепаковка: по позиции доступно к упаковке {remainder} шт., указано {payload.quantity}.",
+            )
+
+        items_result = await db.execute(select(OrderItem).where(OrderItem.order_id == payload.order_id))
+        order_items_list = items_result.scalars().all()
+        total_defect = sum(i.defect_qty for i in order_items_list)
+        effective_plan = order.received_qty - total_defect
+        if payload.quantity > 0 and (order_item.received_qty - order_item.defect_qty - order_item.packed_qty) < payload.quantity:
+            logger.warning(
+                "packing_exceeds_effective_plan",
+                order_id=payload.order_id,
+                order_item_id=payload.order_item_id,
+                received=order_item.received_qty,
+                defect=order_item.defect_qty,
+                packed_before=order_item.packed_qty,
+                packed_now=payload.quantity,
             )
 
         record = PackingRecord(
@@ -425,10 +436,7 @@ async def complete_order(
     await db.commit()
     if telegram_id:
         msg = f"Заявка {order_number}: Завершено. Упаковано всего {packed_qty_val} шт."
-        try:
-            await send_notification(telegram_id, msg)
-        except Exception as notif_exc:
-            logger.warning("complete_notification_failed", order_id=order.id, error=str(notif_exc))
+        await send_notification(telegram_id, msg)
     return {"status": "ok"}
 
 

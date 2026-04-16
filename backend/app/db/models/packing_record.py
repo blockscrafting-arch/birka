@@ -13,7 +13,7 @@ class PackingRecord(Base):
     __tablename__ = "packing_records"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
     order_item_id: Mapped[int | None] = mapped_column(ForeignKey("order_items.id"), index=True, nullable=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
     employee_id: Mapped[int] = mapped_column(ForeignKey("warehouse_employees.id"), index=True)

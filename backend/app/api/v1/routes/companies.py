@@ -416,26 +416,3 @@ async def update_company_api_keys(
         ozon_client_id=_mask_key(decrypt_value(row.ozon_client_id, secret)),
         ozon_api_key=_mask_key(decrypt_value(row.ozon_api_key, secret)),
     )
-
-
-@router.delete("/{company_id}/api-keys", status_code=204)
-async def delete_company_api_keys(
-    company_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> None:
-    """Delete all API keys for company. Only owner or admin."""
-    result = await db.execute(select(Company).where(Company.id == company_id))
-    company = result.scalar_one_or_none()
-    if not company:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
-    if not _company_access(company, current_user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к компании")
-
-    result = await db.execute(
-        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == company_id)
-    )
-    row = result.scalar_one_or_none()
-    if row:
-        await db.delete(row)
-        await db.commit()

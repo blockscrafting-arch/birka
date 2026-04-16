@@ -1,7 +1,6 @@
 """Application settings from environment."""
 from typing import List
 
-from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,11 +48,6 @@ class Settings(BaseSettings):
     # Database
     POSTGRES_DSN: str = "postgresql+asyncpg://user:pass@localhost:5432/birka"
 
-    # Database pool
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
-    DB_POOL_RECYCLE: int = 3600
-
     # Redis (optional; for caching; empty = no cache)
     REDIS_DSN: str = ""
 
@@ -71,9 +65,6 @@ class Settings(BaseSettings):
     # Encryption for API keys (Fernet key, base64 url-safe; generate with Fernet.generate_key())
     ENCRYPTION_KEY: str = ""
 
-    # Sentry
-    SENTRY_DSN: str = ""
-
     # Dadata
     DADATA_TOKEN: str = ""
 
@@ -84,17 +75,6 @@ class Settings(BaseSettings):
     S3_REGION: str = "ru-1"
     S3_BUCKET_NAME: str = ""
     FILE_PUBLIC_BASE_URL: str = ""
-
-    @model_validator(mode="after")
-    def _validate_production(self) -> "Settings":
-        if self.ENVIRONMENT == "production":
-            if not self.ENCRYPTION_KEY.strip():
-                raise ValueError("ENCRYPTION_KEY обязателен в production")
-            if self.CORS_ORIGINS.strip() == "*":
-                raise ValueError("CORS_ORIGINS='*' запрещён в production")
-            if not self.TELEGRAM_BOT_TOKEN.strip():
-                raise ValueError("TELEGRAM_BOT_TOKEN обязателен в production")
-        return self
 
     @property
     def admin_telegram_ids(self) -> List[int]:

@@ -12,16 +12,6 @@ services:
     restart: unless-stopped
     volumes:
       - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
     deploy:
       resources:
         limits:
@@ -37,28 +27,8 @@ services:
     expose:
       - "8000"
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
     restart: unless-stopped
-    read_only: true
-    tmpfs:
-      - /tmp
-      - /home/app/.cache
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
     deploy:
       resources:
         limits:
@@ -73,8 +43,7 @@ services:
       REDIS_DSN: "redis://redis:6379/0"
     command: celery -A app.celery_app worker -l info
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -83,11 +52,6 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
     deploy:
       resources:
         limits:
@@ -102,18 +66,12 @@ services:
       REDIS_DSN: "redis://redis:6379/0"
     command: celery -A app.celery_app beat -l info
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
     deploy:
       resources:
         limits:
@@ -128,11 +86,6 @@ services:
     expose:
       - "80"
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
     deploy:
       resources:
         limits:
@@ -151,11 +104,6 @@ services:
       - backend
       - frontend
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
     deploy:
       resources:
         limits:

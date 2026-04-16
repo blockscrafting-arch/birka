@@ -1,5 +1,5 @@
 """Company schemas."""
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field
 
 
 class CompanyCreate(BaseModel):
@@ -76,27 +76,12 @@ def _mask_key(value: str | None) -> str | None:
 
 
 class CompanyAPIKeysOut(BaseModel):
-    """API keys response (masked) with boolean presence flags."""
+    """API keys response (masked)."""
 
     company_id: int
     wb_api_key: str | None  # masked
     ozon_client_id: str | None  # can show last 4 or mask
     ozon_api_key: str | None  # masked
-
-    @computed_field  # type: ignore[misc]
-    @property
-    def has_wb(self) -> bool:
-        return self.wb_api_key is not None
-
-    @computed_field  # type: ignore[misc]
-    @property
-    def has_ozon_client_id(self) -> bool:
-        return self.ozon_client_id is not None
-
-    @computed_field  # type: ignore[misc]
-    @property
-    def has_ozon_api_key(self) -> bool:
-        return self.ozon_api_key is not None
 
     class Config:
         from_attributes = True

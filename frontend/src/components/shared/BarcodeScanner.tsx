@@ -62,5 +62,5 @@ export function BarcodeScanner({ onScan, onError, compact = false, active = true
     ? "rounded border-0 bg-white p-1 min-h-[140px]"
     : "rounded border bg-white p-2";
 
-  return <div id={scannerId.current} className={containerClass} role="region" aria-label="Сканер штрих-кода" />;
+  return <div id={scannerId.current} className={containerClass} />;
 }

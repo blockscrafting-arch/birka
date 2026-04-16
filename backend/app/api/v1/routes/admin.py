@@ -75,9 +75,7 @@ async def list_users(
 
 
 @router.patch("/users/{user_id}/role")
-@limiter.limit("30/minute")
 async def update_user_role(
-    request: Request,
     user_id: int,
     payload: RoleUpdate,
     db: AsyncSession = Depends(get_db),
@@ -107,9 +105,7 @@ async def list_contract_templates(
 
 
 @router.post("/contract-templates", response_model=ContractTemplateOut)
-@limiter.limit("30/minute")
 async def create_contract_template(
-    request: Request,
     payload: ContractTemplateCreate,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles("admin")),
@@ -291,9 +287,7 @@ async def send_contract_template_to_telegram(
 
 
 @router.patch("/contract-templates/{template_id}", response_model=ContractTemplateOut)
-@limiter.limit("30/minute")
 async def update_contract_template(
-    request: Request,
     template_id: int,
     payload: ContractTemplateUpdate,
     db: AsyncSession = Depends(get_db),
@@ -322,9 +316,7 @@ async def update_contract_template(
 
 
 @router.delete("/contract-templates/{template_id}")
-@limiter.limit("30/minute")
 async def delete_contract_template(
-    request: Request,
     template_id: int,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles("admin")),
@@ -454,9 +446,7 @@ def _resolve_rag_dir() -> Path | None:
 
 
 @router.post("/rag/seed")
-@limiter.limit("30/minute")
 async def rag_seed(
-    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles("admin")),
 ) -> dict:
@@ -495,9 +485,7 @@ SERVICES_RAG_SOURCE = "services_price.txt"
 
 
 @router.post("/rag/sync-services")
-@limiter.limit("30/minute")
 async def rag_sync_services(
-    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles("admin")),
 ) -> dict:
@@ -539,9 +527,7 @@ async def get_ai_settings(
 
 
 @router.patch("/ai-settings", response_model=AISettingsOut)
-@limiter.limit("30/minute")
 async def update_ai_settings(
-    request: Request,
     payload: AISettingsUpdate,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles("admin")),
@@ -564,9 +550,7 @@ async def update_ai_settings(
 
 
 @router.post("/ai-settings/test")
-@limiter.limit("30/minute")
 async def test_ai_settings(
-    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles("admin")),
 ) -> dict:

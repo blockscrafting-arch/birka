@@ -2,7 +2,7 @@
 import logging
 
 from celery import Celery
-from celery.schedules import crontab, schedule
+from celery.schedules import schedule
 
 from app.core.config import settings
 
@@ -18,12 +18,7 @@ celery_app = Celery(
     "birka",
     broker=broker,
     backend=backend,
-    include=[
-        "app.tasks.document_tasks",
-        "app.tasks.shipment_tasks",
-        "app.tasks.session_cleanup",
-        "app.tasks.s3_cleanup",
-    ],
+    include=["app.tasks.document_tasks", "app.tasks.shipment_tasks"],
 )
 celery_app.conf.update(
     task_serializer="json",
@@ -38,14 +33,6 @@ celery_app.conf.update(
         "auto-close-expired-shipments": {
             "task": "app.tasks.shipment_tasks.auto_close_expired_shipments_task",
             "schedule": schedule(run_every=settings.SHIPMENT_SCHEDULER_INTERVAL_SECONDS),
-        },
-        "cleanup-expired-sessions": {
-            "task": "app.tasks.session_cleanup.cleanup_expired_sessions",
-            "schedule": crontab(minute=0),  # каждый час
-        },
-        "cleanup-orphaned-s3": {
-            "task": "app.tasks.s3_cleanup.cleanup_orphaned_s3_objects",
-            "schedule": crontab(hour=3, minute=0, day_of_week=0),  # воскресенье 03:00
         },
     },
 )

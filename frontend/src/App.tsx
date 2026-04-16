@@ -1,6 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 
 import { useTelegram } from "./hooks/useTelegram";
 import { queryClient } from "./queryClient";
@@ -12,27 +11,27 @@ import { OfflineBanner } from "./components/ui/OfflineBanner";
 import { Loader } from "./components/ui/Loader";
 import { UploadManager } from "./components/shared/UploadManager";
 import { UserProvider, useUser } from "./contexts/UserContext";
-const CompanyPage = lazy(() => import("./pages/client/CompanyPage").then((m) => ({ default: m.CompanyPage })));
-const OrdersPage = lazy(() => import("./pages/client/OrdersPage").then((m) => ({ default: m.OrdersPage })));
-const ProductsPage = lazy(() => import("./pages/client/ProductsPage").then((m) => ({ default: m.ProductsPage })));
-const OrderDetail = lazy(() => import("./pages/client/OrderDetail").then((m) => ({ default: m.OrderDetail })));
-const AIPage = lazy(() => import("./pages/client/AIPage").then((m) => ({ default: m.AIPage })));
-const PricingPage = lazy(() => import("./pages/client/PricingPage").then((m) => ({ default: m.PricingPage })));
-const ShippingPage = lazy(() => import("./pages/client/ShippingPage").then((m) => ({ default: m.ShippingPage })));
-const AdminPage = lazy(() => import("./pages/admin/AdminPage").then((m) => ({ default: m.AdminPage })));
-const AdminOrdersPage = lazy(() => import("./pages/admin/AdminOrdersPage").then((m) => ({ default: m.AdminOrdersPage })));
-const UsersPage = lazy(() => import("./pages/admin/UsersPage").then((m) => ({ default: m.UsersPage })));
-const DestinationsPage = lazy(() => import("./pages/admin/DestinationsPage").then((m) => ({ default: m.DestinationsPage })));
-const ContractTemplatesPage = lazy(() => import("./pages/admin/ContractTemplatesPage").then((m) => ({ default: m.ContractTemplatesPage })));
-const DocumentsPage = lazy(() => import("./pages/admin/DocumentsPage").then((m) => ({ default: m.DocumentsPage })));
-const ServicesPage = lazy(() => import("./pages/admin/ServicesPage").then((m) => ({ default: m.ServicesPage })));
-const AISettingsPage = lazy(() => import("./pages/admin/AISettingsPage").then((m) => ({ default: m.AISettingsPage })));
-const PrintPage = lazy(() => import("./pages/warehouse/PrintPage").then((m) => ({ default: m.PrintPage })));
-const ReceivingPage = lazy(() => import("./pages/warehouse/ReceivingPage").then((m) => ({ default: m.ReceivingPage })));
-const PackingPage = lazy(() => import("./pages/warehouse/PackingPage").then((m) => ({ default: m.PackingPage })));
-const ScannerPage = lazy(() => import("./pages/warehouse/ScannerPage").then((m) => ({ default: m.ScannerPage })));
-const ReadyPage = lazy(() => import("./pages/warehouse/ReadyPage").then((m) => ({ default: m.ReadyPage })));
-const WarehouseShippingPage = lazy(() => import("./pages/warehouse/ShippingPage").then((m) => ({ default: m.ShippingPage })));
+import { CompanyPage } from "./pages/client/CompanyPage";
+import { OrdersPage } from "./pages/client/OrdersPage";
+import { ProductsPage } from "./pages/client/ProductsPage";
+import { OrderDetail } from "./pages/client/OrderDetail";
+import { AIPage } from "./pages/client/AIPage";
+import { PricingPage } from "./pages/client/PricingPage";
+import { ShippingPage } from "./pages/client/ShippingPage";
+import { AdminPage } from "./pages/admin/AdminPage";
+import { AdminOrdersPage } from "./pages/admin/AdminOrdersPage";
+import { UsersPage } from "./pages/admin/UsersPage";
+import { DestinationsPage } from "./pages/admin/DestinationsPage";
+import { ContractTemplatesPage } from "./pages/admin/ContractTemplatesPage";
+import { DocumentsPage } from "./pages/admin/DocumentsPage";
+import { ServicesPage } from "./pages/admin/ServicesPage";
+import { AISettingsPage } from "./pages/admin/AISettingsPage";
+import { PrintPage } from "./pages/warehouse/PrintPage";
+import { ReceivingPage } from "./pages/warehouse/ReceivingPage";
+import { PackingPage } from "./pages/warehouse/PackingPage";
+import { ScannerPage } from "./pages/warehouse/ScannerPage";
+import { ReadyPage } from "./pages/warehouse/ReadyPage";
+import { ShippingPage as WarehouseShippingPage } from "./pages/warehouse/ShippingPage";
 
 function AppRoutes() {
   const { user, isLoading } = useUser();
@@ -43,22 +42,6 @@ function AppRoutes() {
     return (
       <div className="min-h-screen bg-slate-50 p-4">
         <Loader text="Загрузка профиля..." />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-4">
-        <p className="text-center text-slate-600">
-          Не удалось загрузить профиль. Откройте приложение через Telegram.
-        </p>
-        <button
-          onClick={() => window.location.reload()}
-          className="rounded-xl bg-blue-600 px-4 py-2 text-sm text-white"
-        >
-          Попробовать снова
-        </button>
       </div>
     );
   }
@@ -148,9 +131,7 @@ function AppLayout() {
         }
       >
         <div className={`min-w-0 flex-col relative ${isAI ? "flex min-h-0 flex-1 flex-col" : ""}`}>
-          <Suspense fallback={<Loader text="Загрузка..." />}>
-            <AppRoutes />
-          </Suspense>
+          <AppRoutes />
         </div>
       </main>
     </Page>
@@ -194,14 +175,12 @@ export default function App() {
   }
 
   return (
-    <ErrorBoundary>
-      <BrowserRouter>
-        <UserProvider>
-          <OfflineBanner />
-          <UploadManager />
-          <AppLayout />
-        </UserProvider>
-      </BrowserRouter>
-    </ErrorBoundary>
+    <BrowserRouter>
+      <UserProvider>
+        <OfflineBanner />
+        <UploadManager />
+        <AppLayout />
+      </UserProvider>
+    </BrowserRouter>
   );
 }
