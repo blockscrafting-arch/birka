@@ -6,32 +6,38 @@ on:
   pull_request:
 
 jobs:
-  backend-tests:
+  backend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install backend deps
-        run: |
-          pip install -r backend/requirements.txt
-      - name: Run backend tests
-        run: |
-          cd backend && pytest tests/ -v
+      - name: Install deps
+        run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - name: Lint (ruff)
+        run: cd backend && ruff check app/
+      - name: Format check (ruff)
+        run: cd backend && ruff format --check app/
+      - name: Tests with coverage
+        run: cd backend && pytest tests/ -v --cov=app --cov-report=term-missing
+      - name: Dependency audit
+        run: pip audit || true
 
-  frontend-build:
+  frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Install frontend deps
-        run: |
-          cd frontend
-          npm install
-      - name: Build frontend
-        run: |
-          cd frontend
-          npm run build
+      - name: Install deps
+        run: cd frontend && npm ci
+      - name: Lint
+        run: cd frontend && npm run lint
+      - name: Type check
+        run: cd frontend && npx tsc --noEmit
+      - name: Build
+        run: cd frontend && npm run build
+      - name: Tests
+        run: cd frontend && npm test -- --run
