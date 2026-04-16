@@ -13,12 +13,12 @@ import { useFBOSupplies, FBOSupply } from "../../hooks/useFBOSupplies";
 import { useProducts } from "../../hooks/useProducts";
 
 export function FBOPage() {
-  const { data: companies = [] } = useCompanies();
+  const { items: companies } = useCompanies();
   const { companyId, setCompanyId } = useActiveCompany();
   const activeCompanyId = companyId ?? companies[0]?.id ?? null;
-  const { data: supplies, isLoading, create, sync, remove, importBarcodes, downloadLabels } =
-    useFBOSupplies(activeCompanyId);
-  const { data: products = [] } = useProducts(activeCompanyId ?? undefined);
+  const { items: supplies, isLoading, create, sync, remove, importBarcodes, downloadLabels } =
+    useFBOSupplies(activeCompanyId ?? undefined);
+  const { items: products } = useProducts(activeCompanyId ?? undefined);
   const [marketplaceFilter, setMarketplaceFilter] = useState<string>("all");
   const [openCreate, setOpenCreate] = useState(false);
   const [importSupplyId, setImportSupplyId] = useState<number | null>(null);

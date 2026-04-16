@@ -11,7 +11,7 @@ function CompaniesView() {
 
 describe("useCompanies", () => {
   it("loads companies list", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce({
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
       ok: true,
       json: async () => ({ items: [{ id: 1, inn: "1", name: "Test" }], total: 1, page: 1, limit: 20 }),
     } as Response);

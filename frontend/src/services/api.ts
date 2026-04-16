@@ -118,9 +118,9 @@ function apiFormWithProgress<T>(
         if (retryable) {
           delay(RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - retriesLeft])
             .then(() =>
-              apiFormWithProgress(path, formData, onProgress, retriesLeft - 1)
+              apiFormWithProgress<T>(path, formData, onProgress, retriesLeft - 1)
             )
-            .then(resolve, reject);
+            .then((v) => resolve(v), reject);
           return;
         }
         let message = "Что-то пошло не так. Попробуйте позже.";
@@ -144,8 +144,8 @@ function apiFormWithProgress<T>(
     xhr.addEventListener("error", () => {
       if (retriesLeft > 0) {
         delay(RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - retriesLeft])
-          .then(() => apiFormWithProgress(path, formData, onProgress, retriesLeft - 1))
-          .then(resolve, reject);
+          .then(() => apiFormWithProgress<T>(path, formData, onProgress, retriesLeft - 1))
+          .then((v) => resolve(v), reject);
       } else {
         reject(new Error("Нет соединения. Проверьте интернет и попробуйте снова."));
       }

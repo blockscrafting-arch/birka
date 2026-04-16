@@ -126,12 +126,19 @@ export type ShippingRequest = {
   created_at: string;
 };
 
+export type FBOSupplyBoxItem = {
+  id: number;
+  product_id: number;
+  quantity: number;
+};
+
 export type FBOSupplyBox = {
   id: number;
   supply_id: number;
   box_number: number;
   external_box_id: string | null;
   external_barcode: string | null;
+  items?: FBOSupplyBoxItem[];
 };
 
 export type FBOSupply = {

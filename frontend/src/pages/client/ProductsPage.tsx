@@ -151,7 +151,7 @@ export function ProductsPage() {
           <ProductCard
             key={product.id}
             name={product.name}
-            barcode={product.barcode}
+            barcode={product.barcode ?? undefined}
             stock={product.stock_quantity}
             defect={product.defect_quantity}
             onClick={() => setEditing(product)}
@@ -163,7 +163,17 @@ export function ProductsPage() {
 
       <Modal title="Редактирование товара" open={Boolean(editing)} onClose={() => setEditing(null)}>
         <ProductForm
-          initial={editing ?? undefined}
+          initial={editing ? {
+            name: editing.name,
+            brand: editing.brand ?? undefined,
+            size: editing.size ?? undefined,
+            color: editing.color ?? undefined,
+            barcode: editing.barcode ?? undefined,
+            wb_article: editing.wb_article ?? undefined,
+            wb_url: editing.wb_url ?? undefined,
+            packing_instructions: editing.packing_instructions ?? undefined,
+            supplier_name: editing.supplier_name ?? undefined,
+          } : undefined}
           isSubmitting={update.isPending}
           onSubmit={handleUpdate}
           submitLabel="Сохранить"
