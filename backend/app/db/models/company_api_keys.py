@@ -1,23 +1,29 @@
-"""Company API keys for WB/Ozon (stored encrypted)."""
-from datetime import datetime
+"""Company API keys for WB/Ozon marketplace integration."""
+from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
 
 class CompanyAPIKeys(Base):
-    """Encrypted API keys for marketplace integrations (WB, Ozon)."""
+    """API keys per company for Wildberries and Ozon (stored per company)."""
 
     __tablename__ = "company_api_keys"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), unique=True, index=True)
-    wb_api_key_encrypted: Mapped[str | None] = mapped_column(Text)
-    ozon_client_id_encrypted: Mapped[str | None] = mapped_column(Text)
-    ozon_api_key_encrypted: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    wb_api_key: Mapped[str | None] = mapped_column(String(2048))  # encrypted JWT can be long
+    ozon_client_id: Mapped[str | None] = mapped_column(String(512))
+    ozon_api_key: Mapped[str | None] = mapped_column(String(2048))  # encrypted token
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+    )
 
     company = relationship("Company", back_populates="api_keys")

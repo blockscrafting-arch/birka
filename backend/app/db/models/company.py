@@ -1,7 +1,7 @@
 """Company model."""
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, JSON, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,11 +21,21 @@ class Company(Base):
     director: Mapped[str | None] = mapped_column(String(128))
     bank_bik: Mapped[str | None] = mapped_column(String(16))
     bank_account: Mapped[str | None] = mapped_column(String(32))
-    contract_data: Mapped[dict | None] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    kpp: Mapped[str | None] = mapped_column(String(16))
+    ogrn: Mapped[str | None] = mapped_column(String(20))
+    legal_address: Mapped[str | None] = mapped_column(String(512))
+    okved: Mapped[str | None] = mapped_column(String(16))
+    okved_name: Mapped[str | None] = mapped_column(String(256))
+    bank_name: Mapped[str | None] = mapped_column(String(256))
+    bank_corr_account: Mapped[str | None] = mapped_column(String(32))
+    contract_data: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON, "sqlite"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     user = relationship("User", back_populates="companies")
     products = relationship("Product", back_populates="company")
     orders = relationship("Order", back_populates="company")
-    api_keys = relationship("CompanyAPIKeys", back_populates="company", uselist=False)
-    fbo_supplies = relationship("FBOSupply", back_populates="company")
+    shipment_requests = relationship("ShipmentRequest", back_populates="company")
+    chat_messages = relationship("ChatMessage", back_populates="company")
+    api_keys = relationship(
+        "CompanyAPIKeys", back_populates="company", uselist=False, cascade="all, delete-orphan"
+    )

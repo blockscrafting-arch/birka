@@ -1,4 +1,7 @@
-"""Structured logging configuration."""
+"""Structured logging configuration.
+
+Do not log PII (telegram_id, email, tokens, etc.). Use internal IDs (e.g. user_id) only when needed for audit.
+"""
 import logging
 import sys
 

@@ -33,3 +33,16 @@ Thumbs.db
 
 # SSL Certificates (generated on server)
 certbot/
+
+# Database backups
+backups/
+
+# Documentation (docs folder — audits, docx, csv, pdf kept locally)
+docs/*.md
+docs/*.docx
+docs/*.pdf
+docs/*.csv
+docs/rag/
+
+# Cursor
+.cursor/

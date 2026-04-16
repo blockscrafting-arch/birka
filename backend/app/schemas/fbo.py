@@ -1,56 +1,16 @@
-"""FBO supply schemas."""
+"""FBO supply schemas for WB/Ozon."""
 from datetime import datetime
 
-from pydantic import BaseModel, Field
-
-
-class FBOSupplyItemCreate(BaseModel):
-    """Item in a box."""
-
-    product_id: int
-    quantity: int = Field(ge=1)
-    barcode: str | None = None
-
-
-class FBOSupplyBoxCreate(BaseModel):
-    """Box in a supply."""
-
-    box_number: int = Field(ge=1)
-    items: list[FBOSupplyItemCreate] = Field(min_length=1)
-
-
-class FBOSupplyCreate(BaseModel):
-    """Create FBO supply (draft)."""
-
-    company_id: int
-    marketplace: str = Field(pattern="^(wb|ozon)$")
-    warehouse_name: str | None = None
-    boxes: list[FBOSupplyBoxCreate] = Field(min_length=1)
-
-
-class FBOSupplyItemOut(BaseModel):
-    """Item in response."""
-
-    id: int
-    box_id: int
-    product_id: int
-    quantity: int
-    barcode: str | None
-
-    class Config:
-        from_attributes = True
+from pydantic import BaseModel, Field, field_validator
 
 
 class FBOSupplyBoxOut(BaseModel):
-    """Box in response."""
-
+    """FBO supply box in response."""
     id: int
     supply_id: int
     box_number: int
-    barcode: str | None
-    sticker_s3_key: str | None
-    external_box_id: str | None = None
-    items: list[FBOSupplyItemOut] = []
+    external_box_id: str | None
+    external_barcode: str | None
 
     class Config:
         from_attributes = True
@@ -58,28 +18,57 @@ class FBOSupplyBoxOut(BaseModel):
 
 class FBOSupplyOut(BaseModel):
     """FBO supply response."""
-
     id: int
+    order_id: int | None
     company_id: int
     marketplace: str
     external_supply_id: str | None
-    warehouse_name: str | None
     status: str
+    warehouse_name: str | None
     created_at: datetime
-    updated_at: datetime
     boxes: list[FBOSupplyBoxOut] = []
 
     class Config:
         from_attributes = True
 
 
-class FBOSupplyStatusUpdate(BaseModel):
-    """Update supply status."""
+class FBOSupplyCreate(BaseModel):
+    """Create FBO supply draft."""
+    company_id: int
+    order_id: int | None = None
+    marketplace: str = Field(..., pattern="^(wb|ozon)$", description="wb или ozon")
+    box_count: int | None = Field(None, ge=0, le=1000, description="Число коробов (WB: создаёт поставку и короба в API)")
 
-    status: str = Field(pattern="^(draft|active|delivering|accepted|cancelled)$")
+
+class FBOSupplyImportBarcodes(BaseModel):
+    """Import box barcodes manually (max 500 items, each barcode max 128 chars)."""
+    barcodes: list[str] = Field(..., max_length=500)
+
+    @field_validator("barcodes")
+    @classmethod
+    def barcode_length(cls, v: list[str]) -> list[str]:
+        for b in v or []:
+            if len(b) > 128:
+                raise ValueError("Каждый штрихкод не более 128 символов")
+        return v
 
 
-class FBOBarcodeImport(BaseModel):
-    """Import barcodes for boxes: box_number -> barcode."""
+class FBOSupplyList(BaseModel):
+    """Paginated FBO supply list."""
+    items: list[FBOSupplyOut]
+    total: int
+    page: int
+    limit: int
 
-    barcodes: dict[int, str] = Field(description="box_number -> barcode")
+
+class BoxStickerOut(BaseModel):
+    """Single box sticker (WB)."""
+    trbx_id: str
+    barcode: str | None
+    file_base64: str
+    content_type: str = "image/png"
+
+
+class BoxStickersOut(BaseModel):
+    """Box stickers response."""
+    stickers: list[BoxStickerOut]

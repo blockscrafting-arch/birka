@@ -2,8 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --safe-area-top: env(safe-area-inset-top);
+  --safe-area-bottom: env(safe-area-inset-bottom);
+}
+
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  background-color: #0b0f19;
-  color: #e2e8f0;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+button,
+a,
+input,
+select {
+  touch-action: manipulation;
 }

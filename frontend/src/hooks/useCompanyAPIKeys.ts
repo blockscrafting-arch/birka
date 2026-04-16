@@ -2,16 +2,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "../services/api";
 
-export type CompanyAPIKeysStatus = {
-  has_wb: boolean;
-  has_ozon_client_id: boolean;
-  has_ozon_api_key: boolean;
+export type CompanyAPIKeysOut = {
+  company_id: number;
+  wb_api_key: string | null;
+  ozon_client_id: string | null;
+  ozon_api_key: string | null;
 };
 
-export type CompanyAPIKeysSetPayload = {
-  wb_api_key?: string | null;
-  ozon_client_id?: string | null;
-  ozon_api_key?: string | null;
+export type CompanyAPIKeysUpdate = {
+  wb_api_key?: string;
+  ozon_client_id?: string;
+  ozon_api_key?: string;
 };
 
 export function useCompanyAPIKeys(companyId: number | null) {
@@ -20,13 +21,13 @@ export function useCompanyAPIKeys(companyId: number | null) {
   const query = useQuery({
     queryKey: ["company-api-keys", companyId],
     queryFn: () =>
-      apiClient.api<CompanyAPIKeysStatus>(`/companies/${companyId}/api-keys`),
+      apiClient.api<CompanyAPIKeysOut>(`/companies/${companyId}/api-keys`),
     enabled: companyId != null,
   });
 
-  const setKeys = useMutation({
-    mutationFn: (payload: CompanyAPIKeysSetPayload) =>
-      apiClient.api<CompanyAPIKeysStatus>(`/companies/${companyId}/api-keys`, {
+  const update = useMutation({
+    mutationFn: (payload: CompanyAPIKeysUpdate) =>
+      apiClient.api<CompanyAPIKeysOut>(`/companies/${companyId}/api-keys`, {
         method: "PUT",
         body: JSON.stringify(payload),
       }),
@@ -35,19 +36,10 @@ export function useCompanyAPIKeys(companyId: number | null) {
     },
   });
 
-  const deleteKeys = useMutation({
-    mutationFn: () =>
-      apiClient.api(`/companies/${companyId}/api-keys`, { method: "DELETE" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["company-api-keys", companyId] });
-    },
-  });
-
   return {
-    data: query.data,
+    data: query.data ?? null,
     isLoading: query.isLoading,
     error: query.error,
-    setKeys,
-    deleteKeys,
+    update,
   };
 }

@@ -1,4 +1,6 @@
 """Product schemas."""
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -13,9 +15,8 @@ class ProductCreate(BaseModel):
     barcode: str | None = None
     wb_article: str | None = None
     wb_url: str | None = None
-    ozon_article: str | None = None
-    ozon_url: str | None = None
     packing_instructions: str | None = None
+    supplier_name: str | None = None
 
 
 class ProductUpdate(BaseModel):
@@ -28,9 +29,8 @@ class ProductUpdate(BaseModel):
     barcode: str | None = None
     wb_article: str | None = None
     wb_url: str | None = None
-    ozon_article: str | None = None
-    ozon_url: str | None = None
     packing_instructions: str | None = None
+    supplier_name: str | None = None
 
 
 class ProductOut(BaseModel):
@@ -45,11 +45,36 @@ class ProductOut(BaseModel):
     barcode: str | None
     wb_article: str | None
     wb_url: str | None
-    ozon_article: str | None
-    ozon_url: str | None
     packing_instructions: str | None
+    supplier_name: str | None
     stock_quantity: int
     defect_quantity: int
+    created_at: datetime | None = None
 
     class Config:
         from_attributes = True
+
+
+class ProductList(BaseModel):
+    """Paginated product list."""
+
+    items: list[ProductOut]
+    total: int
+    page: int
+    limit: int
+
+
+class ImportSkipped(BaseModel):
+    """Skipped row in product import (e.g. barcode belongs to another company)."""
+
+    barcode: str
+    name: str
+    reason: str
+
+
+class ImportResult(BaseModel):
+    """Product import result with duplicate report."""
+
+    imported: int
+    updated: int
+    skipped: list[ImportSkipped] = []

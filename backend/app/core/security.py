@@ -1,15 +1,25 @@
 """Security helpers for Telegram WebApp."""
 import hashlib
 import hmac
+import time
 from urllib.parse import parse_qsl
 
 from app.core.config import settings
 
 
-def validate_telegram_init_data(init_data: str) -> bool:
-    """Validate Telegram WebApp initData by HMAC-SHA256."""
+def validate_telegram_init_data(init_data: str, max_age_seconds: int = 300) -> bool:
+    """Validate Telegram WebApp initData by HMAC-SHA256 and auth_date (replay protection)."""
     if not init_data:
         return False
+
+    parsed = dict(parse_qsl(init_data, keep_blank_values=True))
+    auth_date = parsed.get("auth_date")
+    if auth_date:
+        try:
+            if int(auth_date) < time.time() - max_age_seconds:
+                return False
+        except (ValueError, TypeError):
+            return False
 
     secret_key = hmac.new(
         key=b"WebAppData",
@@ -21,7 +31,7 @@ def validate_telegram_init_data(init_data: str) -> bool:
         f"{k}={v}" for k, v in sorted(parse_qsl(init_data, keep_blank_values=True))
         if k != "hash"
     )
-    provided_hash = dict(parse_qsl(init_data)).get("hash", "")
+    provided_hash = parsed.get("hash", "")
 
     calculated_hash = hmac.new(
         key=secret_key,

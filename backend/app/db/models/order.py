@@ -1,5 +1,5 @@
 """Order models."""
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -20,13 +20,17 @@ class Order(Base):
     planned_qty: Mapped[int] = mapped_column(Integer, default=0)
     received_qty: Mapped[int] = mapped_column(Integer, default=0)
     packed_qty: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     company = relationship("Company", back_populates="orders")
     items = relationship("OrderItem", back_populates="order")
+    order_services = relationship("OrderService", back_populates="order")
     photos = relationship("OrderPhoto", back_populates="order")
     packing_records = relationship("PackingRecord", back_populates="order")
+    fbo_supplies = relationship("FBOSupply", back_populates="order")
+    shipment_requests = relationship("ShipmentRequest", back_populates="order")
 
 
 class OrderItem(Base):
@@ -41,6 +45,9 @@ class OrderItem(Base):
     received_qty: Mapped[int] = mapped_column(Integer, default=0)
     packed_qty: Mapped[int] = mapped_column(Integer, default=0)
     defect_qty: Mapped[int] = mapped_column(Integer, default=0)
+    adjustment_qty: Mapped[int] = mapped_column(Integer, default=0)
+    adjustment_note: Mapped[str | None] = mapped_column(String(256))
+    destination: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     order = relationship("Order", back_populates="items")
     product = relationship("Product", back_populates="order_items")

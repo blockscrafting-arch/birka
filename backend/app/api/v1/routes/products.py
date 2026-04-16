@@ -1,23 +1,30 @@
 """Product endpoints."""
-from datetime import datetime
+import asyncio
+from datetime import date, datetime, timezone
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import httpx
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from PIL import Image, UnidentifiedImageError
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, get_http_client
+from app.core.db_utils import escape_ilike
+from app.core.limiter import limiter
 from app.db.models.company import Company
+from app.db.models.order_photo import OrderPhoto
 from app.db.models.product import Product, ProductPhoto
 from app.db.session import get_db
-from app.schemas.product import ProductCreate, ProductOut, ProductUpdate
-from app.services.excel import export_products, parse_products_excel
+from app.schemas.product import ImportResult, ImportSkipped, ProductCreate, ProductList, ProductOut, ProductUpdate
+from app.services.excel import export_products, export_products_template, parse_products_excel
+from app.services.files import content_disposition
 from app.services.pdf import LabelData, render_label_pdf
 from app.services.s3 import S3Service
+from app.services.upload_validation import safe_open_image, sanitize_filename_for_storage, validate_image_signature
+from app.services.telegram import send_document
 from app.core.config import settings
-from app.core.utils import is_allowed_image_bytes, sanitize_upload_filename
 from app.core.logging import logger
 from app.db.models.user import User
 
@@ -43,20 +50,42 @@ async def create_product(
     return product
 
 
-@router.get("", response_model=list[ProductOut])
+@router.get("", response_model=ProductList)
 async def list_products(
     company_id: int,
+    search: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[ProductOut]:
-    """List products by company."""
-    company_result = await db.execute(
-        select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
-    )
-    if not company_result.scalar_one_or_none():
+) -> ProductList:
+    """List products by company with pagination."""
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
+        )
+    company = company_result.scalar_one_or_none()
+    if not company:
         raise HTTPException(status_code=404, detail="Компания не найдена")
-    result = await db.execute(select(Product).where(Product.company_id == company_id))
-    return list(result.scalars().all())
+    base_query = select(Product).where(Product.company_id == company_id)
+    if search:
+        term_escaped = escape_ilike(search.strip())
+        pattern = f"%{term_escaped}%"
+        base_query = base_query.where(
+            or_(
+                Product.name.ilike(pattern, escape="\\"),
+                Product.barcode.ilike(pattern, escape="\\"),
+                Product.wb_article.ilike(pattern, escape="\\"),
+            )
+        )
+    total_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
+    total = int(total_result.scalar_one())
+    offset = (page - 1) * limit
+    result = await db.execute(base_query.offset(offset).limit(limit))
+    items = list(result.scalars().all())
+    return ProductList(items=items, total=total, page=page, limit=limit)
 
 
 @router.patch("/{product_id}", response_model=ProductOut)
@@ -67,15 +96,13 @@ async def update_product(
     current_user: User = Depends(get_current_user),
 ) -> ProductOut:
     """Update product."""
-    result = await db.execute(select(Product).where(Product.id == product_id))
+    query = select(Product).join(Company, Product.company_id == Company.id).where(Product.id == product_id)
+    if current_user.role not in {"warehouse", "admin"}:
+        query = query.where(Company.user_id == current_user.id)
+    result = await db.execute(query)
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Товар не найден")
-    company_result = await db.execute(
-        select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
-    )
-    if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Компания не найдена")
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(product, key, value)
     await db.commit()
@@ -83,13 +110,15 @@ async def update_product(
     return product
 
 
-@router.post("/import")
+@router.post("/import", response_model=ImportResult)
+@limiter.limit("60/minute")
 async def import_products(
+    request: Request,
     company_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> dict:
+) -> ImportResult:
     """Import products from Excel."""
     if file.content_type not in {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -104,16 +133,47 @@ async def import_products(
     data = await file.read()
     if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="Файл слишком большой")
-    parsed = parse_products_excel(data)
-    created = 0
-    for row in parsed:
-        if not row.get("name"):
-            continue
-        product = Product(company_id=company_id, **row)
-        db.add(product)
-        created += 1
-    await db.commit()
-    return {"imported": created}
+    try:
+        parsed = parse_products_excel(data)
+        created = 0
+        updated = 0
+        skipped: list[ImportSkipped] = []
+        for row in parsed:
+            if not row.get("name"):
+                continue
+            barcode = (row.get("barcode") or "").strip() or None
+            if barcode:
+                existing_result = await db.execute(
+                    select(Product).where(Product.barcode == barcode)
+                )
+                existing = existing_result.scalar_one_or_none()
+                if existing:
+                    if existing.company_id == company_id:
+                        for key, value in row.items():
+                            if key == "company_id":
+                                continue
+                            if value is not None and hasattr(existing, key):
+                                setattr(existing, key, value)
+                        updated += 1
+                    else:
+                        skipped.append(
+                            ImportSkipped(
+                                barcode=barcode,
+                                name=(row.get("name") or "").strip() or "-",
+                                reason="ШК принадлежит другой компании",
+                            )
+                        )
+                    continue
+            product = Product(company_id=company_id, **row)
+            db.add(product)
+            created += 1
+        await db.commit()
+        return ImportResult(imported=created, updated=updated, skipped=skipped)
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("product_import_failed", company_id=company_id, error=str(exc))
+        detail = str(exc) if isinstance(exc, ValueError) else "Product import failed"
+        raise HTTPException(status_code=400, detail=detail)
 
 
 @router.get("/export")
@@ -123,62 +183,152 @@ async def export_products_excel(
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """Export products to Excel."""
-    company_result = await db.execute(
-        select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
-    )
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
+        )
     if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Company not found")
-    result = await db.execute(select(Product).where(Product.company_id == company_id))
-    buffer = export_products(list(result.scalars().all()))
-    return StreamingResponse(
-        buffer,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=products.xlsx"},
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    try:
+        company = company_result.scalar_one_or_none()
+        result = await db.execute(
+            select(Product)
+            .options(joinedload(Product.company))
+            .where(Product.company_id == company_id)
+        )
+        products = list(result.unique().scalars().all())
+        if not products:
+            raise HTTPException(status_code=400, detail="Нет товаров для экспорта")
+        buffer = export_products(products)
+        filename = f"Товары_{company.name}_{date.today().strftime('%d.%m.%Y')}.xlsx"
+        return StreamingResponse(
+            buffer,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": content_disposition(filename)},
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("product_export_failed", company_id=company_id, error=str(exc))
+        raise HTTPException(status_code=500, detail="Не удалось экспортировать товары")
+
+
+@router.post("/export/send")
+async def send_export_products_to_telegram(
+    company_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Export products and send to current user in Telegram."""
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == company_id, Company.user_id == current_user.id)
+        )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    result = await db.execute(
+        select(Product).options(joinedload(Product.company)).where(Product.company_id == company_id)
     )
+    products = list(result.unique().scalars().all())
+    if not products:
+        raise HTTPException(status_code=400, detail="Нет товаров для экспорта")
+    buffer = export_products(products)
+    file_bytes = buffer.getvalue()
+    filename = f"Товары_{company.name}_{date.today().strftime('%d.%m.%Y')}.xlsx"
+    telegram_id = current_user.telegram_id
+    sent = await send_document(telegram_id, file_bytes, filename, caption="Экспорт товаров")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}
+
+
+@router.get("/template")
+async def export_products_template_excel(
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Export products Excel template."""
+    try:
+        _ = current_user
+        buffer = export_products_template()
+        filename = "Шаблон_импорта_товаров.xlsx"
+        return StreamingResponse(
+            buffer,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": content_disposition(filename)},
+        )
+    except Exception as exc:
+        logger.exception("product_template_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail="Не удалось выгрузить шаблон")
+
+
+@router.post("/template/send")
+async def send_products_template_to_telegram(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Send products import template to current user in Telegram."""
+    buffer = export_products_template()
+    file_bytes = buffer.getvalue()
+    filename = "Шаблон_импорта_товаров.xlsx"
+    telegram_id = current_user.telegram_id
+    sent = await send_document(telegram_id, file_bytes, filename, caption="Шаблон импорта товаров")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}
 
 
 @router.post("/{product_id}/photo")
+@limiter.limit("60/minute")
 async def upload_product_photo(
+    request: Request,
     product_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ) -> dict:
-    """Upload product photo to S3. Permissions checked before reading file."""
-    product_result = await db.execute(select(Product).where(Product.id == product_id))
-    product = product_result.scalar_one_or_none()
-    if not product:
-        raise HTTPException(status_code=404, detail="Товар не найден")
-    company_result = await db.execute(
-        select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
-    )
-    if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-
+    """Upload product photo to S3."""
     s3 = S3Service()
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Неподдерживаемый тип файла")
     data = await file.read()
     if len(data) > settings.MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="Файл слишком большой")
-    if not is_allowed_image_bytes(data):
-        raise HTTPException(status_code=400, detail="Неподдерживаемый тип файла")
-    try:
-        image = Image.open(BytesIO(data))
-        image.thumbnail((1200, 1200))
-        output = BytesIO()
-        if image.mode in ("RGBA", "P"):
-            image = image.convert("RGB")
-        image.save(output, format="JPEG")
-        data = output.getvalue()
-    except (UnidentifiedImageError, OSError) as e:
-        logger.warning("product_photo_image_error", product_id=product_id, error=str(e))
-        raise HTTPException(status_code=400, detail="Не удалось обработать изображение")
-    key = f"products/{product_id}/{datetime.utcnow().timestamp()}_{sanitize_upload_filename(file.filename)}"
-    s3.upload_bytes(key, data, file.content_type or "image/jpeg")
+    ok_sig, err_sig = validate_image_signature(data)
+    if not ok_sig:
+        raise HTTPException(status_code=400, detail=err_sig)
+    image, err_open = safe_open_image(data)
+    if image is None:
+        raise HTTPException(status_code=400, detail=err_open)
+    image.thumbnail((1200, 1200))
+    output = BytesIO()
+    if image.mode in ("RGBA", "P"):
+        image = image.convert("RGB")
+    image.save(output, format="JPEG")
+    data = output.getvalue()
+    safe_name = sanitize_filename_for_storage(file.filename)
+    key = f"products/{product_id}/{datetime.now(timezone.utc).timestamp()}_{safe_name}"
+    await asyncio.to_thread(s3.upload_bytes, key, data, file.content_type or "image/jpeg")
     url = s3.build_public_url(key)
-    if not await s3.head_check(url):
-        raise HTTPException(status_code=400, detail="Не удалось проверить загрузку")
+    if not await s3.head_check(url, client=http_client):
+        raise HTTPException(status_code=400, detail="Ошибка проверки загруженного файла")
+
+    product_result = await db.execute(select(Product).where(Product.id == product_id))
+    product = product_result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == product.company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
+        )
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Компания не найдена")
 
     photo = ProductPhoto(product_id=product_id, s3_key=key)
     db.add(photo)
@@ -204,17 +354,88 @@ async def generate_label(
     if not company:
         raise HTTPException(status_code=404, detail="Компания не найдена")
 
-    title_parts = [product.name, product.brand, product.size, product.color]
-    title = " ".join([part for part in title_parts if part])
+    if not product.name or not product.barcode:
+        raise HTTPException(status_code=400, detail="Для этикетки обязательны название и баркод")
+
+    title = product.name.strip()
+    if product.size and product.size.strip():
+        title = f"{title}, размер {product.size.strip()}"
     label = LabelData(
         title=title,
-        article=product.wb_article or product.ozon_article or "-",
-        supplier=company.name,
+        article=product.wb_article or "-",
+        supplier=product.supplier_name or (company.name if company else "") or "-",
         barcode_value=product.barcode or "-",
     )
     pdf_bytes = render_label_pdf(label)
+    filename = f"Этикетка_{product.name}_{product.barcode}.pdf"
     return StreamingResponse(
         iter([pdf_bytes]),
         media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=label.pdf"},
+        headers={"Content-Disposition": content_disposition(filename)},
     )
+
+
+@router.post("/{product_id}/label/send")
+async def send_label_to_telegram(
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Generate label PDF and send to current user in Telegram."""
+    result = await db.execute(select(Product).where(Product.id == product_id))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == product.company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
+        )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if not product.name or not product.barcode:
+        raise HTTPException(status_code=400, detail="Для этикетки обязательны название и баркод")
+    title = product.name.strip()
+    if product.size and product.size.strip():
+        title = f"{title}, размер {product.size.strip()}"
+    label = LabelData(
+        title=title,
+        article=product.wb_article or "-",
+        supplier=product.supplier_name or (company.name if company else "") or "-",
+        barcode_value=product.barcode or "-",
+    )
+    pdf_bytes = render_label_pdf(label)
+    filename = f"Этикетка_{product.name}_{product.barcode}.pdf"
+    telegram_id = current_user.telegram_id
+    sent = await send_document(telegram_id, pdf_bytes, filename, caption="Этикетка товара")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Не удалось отправить файл в Telegram. Попробуйте позже.")
+    return {"sent": True}
+
+
+@router.get("/{product_id}/defect-photos", response_model=list[str])
+async def list_defect_photos(
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[str]:
+    """List defect photo URLs for a product."""
+    result = await db.execute(select(Product).where(Product.id == product_id))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    if current_user.role in {"warehouse", "admin"}:
+        company_result = await db.execute(select(Company).where(Company.id == product.company_id))
+    else:
+        company_result = await db.execute(
+            select(Company).where(Company.id == product.company_id, Company.user_id == current_user.id)
+        )
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    result = await db.execute(
+        select(OrderPhoto).where(OrderPhoto.product_id == product_id, OrderPhoto.photo_type == "defect")
+    )
+    s3 = S3Service()
+    return [s3.build_public_url(photo.s3_key) for photo in result.scalars().all()]

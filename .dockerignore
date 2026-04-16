@@ -1,0 +1,43 @@
+# Git и IDE
+.git
+.gitignore
+.cursor
+.cursorrules
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Документы (тяжёлые, не нужны в образе)
+docs/
+
+# Локальные окружения и секреты
+.env
+.env.local
+.env.*.local
+*.pem
+
+# Python — не копировать в контекст бэкенда
+**/__pycache__
+**/*.py[cod]
+**/.venv
+**/venv
+**/.pytest_cache
+**/*.egg-info
+**/.coverage
+**/htmlcov
+
+# Node — не копировать в контекст фронта
+**/node_modules
+**/dist
+**/npm-debug.log*
+
+# Certbot (на сервере монтируется отдельно)
+certbot
+
+# Прочее
+*.log
+*.sqlite
+*.db
+README.md
+.github

@@ -8,8 +8,8 @@ export function PhotoGallery({ photos }: PhotoGalleryProps) {
   }
   return (
     <div className="grid grid-cols-3 gap-2">
-      {photos.map((url) => (
-        <img key={url} src={url} alt="photo" className="h-24 w-full rounded-xl object-cover" />
+      {photos.map((url, index) => (
+        <img key={url} src={url} alt={`Фото ${index + 1} из ${photos.length}`} className="h-24 w-full rounded-xl object-cover" />
       ))}
     </div>
   );

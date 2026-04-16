@@ -1,0 +1,117 @@
+import { useEffect, useMemo, useState } from "react";
+
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
+import { Pagination } from "../../components/ui/Pagination";
+import { Select } from "../../components/ui/Select";
+import { Toast } from "../../components/ui/Toast";
+import { useAdminUsers, useUpdateUserRole } from "../../hooks/useAdmin";
+
+const roles = ["client", "warehouse", "admin"] as const;
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
+
+export function UsersPage() {
+  const [searchInput, setSearchInput] = useState("");
+  const [page, setPage] = useState(1);
+  const search = useDebouncedValue(searchInput, 300);
+  const { items: users = [], total, limit, isLoading, error } = useAdminUsers(
+    search || undefined,
+    page
+  );
+  const updateRole = useUpdateUserRole();
+  const [draftRoles, setDraftRoles] = useState<Record<number, string>>({});
+  const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" } | null>(null);
+
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const sortedUsers = useMemo(() => {
+    return [...users].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }, [users]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
+  const handleRoleChange = (userId: number, role: string) => {
+    setDraftRoles((prev) => ({ ...prev, [userId]: role }));
+  };
+
+  const handleSave = (userId: number, currentRole: string) => {
+    const role = draftRoles[userId] ?? currentRole;
+    setToast(null);
+    updateRole.mutate(
+      { id: userId, role },
+      {
+        onSuccess: () => setToast({ message: "Роль сохранена", variant: "success" }),
+        onError: (err) => setToast({ message: err?.message ?? "Ошибка сохранения роли", variant: "error" }),
+      }
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      {toast ? <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} /> : null}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-lg font-semibold text-slate-900">Пользователи</div>
+        <Input
+          type="search"
+          placeholder="Поиск по имени, @username, Telegram ID..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          className="max-w-xs"
+        />
+      </div>
+
+      {isLoading ? <div className="text-sm text-slate-600">Загрузка пользователей...</div> : null}
+      {error ? <div className="text-sm text-rose-500">Ошибка загрузки пользователей</div> : null}
+
+      {!isLoading && !error && sortedUsers.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-soft">
+          <p className="text-sm text-slate-600">
+            {search ? "По запросу пользователи не найдены." : "Пока нет пользователей."}
+          </p>
+        </div>
+      ) : null}
+
+      <div className="space-y-3">
+        {sortedUsers.map((user) => {
+          const displayName = [user.first_name, user.last_name].filter(Boolean).join(" ") || "Без имени";
+          const roleValue = draftRoles[user.id] ?? user.role;
+          return (
+            <div key={user.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft">
+              <div className="text-sm font-semibold text-slate-900">{displayName}</div>
+              <div className="text-xs text-slate-500">Telegram ID: {user.telegram_id}</div>
+              {user.telegram_username ? (
+                <div className="text-xs text-slate-500">@{user.telegram_username}</div>
+              ) : null}
+              <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                <Select value={roleValue} onChange={(e) => handleRoleChange(user.id, e.target.value)}>
+                  {roles.map((role) => (
+                    <option key={role} value={role}>
+                      {role}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  variant="secondary"
+                  onClick={() => handleSave(user.id, user.role)}
+                  disabled={updateRole.isPending}
+                >
+                  Сохранить
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+    </div>
+  );
+}

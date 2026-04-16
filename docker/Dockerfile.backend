@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# WeasyPrint runtime deps
+# WeasyPrint runtime deps + LibreOffice for DOCX→PDF (contract templates)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libcairo2 \
@@ -13,6 +13,7 @@ RUN apt-get update \
         libharfbuzz0b \
         libffi8 \
         shared-mime-info \
+        libreoffice-nogui \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt /app/requirements.txt
@@ -20,5 +21,9 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY backend /app
 ENV PYTHONPATH=/app
+
+# Non-root user для безопасности (backend и worker)
+RUN useradd --create-home --uid 1000 app && chown -R app:app /app
+USER app
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

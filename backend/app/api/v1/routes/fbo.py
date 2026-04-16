@@ -1,130 +1,95 @@
-"""FBO supplies endpoints (WB/Ozon)."""
-from fastapi import APIRouter, Depends, HTTPException, status
+"""FBO supply endpoints (WB/Ozon)."""
+import httpx
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload
 
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, get_http_client
+from app.core.config import settings
+from app.core.crypto import decrypt_value
 from app.db.models.company import Company
-from app.db.models.fbo_supply import FBOSupply, FBOSupplyBox, FBOSupplyItem
-from app.db.models.product import Product
+from app.db.models.company_api_keys import CompanyAPIKeys
+from app.db.models.fbo_supply import FBOSupply, FBOSupplyBox
+from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.fbo import (
-    FBOBarcodeImport,
-    FBOSupplyBoxOut,
+    BoxStickersOut,
+    BoxStickerOut,
     FBOSupplyCreate,
-    FBOSupplyItemOut,
+    FBOSupplyImportBarcodes,
+    FBOSupplyList,
     FBOSupplyOut,
-    FBOSupplyStatusUpdate,
+    FBOSupplyBoxOut,
 )
-from app.services.marketplace import get_ozon_client, get_wb_client
-from app.db.models.user import User
+from app.services.excel import export_fbo_supply_boxes, parse_fbo_supply_excel
+from app.services.files import content_disposition
+from app.services.ozon_api import OzonAPI
+from app.services.wb_api import WildberriesAPI
 
 router = APIRouter()
 
 
-def _supply_query():
-    """Query supplies with boxes and items loaded."""
-    return select(FBOSupply).options(
-        selectinload(FBOSupply.boxes).selectinload(FBOSupplyBox.items),
-        selectinload(FBOSupply.company),
-    )
+def _company_access(company: Company, user: User) -> bool:
+    return company.user_id == user.id or user.role == "admin"
 
 
-async def _ensure_supply_access(supply_id: int, current_user: User, db: AsyncSession) -> FBOSupply:
-    """Load supply; allow if user owns company or is warehouse/admin."""
-    result = await db.execute(_supply_query().where(FBOSupply.id == supply_id))
-    supply = result.scalar_one_or_none()
-    if not supply:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Поставка не найдена")
-    if current_user.role not in ("warehouse", "admin") and supply.company.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ запрещён")
-    return supply
+async def _get_company_or_404(db: AsyncSession, company_id: int, user: User) -> Company:
+    if user.role in {"warehouse", "admin"}:
+        r = await db.execute(select(Company).where(Company.id == company_id))
+    else:
+        r = await db.execute(
+            select(Company).where(Company.id == company_id, Company.user_id == user.id)
+        )
+    company = r.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
+    return company
 
 
 def _supply_to_out(supply: FBOSupply) -> FBOSupplyOut:
-    """Build FBOSupplyOut from ORM with boxes/items."""
-    boxes_out = [
-        FBOSupplyBoxOut(
-            id=b.id,
-            supply_id=b.supply_id,
-            box_number=b.box_number,
-            barcode=b.barcode,
-            sticker_s3_key=b.sticker_s3_key,
-            external_box_id=b.external_box_id,
-            items=[FBOSupplyItemOut.model_validate(i) for i in b.items],
-        )
-        for b in supply.boxes
-    ]
+    boxes = [FBOSupplyBoxOut.model_validate(b, from_attributes=True) for b in supply.boxes]
     return FBOSupplyOut(
         id=supply.id,
+        order_id=supply.order_id,
         company_id=supply.company_id,
         marketplace=supply.marketplace,
         external_supply_id=supply.external_supply_id,
-        warehouse_name=supply.warehouse_name,
         status=supply.status,
+        warehouse_name=supply.warehouse_name,
         created_at=supply.created_at,
-        updated_at=supply.updated_at,
-        boxes=boxes_out,
+        boxes=sorted(boxes, key=lambda x: x.box_number),
     )
 
 
-@router.post("/supplies", response_model=FBOSupplyOut)
-async def create_fbo_supply(
-    payload: FBOSupplyCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> FBOSupplyOut:
-    """Create FBO supply (draft)."""
-    company_result = await db.execute(
-        select(Company).where(Company.id == payload.company_id, Company.user_id == current_user.id)
-    )
-    if not company_result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
-    supply = FBOSupply(
-        company_id=payload.company_id,
-        marketplace=payload.marketplace,
-        warehouse_name=payload.warehouse_name or None,
-        status="draft",
-    )
-    db.add(supply)
-    await db.flush()
-    for box_in in payload.boxes:
-        box = FBOSupplyBox(supply_id=supply.id, box_number=box_in.box_number)
-        db.add(box)
-        await db.flush()
-        for item_in in box_in.items:
-            db.add(
-                FBOSupplyItem(
-                    box_id=box.id,
-                    product_id=item_in.product_id,
-                    quantity=item_in.quantity,
-                    barcode=item_in.barcode,
-                )
-            )
-    await db.commit()
-    result = await db.execute(_supply_query().where(FBOSupply.id == supply.id))
-    supply = result.scalar_one()
-    return _supply_to_out(supply)
-
-
-@router.get("/supplies", response_model=list[FBOSupplyOut])
+@router.get("/supplies", response_model=FBOSupplyList)
 async def list_fbo_supplies(
-    company_id: int,
+    company_id: int = Query(...),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[FBOSupplyOut]:
-    """List FBO supplies for a company."""
-    company_result = await db.execute(select(Company).where(Company.id == company_id))
-    company = company_result.scalar_one_or_none()
-    if not company:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
-    if current_user.role not in ("warehouse", "admin") and company.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Доступ запрещён")
-    result = await db.execute(_supply_query().where(FBOSupply.company_id == company_id))
-    supplies = list(result.scalars().all())
-    return [_supply_to_out(s) for s in supplies]
+) -> FBOSupplyList:
+    """List FBO supplies for company."""
+    await _get_company_or_404(db, company_id, current_user)
+
+    count_q = await db.execute(
+        select(func.count()).select_from(FBOSupply).where(FBOSupply.company_id == company_id)
+    )
+    total = count_q.scalar() or 0
+    offset = (page - 1) * limit
+    result = await db.execute(
+        select(FBOSupply)
+        .where(FBOSupply.company_id == company_id)
+        .options(joinedload(FBOSupply.boxes))
+        .order_by(FBOSupply.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    supplies = list(result.unique().scalars().all())
+    items = [_supply_to_out(s) for s in supplies]
+    return FBOSupplyList(items=items, total=total, page=page, limit=limit)
 
 
 @router.get("/supplies/{supply_id}", response_model=FBOSupplyOut)
@@ -134,240 +99,328 @@ async def get_fbo_supply(
     current_user: User = Depends(get_current_user),
 ) -> FBOSupplyOut:
     """Get FBO supply by id."""
-    supply = await _ensure_supply_access(supply_id, current_user, db)
+    result = await db.execute(
+        select(FBOSupply)
+        .where(FBOSupply.id == supply_id)
+        .options(joinedload(FBOSupply.boxes))
+    )
+    supply = result.unique().scalar_one_or_none()
+    if not supply:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Поставка не найдена")
+    await _get_company_or_404(db, supply.company_id, current_user)
     return _supply_to_out(supply)
 
 
-@router.patch("/supplies/{supply_id}", response_model=FBOSupplyOut)
-async def update_fbo_supply_status(
-    supply_id: int,
-    payload: FBOSupplyStatusUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> FBOSupplyOut:
-    """Update supply status."""
-    supply = await _ensure_supply_access(supply_id, current_user, db)
-    supply.status = payload.status
-    await db.commit()
-    result = await db.execute(_supply_query().where(FBOSupply.id == supply_id))
-    supply = result.scalar_one()
-    return _supply_to_out(supply)
-
-
-@router.delete("/supplies/{supply_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_fbo_supply(
-    supply_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> None:
-    """Delete supply (only draft)."""
-    supply = await _ensure_supply_access(supply_id, current_user, db)
-    if supply.status != "draft":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Можно удалить только поставку в статусе draft",
-        )
-    await db.delete(supply)
-    await db.commit()
-
-
-async def _ozon_sync_supply(supply: FBOSupply, ozon, db: AsyncSession) -> None:
-    """Create Ozon FBO supply: draft -> supply -> cargoes, save external_supply_id and external_box_id."""
-    product_ids = set()
-    for box in supply.boxes:
-        for item in box.items:
-            product_ids.add(item.product_id)
-    if not product_ids:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Нет позиций для отправки")
-    result = await db.execute(select(Product).where(Product.id.in_(product_ids)))
-    products = {p.id: p for p in result.scalars().all()}
-    offer_quant: dict[str, int] = {}
-    for box in supply.boxes:
-        for item in box.items:
-            p = products.get(item.product_id)
-            if not p or not (p.ozon_article or "").strip():
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"У товара (product_id={item.product_id}) не задан артикул Ozon (offer_id)",
-                )
-            oid = (p.ozon_article or "").strip()
-            offer_quant[oid] = offer_quant.get(oid, 0) + item.quantity
-    offer_ids = list(offer_quant.keys())
-    offer_to_sku = await ozon.get_products_by_offer_id(offer_ids)
-    missing = [o for o in offer_ids if o not in offer_to_sku]
-    if missing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ozon не вернул sku для артикулов: {missing[:5]}{'...' if len(missing) > 5 else ''}",
-        )
-    draft_items = [{"sku": offer_to_sku[o], "quantity": q} for o, q in offer_quant.items()]
-    op_id = await ozon.create_supply_draft(draft_items)
-    if not op_id:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Не удалось создать черновик в Ozon")
-    draft_info = await ozon.get_draft_create_info(op_id)
-    if not draft_info:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Черновик Ozon не создан или истёк")
-    draft_id = draft_info.get("draft_id")
-    warehouse_id = draft_info.get("warehouse_id")
-    timeslots = draft_info.get("timeslots") or []
-    if draft_id is None or warehouse_id is None:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Нет draft_id или warehouse_id в ответе Ozon")
-    timeslot = None
-    if timeslots and isinstance(timeslots, list) and len(timeslots) > 0:
-        ts = timeslots[0] if isinstance(timeslots[0], dict) else None
-        if ts:
-            timeslot = {
-                "from_in_timezone": ts.get("from_in_timezone", ""),
-                "to_in_timezone": ts.get("to_in_timezone", ""),
-            }
-    if not timeslot:
-        timeslot = {"from_in_timezone": "2025-12-31T09:00:00Z", "to_in_timezone": "2025-12-31T18:00:00Z"}
-    supply_op_id = await ozon.create_supply_from_draft(int(draft_id), int(warehouse_id), timeslot)
-    if not supply_op_id:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Не удалось создать поставку из черновика Ozon")
-    supply_ids = await ozon.get_supply_create_status(supply_op_id)
-    if not supply_ids:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Поставка Ozon не создана (таймаут или ошибка)")
-    external_supply_id = supply_ids[0]
-    cargoes_payload = []
-    for box in supply.boxes:
-        box_items = []
-        for item in box.items:
-            p = products.get(item.product_id)
-            if p and (p.ozon_article or "").strip():
-                box_items.append({"offer_id": (p.ozon_article or "").strip(), "quantity": item.quantity})
-        cargoes_payload.append(box_items)
-    cargo_op_id = await ozon.create_cargoes(int(external_supply_id), cargoes_payload)
-    if not cargo_op_id:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Не удалось создать грузоместа в Ozon")
-    cargo_ids = await ozon.get_cargoes_create_info(cargo_op_id)
-    supply.external_supply_id = str(external_supply_id)
-    supply.status = "active"
-    if cargo_ids and len(cargo_ids) >= len(supply.boxes):
-        for i, box in enumerate(supply.boxes):
-            if i < len(cargo_ids):
-                box.external_box_id = cargo_ids[i]
-    await db.commit()
-
-
-@router.post("/supplies/{supply_id}/sync", response_model=FBOSupplyOut)
-async def sync_fbo_supply(
-    supply_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> FBOSupplyOut:
-    """Sync supply to marketplace (create in WB/Ozon, save external_supply_id and external_box_id)."""
-    supply = await _ensure_supply_access(supply_id, current_user, db)
-    if supply.status != "draft":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Синхронизировать можно только draft")
-    if supply.marketplace == "wb":
-        wb = await get_wb_client(supply.company_id, db)
-        name = f"Birka supply #{supply.id}"
-        created = await wb.create_supply(name)
-        if created and created.get("id"):
-            supply.external_supply_id = str(created["id"])
-            supply.status = "active"
-            await db.commit()
-    elif supply.marketplace == "ozon":
-        ozon = await get_ozon_client(supply.company_id, db)
-        await _ozon_sync_supply(supply, ozon, db)
-    else:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Неизвестный маркетплейс")
-    result = await db.execute(_supply_query().where(FBOSupply.id == supply_id))
-    supply = result.scalar_one()
-    return _supply_to_out(supply)
-
-
-@router.get("/supplies/{supply_id}/labels")
-async def get_fbo_supply_labels(
+@router.get("/supplies/{supply_id}/export")
+async def export_fbo_supply_excel(
     supply_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
-    """Download labels PDF for supply boxes."""
-    supply = await _ensure_supply_access(supply_id, current_user, db)
-    if supply.marketplace == "wb":
-        wb = await get_wb_client(supply.company_id, db)
-        ext_id = (supply.external_supply_id or "").strip()
-        file_bytes = None
-        media_type = "image/png"
-        filename = "fbo_supply_barcode.png"
-        if ext_id:
-            file_bytes, media_type = await wb.get_supply_barcode(ext_id, "png")
-            if file_bytes and ext_id:
-                filename = f"wb_supply_{ext_id.replace('/', '_')}.png"
-            if not file_bytes:
-                stickers = await wb.get_supply_box_stickers(ext_id)
-                if stickers:
-                    import base64
-                    for s in stickers:
-                        f = s.get("file")
-                        if f:
-                            file_bytes = base64.b64decode(f)
-                            break
-        if not file_bytes:
-            order_ids = []
-            for box in supply.boxes:
-                if box.barcode:
-                    try:
-                        order_ids.append(int(box.barcode))
-                    except ValueError:
-                        pass
-            if order_ids:
-                stickers = await wb.get_supply_stickers(order_ids)
-                if stickers:
-                    import base64
-                    for s in stickers:
-                        f = s.get("file")
-                        if f:
-                            file_bytes = base64.b64decode(f)
-                            break
-        if not file_bytes:
+    """Download FBO supply boxes as Excel (Номер короба, Штрихкод) for manual fill and re-import."""
+    result = await db.execute(
+        select(FBOSupply)
+        .where(FBOSupply.id == supply_id)
+        .options(joinedload(FBOSupply.boxes))
+    )
+    supply = result.unique().scalar_one_or_none()
+    if not supply:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Поставка не найдена")
+    await _get_company_or_404(db, supply.company_id, current_user)
+    boxes = sorted(supply.boxes, key=lambda b: b.box_number)
+    if not boxes:
+        boxes = [{"box_number": 1, "external_barcode": ""}]
+    buffer = export_fbo_supply_boxes(boxes)
+    filename = f"FBO_поставка_{supply_id}_короба.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": content_disposition(filename)},
+    )
+
+
+@router.post("/supplies/{supply_id}/import", response_model=FBOSupplyOut)
+async def import_fbo_supply_excel(
+    supply_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> FBOSupplyOut:
+    """Import FBO supply boxes from Excel (Номер короба, Штрихкод). Replaces existing boxes."""
+    if not file.filename or not (file.filename.endswith(".xlsx") or file.filename.endswith(".xls")):
+        raise HTTPException(status_code=400, detail="Загрузите файл Excel (.xlsx или .xls)")
+    result = await db.execute(
+        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
+    )
+    supply = result.unique().scalar_one_or_none()
+    if not supply:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Поставка не найдена")
+    await _get_company_or_404(db, supply.company_id, current_user)
+    data = await file.read()
+    try:
+        rows = parse_fbo_supply_excel(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    for box in supply.boxes:
+        await db.delete(box)
+    await db.flush()
+    for row in rows:
+        box = FBOSupplyBox(
+            supply_id=supply.id,
+            box_number=row["box_number"],
+            external_box_id=None,
+            external_barcode=row.get("barcode"),
+        )
+        db.add(box)
+    await db.commit()
+    await db.refresh(supply)
+    result2 = await db.execute(
+        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
+    )
+    supply = result2.unique().scalar_one()
+    return _supply_to_out(supply)
+
+
+@router.post("/supplies", response_model=FBOSupplyOut)
+async def create_fbo_supply(
+    payload: FBOSupplyCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
+) -> FBOSupplyOut:
+    """Create FBO supply draft. Without API keys creates local draft; with keys can create in WB/Ozon."""
+    await _get_company_or_404(db, payload.company_id, current_user)
+    marketplace = (payload.marketplace or "").strip().lower()
+    if marketplace not in ("wb", "ozon"):
+        raise HTTPException(status_code=400, detail="marketplace должен быть wb или ozon")
+
+    keys_r = await db.execute(
+        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == payload.company_id)
+    )
+    keys = keys_r.scalar_one_or_none()
+    secret = settings.ENCRYPTION_KEY or ""
+    external_id: str | None = None
+    box_count = getattr(payload, "box_count", None) or 0
+    if marketplace == "wb" and box_count > 0:
+        wb_key = decrypt_value(keys.wb_api_key, secret) if keys else None
+        if not wb_key:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Этикетки WB не получены (синхронизируйте поставку и повторите или дождитесь передачи в доставку)",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Для автосоздания поставки Wildberries укажите API-ключ в настройках компании.",
             )
-        return StreamingResponse(
-            iter([file_bytes]),
-            media_type=media_type,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-    if supply.marketplace == "ozon":
-        ozon = await get_ozon_client(supply.company_id, db)
-        ext_id = supply.external_supply_id
-        if not ext_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Поставка ещё не синхронизирована с Ozon")
+        api = WildberriesAPI(api_key=wb_key, client=http_client)
+        external_id = await api.create_supply(name="Поставка")
+        if external_id:
+            await api.create_supply_boxes(external_id, box_count)
+    elif marketplace == "ozon" and box_count > 0:
+        ozon_cid = decrypt_value(keys.ozon_client_id, secret) if keys else None
+        ozon_key = decrypt_value(keys.ozon_api_key, secret) if keys else None
+        if not ozon_cid or not ozon_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Для создания поставки Ozon укажите Client ID и API Key в настройках компании.",
+            )
+        api = OzonAPI(client_id=ozon_cid, api_key=ozon_key, client=http_client)
+        sid = await api.create_supply_draft()
+        external_id = str(sid) if sid is not None else None
+    # else: manual/draft — no API keys required, external_id stays None
+
+    supply = FBOSupply(
+        company_id=payload.company_id,
+        order_id=payload.order_id,
+        marketplace=marketplace,
+        external_supply_id=external_id,
+        status="created" if external_id else "draft",
+    )
+    db.add(supply)
+    await db.commit()
+    await db.refresh(supply)
+    result2 = await db.execute(
+        select(FBOSupply).where(FBOSupply.id == supply.id).options(joinedload(FBOSupply.boxes))
+    )
+    supply = result2.unique().scalar_one()
+    return _supply_to_out(supply)
+
+
+@router.post("/supplies/{supply_id}/sync", response_model=FBOSupplyOut)
+async def sync_fbo_supply_barcodes(
+    supply_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
+) -> FBOSupplyOut:
+    """Fetch box barcodes from WB/Ozon and update supply boxes."""
+    result = await db.execute(
+        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
+    )
+    supply = result.unique().scalar_one_or_none()
+    if not supply:
+        raise HTTPException(status_code=404, detail="Поставка не найдена")
+    await _get_company_or_404(db, supply.company_id, current_user)
+    if not supply.external_supply_id:
+        raise HTTPException(status_code=400, detail="Нет внешнего ID поставки для синхронизации")
+
+    keys_r = await db.execute(
+        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == supply.company_id)
+    )
+    keys = keys_r.scalar_one_or_none()
+    secret = settings.ENCRYPTION_KEY or ""
+    boxes_data: list[tuple[str | None, str]] = []  # (external_box_id, external_barcode)
+    if supply.marketplace == "wb":
+        wb_key = decrypt_value(keys.wb_api_key, secret) if keys else None
+        if not wb_key:
+            raise HTTPException(status_code=400, detail="Укажите API-ключ WB для компании")
+        api = WildberriesAPI(api_key=wb_key, client=http_client)
+        wb_boxes = await api.get_supply_boxes(supply.external_supply_id)
+        for b in wb_boxes:
+            bid = b.get("id")
+            if bid:
+                boxes_data.append((str(bid), str(bid)))
+    elif supply.marketplace == "ozon":
+        ozon_cid = decrypt_value(keys.ozon_client_id, secret) if keys else None
+        ozon_key = decrypt_value(keys.ozon_api_key, secret) if keys else None
+        if not ozon_cid or not ozon_key:
+            raise HTTPException(status_code=400, detail="Укажите Client ID и API Key Ozon для компании")
+        api = OzonAPI(client_id=ozon_cid, api_key=ozon_key, client=http_client)
         try:
-            supply_id_int = int(ext_id)
+            sid = int(supply.external_supply_id)
         except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректный external_supply_id")
-        cargo_ids = [b.external_box_id for b in supply.boxes if b.external_box_id]
-        if not cargo_ids:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Нет идентификаторов грузомест (external_box_id) для этикеток Ozon")
-        pdf_bytes = await ozon.get_supply_labels(supply_id_int, cargo_ids)
-        if not pdf_bytes:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Этикетки не получены")
-        return StreamingResponse(
-            iter([pdf_bytes]),
-            media_type="application/pdf",
-            headers={"Content-Disposition": "attachment; filename=fbo_labels.pdf"},
+            sid = 0
+        if sid:
+            barcodes = await api.get_supply_barcodes(sid)
+            for b in barcodes:
+                if b:
+                    boxes_data.append((None, b.strip()))
+
+    for box in supply.boxes:
+        await db.delete(box)
+    await db.flush()
+    for i, (ext_box_id, ext_barcode) in enumerate(boxes_data):
+        box = FBOSupplyBox(
+            supply_id=supply.id,
+            box_number=i + 1,
+            external_box_id=ext_box_id,
+            external_barcode=ext_barcode,
         )
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Неизвестный маркетплейс")
+        db.add(box)
+    await db.commit()
+    await db.refresh(supply)
+    boxes_result = await db.execute(
+        select(FBOSupplyBox).where(FBOSupplyBox.supply_id == supply_id).order_by(FBOSupplyBox.box_number)
+    )
+    boxes_list = list(boxes_result.scalars().all())
+    box_outs = [FBOSupplyBoxOut.model_validate(b, from_attributes=True) for b in boxes_list]
+    return FBOSupplyOut(
+        id=supply.id,
+        order_id=supply.order_id,
+        company_id=supply.company_id,
+        marketplace=supply.marketplace,
+        external_supply_id=supply.external_supply_id,
+        status=supply.status,
+        warehouse_name=supply.warehouse_name,
+        created_at=supply.created_at,
+        boxes=box_outs,
+    )
+
+
+@router.post("/supplies/{supply_id}/box-stickers", response_model=BoxStickersOut)
+async def get_fbo_box_stickers(
+    supply_id: int,
+    fmt: str = Query("png", description="Формат стикера: png, svg, zplv, zplh"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
+) -> BoxStickersOut:
+    """Get box stickers for WB supply (for print). Returns base64 images."""
+    if fmt not in ("png", "svg", "zplv", "zplh"):
+        raise HTTPException(status_code=400, detail="Формат стикера: png, svg, zplv или zplh")
+    result = await db.execute(
+        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
+    )
+    supply = result.unique().scalar_one_or_none()
+    if not supply:
+        raise HTTPException(status_code=404, detail="Поставка не найдена")
+    await _get_company_or_404(db, supply.company_id, current_user)
+    if supply.marketplace != "wb" or not supply.external_supply_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Стикеры коробов доступны только для поставок WB с созданной поставкой в кабинете",
+        )
+    trbx_ids = [b.external_box_id for b in supply.boxes if b.external_box_id]
+    if not trbx_ids:
+        return BoxStickersOut(stickers=[])
+    keys_r = await db.execute(
+        select(CompanyAPIKeys).where(CompanyAPIKeys.company_id == supply.company_id)
+    )
+    keys = keys_r.scalar_one_or_none()
+    if not keys or not keys.wb_api_key:
+        raise HTTPException(status_code=400, detail="Укажите API-ключ WB для компании")
+    secret = settings.ENCRYPTION_KEY or ""
+    wb_key = decrypt_value(keys.wb_api_key, secret)
+    if not wb_key:
+        raise HTTPException(status_code=400, detail="Укажите API-ключ WB для компании")
+    api = WildberriesAPI(api_key=wb_key, client=http_client)
+    raw = await api.get_box_stickers(supply.external_supply_id, trbx_ids, fmt=fmt)
+    content_type = "image/png" if fmt == "png" else "image/svg+xml" if fmt == "svg" else "application/octet-stream"
+    stickers = []
+    for s in raw or []:
+        trbx_id = s.get("trbxId") or s.get("trbx_id") or ""
+        barcode = s.get("barcode")
+        file_b64 = s.get("file") or ""
+        stickers.append(
+            BoxStickerOut(
+                trbx_id=trbx_id,
+                barcode=barcode,
+                file_base64=file_b64,
+                content_type=content_type,
+            )
+        )
+    return BoxStickersOut(stickers=stickers)
 
 
 @router.post("/supplies/{supply_id}/import-barcodes", response_model=FBOSupplyOut)
 async def import_fbo_barcodes(
-  supply_id: int,
-  payload: FBOBarcodeImport,
-  db: AsyncSession = Depends(get_db),
-  current_user: User = Depends(get_current_user),
+    supply_id: int,
+    payload: FBOSupplyImportBarcodes,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> FBOSupplyOut:
-    """Import barcodes for boxes (box_number -> barcode)."""
-    supply = await _ensure_supply_access(supply_id, current_user, db)
-    for box in supply.boxes:
-        if box.box_number in payload.barcodes:
-            box.barcode = payload.barcodes[box.box_number].strip() or None
+    """Import box barcodes manually (barcodes in order = box 1, 2, ...). Append mode: new boxes are added to existing ones; box_number continues from max(existing)."""
+    result = await db.execute(
+        select(FBOSupply).where(FBOSupply.id == supply_id).options(joinedload(FBOSupply.boxes))
+    )
+    supply = result.unique().scalar_one_or_none()
+    if not supply:
+        raise HTTPException(status_code=404, detail="Поставка не найдена")
+    await _get_company_or_404(db, supply.company_id, current_user)
+
+    next_box_number = max((b.box_number for b in supply.boxes), default=0) + 1
+    seen_barcodes: set[str] = set()
+    added: list[FBOSupplyBox] = []
+    for barcode in payload.barcodes or []:
+        b = (barcode or "").strip()
+        if not b or b in seen_barcodes:
+            continue
+        seen_barcodes.add(b)
+        box = FBOSupplyBox(
+            supply_id=supply.id,
+            box_number=next_box_number,
+            external_box_id=None,
+            external_barcode=b,
+        )
+        next_box_number += 1
+        db.add(box)
+        added.append(box)
     await db.commit()
-    result = await db.execute(_supply_query().where(FBOSupply.id == supply_id))
-    supply = result.scalar_one()
-    return _supply_to_out(supply)
+    box_outs = [FBOSupplyBoxOut.model_validate(b, from_attributes=True) for b in added]
+    return FBOSupplyOut(
+        id=supply.id,
+        order_id=supply.order_id,
+        company_id=supply.company_id,
+        marketplace=supply.marketplace,
+        external_supply_id=supply.external_supply_id,
+        status=supply.status,
+        warehouse_name=supply.warehouse_name,
+        created_at=supply.created_at,
+        boxes=sorted(box_outs, key=lambda x: x.box_number),
+    )

@@ -2,14 +2,38 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <title>Бирка — Mini App</title>
+    <title>Бирка — фулфилмент</title>
+    <meta name="description" content="Бирка — фулфилмент: статусы заказов, остатки, фото браков. Клиенты и склад в одном приложении." />
+    <link rel="icon" type="image/jpeg" href="https://s3.ru1.storage.beget.cloud/00bd59427133-s3bot/photo_2025-01-16_19-20-18.jpg" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Бирка — фулфилмент" />
+    <meta property="og:description" content="Бирка — фулфилмент: статусы заказов, остатки, фото браков. Клиенты и склад в одном приложении." />
+    <meta property="og:image" content="https://s3.ru1.storage.beget.cloud/00bd59427133-s3bot/photo_2025-01-16_19-20-18.jpg" />
+    <meta property="og:url" content="https://ffbirka.ru" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Бирка — фулфилмент" />
+    <meta name="twitter:description" content="Бирка — фулфилмент: статусы заказов, остатки, фото браков. Клиенты и склад в одном приложении." />
+    <meta name="twitter:image" content="https://s3.ru1.storage.beget.cloud/00bd59427133-s3bot/photo_2025-01-16_19-20-18.jpg" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body>
+    <div id="splash" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#f8fafc;z-index:9999;">
+      <img
+        src="https://s3.ru1.storage.beget.cloud/00bd59427133-s3bot/photo_2025-01-16_19-20-18.jpg"
+        alt="Бирка"
+        style="width:80px;height:80px;border-radius:8px;object-fit:cover;animation:splash-pulse 1.5s ease-in-out infinite;"
+      />
+    </div>
+    <style>
+      @keyframes splash-pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.85; transform: scale(1.05); }
+      }
+    </style>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

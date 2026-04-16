@@ -1,25 +1,142 @@
 # ===========================================
 # Production config для Beget VPS
 # Использует внешнюю БД PostgreSQL (Beget Cloud Database)
+# Redis и Celery worker/beat — в этом compose
+# Лимиты памяти под 4 ГБ RAM (сервер 3/4).
+# После up проверить применение: docker stats --no-stream
 # ===========================================
 
 services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
   backend:
     build:
       context: .
       dockerfile: docker/Dockerfile.backend
     env_file: .env
+    volumes:
+      - ./docs:/docs:ro
     expose:
       - "8000"
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/app/.cache
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    env_file: .env
+    environment:
+      REDIS_DSN: "redis://redis:6379/0"
+    command: celery -A app.celery_app worker -l info
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    env_file: .env
+    environment:
+      REDIS_DSN: "redis://redis:6379/0"
+    command: celery -A app.celery_app beat -l info
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   frontend:
     build:
       context: .
       dockerfile: docker/Dockerfile.frontend
+      args:
+        BUILD_TIMESTAMP: "0"
     expose:
       - "80"
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   nginx:
     image: nginx:1.27-alpine
@@ -34,6 +151,15 @@ services:
       - backend
       - frontend
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   # Certbot для SSL (опционально, запускается вручную)
   certbot:
@@ -43,5 +169,8 @@ services:
       - ./certbot/www:/var/www/certbot
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do sleep 6h; done'"
 
-# Примечание: PostgreSQL и Redis НЕ включены —
-# используется внешняя Beget Cloud Database
+volumes:
+  redis_data:
+
+# Примечание: PostgreSQL — внешняя Beget Cloud Database.
+# REDIS_DSN в .env задать как redis://redis:6379/0

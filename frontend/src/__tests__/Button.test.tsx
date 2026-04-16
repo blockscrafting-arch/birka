@@ -6,8 +6,8 @@ import { Button } from "../components/ui/Button";
 describe("Button", () => {
   it("renders and handles click", () => {
     const onClick = vi.fn();
-    render(<Button onClick={onClick}>Нажми</Button>);
-    fireEvent.click(screen.getByText("Нажми"));
+    render(<Button onClick={onClick}>Нажмите</Button>);
+    fireEvent.click(screen.getByText("Нажмите"));
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 });

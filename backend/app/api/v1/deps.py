@@ -1,14 +1,22 @@
 """API dependencies."""
-from datetime import datetime, timedelta
-from fastapi import Depends, Header, HTTPException, status
+from datetime import datetime, timedelta, timezone
+
+import httpx
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.security import validate_telegram_init_data
 from app.db.models.session import Session
 from app.db.models.user import User
 from app.db.session import get_db
 from app.services.telegram import parse_init_data_user
+
+
+def _role_for_telegram_id(telegram_id: int) -> str:
+    """Return role for telegram_id: admin if in ADMIN_TELEGRAM_IDS else client."""
+    return "admin" if telegram_id in settings.admin_telegram_ids else "client"
 
 
 async def get_current_user(
@@ -18,8 +26,9 @@ async def get_current_user(
 ) -> User:
     """Resolve current user from Telegram initData header."""
     if x_session_token:
+        now_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
         result = await db.execute(
-            select(Session).where(Session.token == x_session_token, Session.expires_at > datetime.utcnow())
+            select(Session).where(Session.token == x_session_token, Session.expires_at > now_utc_naive)
         )
         session = result.scalar_one_or_none()
         if not session:
@@ -27,15 +36,15 @@ async def get_current_user(
         user_result = await db.execute(select(User).where(User.id == session.user_id))
         user = user_result.scalar_one_or_none()
         if not user:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Требуется авторизация")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Не авторизован")
         return user
 
     if not x_telegram_init_data or not validate_telegram_init_data(x_telegram_init_data):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Требуется авторизация")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Не авторизован")
 
     user_data = parse_init_data_user(x_telegram_init_data)
     if not user_data:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Требуется авторизация")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Не авторизован")
 
     telegram_id = int(user_data["id"])
     result = await db.execute(select(User).where(User.telegram_id == telegram_id))
@@ -46,7 +55,7 @@ async def get_current_user(
             telegram_username=user_data.get("username"),
             first_name=user_data.get("first_name"),
             last_name=user_data.get("last_name"),
-            role="client",
+            role=_role_for_telegram_id(telegram_id),
         )
         db.add(user)
         await db.commit()
@@ -64,3 +73,13 @@ def require_roles(*roles: str):
         return current_user
 
     return checker
+
+
+async def get_http_client(request: Request) -> httpx.AsyncClient:
+    """Shared HTTP client for WB/Ozon/S3 HEAD (connection pooling)."""
+    try:
+        client = request.app.state.httpx_client
+    except (AttributeError, KeyError):
+        client = httpx.AsyncClient(timeout=30.0)
+        request.app.state.httpx_client = client
+    return client

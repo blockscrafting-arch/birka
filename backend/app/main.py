@@ -1,33 +1,108 @@
-"""FastAPI application entrypoint."""
-from fastapi import FastAPI, HTTPException, Request
+"""FastAPI application entrypoint. See project docs in /docs."""
+from contextlib import asynccontextmanager
+
+import httpx
+import sentry_sdk
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.core.logging import configure_logging, logger
+from app.db.models.user import User
+from app.db.session import get_db, AsyncSessionLocal
+
+# Shared HTTP client for WB/Ozon/S3 HEAD checks (connection pooling, single timeout)
+HTTP_CLIENT_TIMEOUT = 30.0
+HTTP_CLIENT_LIMITS = httpx.Limits(max_connections=50, max_keepalive_connections=20)
+
+
+async def sync_roles_on_startup() -> None:
+    """Выставить роль admin пользователям из ADMIN_TELEGRAM_IDS. Роль warehouse задаётся только вручную в админке."""
+    if not settings.admin_telegram_ids:
+        return
+    admin_ids = set(settings.admin_telegram_ids)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(User).where(User.telegram_id.in_(admin_ids)))
+        users = result.scalars().all()
+        updated = 0
+        for user in users:
+            if user.role != "admin":
+                user.role = "admin"
+                updated += 1
+        if updated:
+            await db.commit()
+            logger.info("roles_synced_on_startup", updated=updated)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events."""
+    async with httpx.AsyncClient(
+        timeout=HTTP_CLIENT_TIMEOUT,
+        limits=HTTP_CLIENT_LIMITS,
+    ) as http_client:
+        app.state.httpx_client = http_client
+        if not settings.admin_telegram_ids:
+            logger.warning("ADMIN_TELEGRAM_IDS_empty", detail="Задайте ADMIN_TELEGRAM_IDS в .env для доступа в админку")
+        else:
+            await sync_roles_on_startup()
+        logger.info("app_initialized")
+        yield
+
+
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.ENVIRONMENT,
+        traces_sample_rate=0.1,
+        integrations=[
+            sentry_sdk.integrations.starlette.StarletteIntegration(transaction_style="endpoint"),
+            sentry_sdk.integrations.fastapi.FastApiIntegration(transaction_style="endpoint"),
+        ],
+    )
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI app."""
     configure_logging()
-    app = FastAPI(title="Birka API", version="0.1.0")
+    origins = settings.cors_origins_list
+    if settings.ENVIRONMENT == "production" and "*" in origins:
+        raise RuntimeError(
+            "В production при allow_credentials запрещено CORS_ORIGINS=*. "
+            "Задайте явный список доменов в CORS_ORIGINS (например https://ffbirka.ru,https://t.me)."
+        )
+    app = FastAPI(title="Birka API", version="0.1.0", lifespan=lifespan)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
+        allow_origins=origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_headers=["Content-Type", "Authorization", "X-Telegram-Init-Data", "X-Session-Token"],
     )
 
     app.include_router(api_router, prefix="/api/v1")
+
+    @app.get("/api", tags=["meta"])
+    @app.get("/api/", tags=["meta"])
+    async def api_root() -> dict:
+        """Корень API: использовать /api/v1/..."""
+        return {"message": "Use /api/v1/ for API endpoints"}
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         """Log unhandled exceptions."""
         logger.exception("unhandled_exception", path=request.url.path, error=str(exc))
-        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+        return JSONResponse(status_code=500, content={"detail": "Внутренняя ошибка сервера. Попробуйте позже."})
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
@@ -36,11 +111,15 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
     @app.get("/health", tags=["health"])
-    async def health_check() -> dict:
+    async def health_check(db: AsyncSession = Depends(get_db)) -> dict:
         """Simple health check endpoint."""
-        return {"status": "ok"}
+        try:
+            await db.execute(text("SELECT 1"))
+            return {"status": "ok", "db": "connected"}
+        except Exception as exc:
+            logger.exception("db_health_failed", error=str(exc))
+            return {"status": "degraded", "db": "disconnected"}
 
-    logger.info("app_initialized")
     return app
 
 

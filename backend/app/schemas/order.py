@@ -1,5 +1,16 @@
 """Order schemas."""
-from pydantic import BaseModel
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+OrderStatusLiteral = Literal[
+    "На приемке",
+    "Принято",
+    "Упаковка",
+    "Готово к отгрузке",
+    "Завершено",
+]
 
 
 class OrderItemCreate(BaseModel):
@@ -7,6 +18,14 @@ class OrderItemCreate(BaseModel):
 
     product_id: int
     planned_qty: int
+    destination: str | None = Field(None, max_length=64)
+
+
+class OrderServiceCreate(BaseModel):
+    """Create order service (from calculator)."""
+
+    service_id: int
+    quantity: float
 
 
 class OrderCreate(BaseModel):
@@ -15,12 +34,13 @@ class OrderCreate(BaseModel):
     company_id: int
     destination: str | None = None
     items: list[OrderItemCreate]
+    services: list[OrderServiceCreate] | None = None
 
 
 class OrderStatusUpdate(BaseModel):
-    """Update order status."""
+    """Update order status (only warehouse/admin; transitions validated)."""
 
-    status: str
+    status: OrderStatusLiteral
 
 
 class OrderOut(BaseModel):
@@ -34,9 +54,21 @@ class OrderOut(BaseModel):
     planned_qty: int
     received_qty: int
     packed_qty: int
+    photo_count: int = 0
+    completed_at: datetime | None = None
+    company_name: str | None = None
 
     class Config:
         from_attributes = True
+
+
+class OrderList(BaseModel):
+    """Paginated order list."""
+
+    items: list[OrderOut]
+    total: int
+    page: int
+    limit: int
 
 
 class OrderItemOut(BaseModel):
@@ -46,16 +78,28 @@ class OrderItemOut(BaseModel):
     product_id: int
     product_name: str
     barcode: str | None
+    brand: str | None
+    size: str | None
+    color: str | None
+    wb_article: str | None
+    wb_url: str | None
+    packing_instructions: str | None
+    supplier_name: str | None
     planned_qty: int
     received_qty: int
     defect_qty: int
     packed_qty: int
+    adjustment_qty: int
+    adjustment_note: str | None
+    destination: str | None = None
 
 
 class OrderPhotoOut(BaseModel):
     """Order photo response."""
 
     id: int
+    s3_key: str
     url: str
     photo_type: str | None
-    created_at: str
+    product_id: int | None
+    created_at: datetime

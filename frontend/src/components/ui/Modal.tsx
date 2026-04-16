@@ -12,15 +12,19 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
     return null;
   }
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur">
-      <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/90 p-4 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur">
+      <div className="mx-4 w-full max-h-[85vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-card sm:mx-auto sm:max-w-md">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-100">{title ?? "Окно"}</h2>
-          <button className="text-sm text-slate-400 hover:text-slate-200" onClick={onClose}>
+          <h2 className="text-base font-semibold text-slate-800">{title ?? "Окно"}</h2>
+          <button
+            type="button"
+            className="rounded text-sm text-slate-600 hover:text-slate-800 focus-visible:ring-2 focus-visible:ring-birka-500 focus-visible:ring-offset-2 outline-none"
+            onClick={onClose}
+          >
             Закрыть
           </button>
         </div>
-        <div className="max-h-[80vh] overflow-y-auto pr-1">{children}</div>
+        {children}
       </div>
     </div>
   );
