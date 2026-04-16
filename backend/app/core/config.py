@@ -47,6 +47,9 @@ class Settings(BaseSettings):
 
     # Database
     POSTGRES_DSN: str = "postgresql+asyncpg://user:pass@localhost:5432/birka"
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_RECYCLE: int = 3600
 
     # Redis (optional; for caching; empty = no cache)
     REDIS_DSN: str = ""
